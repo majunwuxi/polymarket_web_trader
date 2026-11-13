@@ -179,7 +179,7 @@ erDiagram
 | `confirmed_at`, `submitted_at` | timestamptz 可空 | 用户确认和外部提交开始 |
 | `created_at`, `updated_at` | timestamptz 必填 | 创建/更新 |
 
-唯一 `(wallet_id, client_request_id)`；相同键且指纹一致返回原意图，不再次提交；指纹不同返回冲突。索引 `(wallet_id, created_at DESC)`、`(state, updated_at)`。确认前核对市场、用户输入与有效报价；`submitting` 事务提交后，外部请求可能已发出，因此重启时必须先对账，不能当作未发送。
+唯一 `(wallet_id, client_request_id)`；相同键且指纹一致返回原意图，不再次提交；指纹不同返回冲突。索引 `(wallet_id, created_at DESC)`、`(state, updated_at)`；部分唯一索引 `(wallet_id, request_fingerprint) WHERE state IN ('submitting','unknown')` 防止换幂等键并发重复发送相同参数；Combo 询价或接受存在未解决外部请求时，其意图须处于对应的 `submitting` 或 `unknown` 状态。冲突后返回原意图的安全标识，由用户查询/对账；不得通过换键绕过。确认前核对市场、用户输入与有效报价；`submitting` 事务提交后，外部请求可能已发出，因此重启时必须先对账，不能当作未发送。
 
 `trade_legs`：`id uuid PK`；`intent_id uuid` 必填外键；`leg_index integer` 非负；`game_id uuid`、`market_link_id uuid`、`outcome_id uuid` 均必填外键；`outcome_label_snapshot text` 必填；`created_at timestamptz` 必填。唯一 `(intent_id, leg_index)`、`(intent_id, outcome_id)`；索引 `(game_id, intent_id)`。服务在同一事务中验证 `market_link.game_id = game_id`、`market_link.market_id = outcome.market_id` 且映射 confirmed，并在对外提交前重新验证。保存展示快照供审计，不替代来源 ID。
 

@@ -155,7 +155,7 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 | `POST /combo-rfqs/{rfq_id}/accept` | `{ "quote_id":"uuid" }`；会话 + CSRF | `200`：明确拒绝或已确认执行的 RFQ；`202`：执行中或未知的 RFQ | 此请求表示用户确认报价及全部腿。锁定 RFQ 与意图，核对有效期、报价、账户、市场和映射；先原子持久化确认、所有赛事关注及接受开始状态，再调用 SDK。重复请求只返回已存在状态，不再次接受 |
 | `GET /combo-rfqs/{rfq_id}/events` | `limit`, `cursor` | `200` 分页脱敏 RFQ 状态事件 | 按 `observed_at,id` 排序；`executing` 不等于成交 |
 
-`POST /combo-rfqs` 的幂等键同样映射 `trade_intents.client_request_id`，指纹覆盖钱包、方向、金额/份额和规范化腿。相同键/相同参数返回原本地 RFQ；参数不同返回 `409 IDEMPOTENCY_CONFLICT`。若请求结果未知，只能查询/对账原 RFQ；不能通过更换幂等键绕过未知状态。服务端必须阻止同一未解决意图并发创建额外 RFQ。
+`POST /combo-rfqs` 的幂等键同样映射 `trade_intents.client_request_id`，指纹覆盖钱包、方向、金额/份额和规范化腿。相同键/相同参数返回原本地 RFQ；参数不同返回 `409 IDEMPOTENCY_CONFLICT`。若请求结果未知，只能查询/对账原 RFQ；不能通过更换幂等键绕过未知状态。服务端必须使用 `(wallet_id, request_fingerprint)` 的未解决状态唯一约束阻止相同参数换键并发创建额外 RFQ；冲突响应带可查询的原本地意图 ID，不得暴露秘密。该约束也适用于单场未知或正在提交的相同业务参数。
 
 官方 SDK 接受报价需要原始报价对象；该对象可能含上游签名，不写入数据库、日志或浏览器。第一版部署限制 FastAPI 为**单进程**，将有效报价对象以受限内存保存并按上游 `expires_at` 及时销毁；API 响应只返回 `ComboQuote` 的安全字段。服务重启或内存对象丢失但尚未发送接受请求时，旧报价不可接受，返回 `409 QUOTE_EXPIRED` 或 `QUOTE_UNAVAILABLE`，用户可重新询价；**已开始接受或结果未知的请求则不可重新询价替代，必须先对账或人工处理**。如未来改为多进程，须另行设计安全共享的短期对象存储和跨进程锁，不能直接扩容后假定报价仍可用。
 

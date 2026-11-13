@@ -1,6 +1,6 @@
 # PolySports 内部 API 设计
 
-本文定义 PolySports 浏览器与 FastAPI 服务之间的内部接口契约，供后续实现和 UI 设计使用。**本阶段尚未实现这些接口**；下文 JSON、标识符和时间均为明确标注的模拟示例，不代表真实赛事、价格或成交。架构和持久化依据分别见 [ARCHITECTURE.md](ARCHITECTURE.md) 与 [DATABASE.md](DATABASE.md)。具体第三方数据字段、Combo 权限和交易能力以接入时的官方接口及实际账户为准。
+本文定义 PolySports 浏览器与 FastAPI 服务之间的内部接口契约，供后续实现和 UI 设计使用。本文包含已实现接口和后续阶段的设计；具体可用接口以运行中的 `/openapi.json` 及各阶段记录为准。下文 JSON、标识符和时间均为明确标注的模拟示例，不代表真实赛事、价格或成交。架构和持久化依据分别见 [ARCHITECTURE.md](ARCHITECTURE.md) 与 [DATABASE.md](DATABASE.md)。具体第三方数据字段、Combo 权限和交易能力以接入时的官方接口及实际账户为准。
 
 ## 1. 通用约定
 
@@ -211,4 +211,4 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 - Combo 无报价、真实报价截止、对象丢失、重复接受、Last Look 拒绝、执行中、结果未知与 RFQ 对账；不得把单场批量下单当作 Combo。
 - 425、post-only、第三方故障和授权缺失；日志、状态、统计、CSV/XLSX 口径和公式防护。
 
-阶段验证仅检查设计一致性；尚无可运行的 FastAPI 或 OpenAPI 契约，因此不能声称接口联调或真实资金交易已通过。官方参考：[单场下单](https://docs.polymarket.com/trading/place-orders)、[Combo Builder](https://docs.polymarket.com/trading/combos/builders)、[撮合重启](https://docs.polymarket.com/trading/matching-engine)。
+6F 已实现单场订单预览、提交、撤单、历史、只读对账、候选订单人工关联与成交证据查询；具体接口和配置见 [PolySports 运行说明](polysports/README.md) 与运行中的 OpenAPI。组合交易等后续功能仍为设计，模拟测试不能证明真实资金交易已通过。官方参考：[单场下单](https://docs.polymarket.com/trading/place-orders)、[Combo Builder](https://docs.polymarket.com/trading/combos/builders)、[撮合重启](https://docs.polymarket.com/trading/matching-engine)。

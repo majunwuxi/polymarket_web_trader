@@ -63,7 +63,7 @@ def trading_blockers(db: Session, link: MarketLink) -> list[str]:
     if not market or market.accepting_orders is not True: blockers.append('accepting_orders_not_confirmed')
     if not market or market.protocol_version not in ('v1','v2'): blockers.append('protocol_unknown')
     if not market or not db.scalar(select(MarketOutcome.id).where(MarketOutcome.market_id==market.id).limit(1)): blockers.append('outcomes_unknown')
-    blockers.append('trading_not_implemented')
+    blockers.append('wallet_balance_and_region_unverified')
     return blockers
 
 

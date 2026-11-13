@@ -16,6 +16,7 @@ from .models import Game, Job, SyncRun, WatchedGame
 from .scheduler import claim_next, db_now, ensure_scheduled, finish_attempt, first_delay, heartbeat, interval, locked_valid_job, renew
 from .sports_sources import SourceError, fetch_game, fetch_schedule
 from .sports_sync import upsert_game
+from .trading_gateway import TradingError
 
 log=logging.getLogger('polysports.worker')
 
@@ -30,9 +31,13 @@ def fetch_work(engine,job_id,token,settings,client):
         if not job or job.status!='leased' or job.lease_token!=token: raise LeaseLost()
         if job.kind=='sync':
             run=db.get(SyncRun,job.sync_run_id); provider=run.provider; start=run.window_start
+        elif job.kind=='trade_reconcile':
+            from .trade_reconcile import fetch_order
+            trade_id=job.trade_intent_id
         else:
             watched=db.get(WatchedGame,job.watched_game_id); game=db.get(Game,watched.game_id)
             provider=game.provider; external_id=game.external_id
+    if job.kind=='trade_reconcile': return fetch_order(engine,trade_id,settings)
     secret=settings.api_football_key if provider=='api_football' else settings.balldontlie_key
     key=secret.get_secret_value() if secret else ''
     if job.kind=='result_poll': return fetch_game(provider,key,external_id,client)
@@ -66,6 +71,9 @@ def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_aft
                     for game in games: upsert_game(db,game,run.id)
                     run.status='succeeded'; run.pages_fetched=pages; run.items_received=received; run.items_upserted=len(games); run.finished_at=now; run.error_code=run.error_summary=None
                     finish_attempt(db,job,now,'succeeded'); job.status='done'
+            elif job.kind=='trade_reconcile':
+                from .trade_reconcile import apply_reconciliation
+                apply_reconciliation(db,job,payload,error)
             else:
                 watch=db.scalar(select(WatchedGame).where(WatchedGame.id==job.watched_game_id).with_for_update())
                 game=db.scalar(select(Game).where(Game.id==watch.game_id).with_for_update())
@@ -113,8 +121,8 @@ def process_one(engine,settings,owner,client=None,lease_seconds=120) -> bool:
         try:
             payload=fetch_work(engine,job_id,token,settings,source_client)
             apply_work(engine,job_id,token,payload)
-        except SourceError as exc:
-            apply_work(engine,job_id,token,error=exc.code,retry_after_seconds=exc.retry_after_seconds)
+        except (SourceError,TradingError) as exc:
+            apply_work(engine,job_id,token,error=exc.code,retry_after_seconds=getattr(exc,'retry_after_seconds',0))
         except LeaseLost:
             pass
         except Exception as exc:

@@ -198,13 +198,14 @@ class WatchedGame(Base):
 
 class Job(Base):
     __tablename__ = 'jobs'
-    __table_args__ = (UniqueConstraint('dedupe_key',name='uq_jobs_dedupe'),CheckConstraint("kind IN ('sync','result_poll')",name='ck_jobs_kind'),CheckConstraint("status IN ('pending','leased','done','cancelled','failed')",name='ck_jobs_status'),CheckConstraint("(status = 'leased' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL AND lease_token IS NOT NULL) OR (status <> 'leased' AND lease_owner IS NULL AND lease_until IS NULL AND lease_token IS NULL)",name='ck_jobs_lease'),CheckConstraint("(kind = 'result_poll' AND watched_game_id IS NOT NULL AND sync_run_id IS NULL) OR (kind = 'sync' AND watched_game_id IS NULL AND sync_run_id IS NOT NULL)",name='ck_jobs_target'),Index('ix_jobs_pending_due','due_at','id',postgresql_where=text("status = 'pending'")),Index('ix_jobs_leased_until','lease_until','id',postgresql_where=text("status = 'leased'")),Index('ix_jobs_watched','watched_game_id'),Index('uq_jobs_sync_run','sync_run_id',unique=True,postgresql_where=text('sync_run_id IS NOT NULL')))
+    __table_args__ = (UniqueConstraint('dedupe_key',name='uq_jobs_dedupe'),CheckConstraint("kind IN ('sync','result_poll','trade_reconcile')",name='ck_jobs_kind'),CheckConstraint("status IN ('pending','leased','done','cancelled','failed')",name='ck_jobs_status'),CheckConstraint("(status = 'leased' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL AND lease_token IS NOT NULL) OR (status <> 'leased' AND lease_owner IS NULL AND lease_until IS NULL AND lease_token IS NULL)",name='ck_jobs_lease'),CheckConstraint("(kind = 'result_poll' AND watched_game_id IS NOT NULL AND sync_run_id IS NULL AND trade_intent_id IS NULL) OR (kind = 'sync' AND watched_game_id IS NULL AND sync_run_id IS NOT NULL AND trade_intent_id IS NULL) OR (kind = 'trade_reconcile' AND trade_intent_id IS NOT NULL AND watched_game_id IS NULL AND sync_run_id IS NULL)",name='ck_jobs_target'),Index('ix_jobs_pending_due','due_at','id',postgresql_where=text("status = 'pending'")),Index('ix_jobs_leased_until','lease_until','id',postgresql_where=text("status = 'leased'")),Index('ix_jobs_watched','watched_game_id'),Index('uq_jobs_trade_intent','trade_intent_id',unique=True,postgresql_where=text('trade_intent_id IS NOT NULL')),Index('uq_jobs_sync_run','sync_run_id',unique=True,postgresql_where=text('sync_run_id IS NOT NULL')))
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
     kind: Mapped[str] = mapped_column(String(24),nullable=False)
     dedupe_key: Mapped[str] = mapped_column(String(255),nullable=False)
     watched_game_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('watched_games.id',ondelete='RESTRICT'))
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('sync_schedules.id',ondelete='RESTRICT'))
     sync_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('sync_runs.id',ondelete='RESTRICT'))
+    trade_intent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('trade_intents.id',ondelete='RESTRICT'))
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
     status: Mapped[str] = mapped_column(String(16),nullable=False)
     lease_owner: Mapped[str | None] = mapped_column(String(128))
@@ -309,3 +310,59 @@ class MarketRefresh(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(80))
+
+class TradeIntent(Base):
+    __tablename__ = 'trade_intents'
+    __table_args__ = (UniqueConstraint('wallet_id','client_request_id',name='uq_trade_wallet_request'),UniqueConstraint('external_order_id',name='uq_trade_external_order'),Index('uq_trade_unresolved_fingerprint','wallet_id','request_fingerprint',unique=True,postgresql_where=text("state IN ('submitting','pending','partially_filled','unknown')")),Index('ix_trade_created','created_at','id'),CheckConstraint("state IN ('submitting','pending','partially_filled','filled','rejected','cancelled','unknown')",name='ck_trade_state'),CheckConstraint("side IN ('BUY','SELL')",name='ck_trade_side'),CheckConstraint('limit_price > 0 AND limit_price < 1 AND requested_size > 0 AND (matched_size IS NULL OR (matched_size >= 0 AND matched_size <= requested_size))',name='ck_trade_amounts'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    wallet_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(42),nullable=False)
+    client_request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64),nullable=False)
+    game_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('games.id',ondelete='RESTRICT'),nullable=False)
+    market_link_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('market_links.id',ondelete='RESTRICT'),nullable=False)
+    outcome_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('market_outcomes.id',ondelete='RESTRICT'),nullable=False)
+    side: Mapped[str] = mapped_column(String(4),nullable=False)
+    limit_price: Mapped[__import__('decimal').Decimal] = mapped_column(__import__('sqlalchemy').Numeric(38,18),nullable=False)
+    requested_size: Mapped[__import__('decimal').Decimal] = mapped_column(__import__('sqlalchemy').Numeric(38,18),nullable=False)
+    state: Mapped[str] = mapped_column(String(24),nullable=False)
+    external_order_id: Mapped[str | None] = mapped_column(String(255))
+    matched_size: Mapped[__import__('decimal').Decimal | None] = mapped_column(__import__('sqlalchemy').Numeric(38,18))
+    cancel_state: Mapped[str | None] = mapped_column(String(24))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    retry_after_seconds: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class TradeSubmission(Base):
+    __tablename__ = 'trade_submissions'
+    __table_args__ = (UniqueConstraint('intent_id',name='uq_trade_submission_intent'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    intent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('trade_intents.id',ondelete='RESTRICT'),nullable=False)
+    state: Mapped[str] = mapped_column(String(24),nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+
+
+class TradeStateEvent(Base):
+    __tablename__ = 'trade_state_events'
+    __table_args__ = (Index('ix_trade_state_intent','intent_id','created_at'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    intent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('trade_intents.id',ondelete='RESTRICT'),nullable=False)
+    state: Mapped[str] = mapped_column(String(24),nullable=False)
+    code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+class TradeFill(Base):
+    __tablename__ = 'trade_fills'
+    __table_args__ = (UniqueConstraint('intent_id','external_trade_id',name='uq_trade_fill_external'),CheckConstraint('size > 0 AND price > 0 AND price < 1',name='ck_trade_fill_amounts'),Index('ix_trade_fills_intent_time','intent_id','matched_at'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    intent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('trade_intents.id',ondelete='RESTRICT'),nullable=False)
+    external_trade_id: Mapped[str] = mapped_column(String(255),nullable=False)
+    size: Mapped[__import__('decimal').Decimal] = mapped_column(__import__('sqlalchemy').Numeric(38,18),nullable=False)
+    price: Mapped[__import__('decimal').Decimal] = mapped_column(__import__('sqlalchemy').Numeric(38,18),nullable=False)
+    status: Mapped[str] = mapped_column(String(40),nullable=False)
+    matched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)

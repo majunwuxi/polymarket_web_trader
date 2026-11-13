@@ -1,6 +1,6 @@
-# PolySports（6E 市场发现阶段）
+# PolySports（6F 单场订单阶段）
 
-本目录是独立的 PolySports 项目，提供管理员认证、足球和 NBA 赛程同步、赛事中心、球队译名维护、关注、独立后台调度、Polymarket 候选市场映射和只读钱包列表。交易尚未实现，界面不显示虚构业务数据。不需要启动仓库原有 Flask Dashboard。
+本目录是独立的 PolySports 项目，提供管理员认证、足球和 NBA 赛程同步、赛事中心、球队译名维护、关注、独立后台调度、Polymarket 市场映射、只读钱包状态和单场限价订单。组合交易尚未实现，界面不显示虚构业务数据。不需要启动仓库原有 Flask Dashboard。
 
 ## 环境与配置
 
@@ -43,23 +43,40 @@ uv run --locked python -m backend.worker
 
 worker 通过 PostgreSQL 生成和领取持久任务，允许多个实例并发运行；进程退出或机器重启后重新启动 worker 即可恢复到期任务。任务只会在数据库时间达到截止时间后被领取，过期租约的旧结果不会写入。系统管理页面提供计划修改、worker 心跳、任务和尝试记录；实际 VPS 的 systemd 服务配置在部署阶段提供。
 
-在赛事中心选择“关注赛事”后，足球首次赛果查询为开赛后 120 分钟，未完赛每 10 分钟查询；NBA 首次为开赛后 159 分钟，未完赛每 3 分钟查询。来源确认完赛后停止常规查询。延期、来源失败和限流将保留关注与任务记录；若来源提供 `Retry-After`，任务不会早于其指定时间重试。用户下单后自动关注将在交易阶段接入。
+在赛事中心选择“关注赛事”后，足球首次赛果查询为开赛后 120 分钟，未完赛每 10 分钟查询；NBA 首次为开赛后 159 分钟，未完赛每 3 分钟查询。来源确认完赛后停止常规查询。延期、来源失败和限流将保留关注与任务记录；若来源提供 `Retry-After`，任务不会早于其指定时间重试。单场提交意图与关注任务在同一数据库事务中创建。
 
 ## Polymarket 市场与钱包
 
-在赛事中心打开详情，选择“搜索候选市场”，然后使用“检查搜索状态”查看结果。系统查询 Polymarket Gamma 的体育事件，按运动、球队、主客顺序和相近开赛时间形成候选；即使名称相似也不会自动确认。请逐项核对来源球队、开赛时间和市场问题，确认或拒绝映射。来源错误、赛事改期或数据超过 15 分钟会使映射不可用于交易；需重新搜索核对。已确认映射也不能在本阶段下单。
+在赛事中心打开详情，选择“搜索候选市场”，然后使用“检查搜索状态”查看结果。系统查询 Polymarket Gamma 的体育事件，按运动、球队、主客顺序和相近开赛时间形成候选；即使名称相似也不会自动确认。请逐项核对来源球队、开赛时间和市场问题，确认或拒绝映射。来源错误、赛事改期或数据超过 15 分钟会使映射不可用于交易；需重新搜索核对。已确认映射可进入单场订单预览；预览和提交时仍需重新核验来源、钱包和盘口。
 
-市场 ID、condition ID、资产 ID 分别保存；对于来源标识为 v1 的市场使用 `clobTokenIds`，v2 使用 `positionIds`。协议版本、组合能力或资产未确认时保持未知。资产变化会使刷新失败并保留旧记录供核查。接口和测试不会执行签名、下单、授权或部署钱包。
+市场 ID、condition ID、资产 ID 分别保存；对于来源标识为 v1 的市场使用 `clobTokenIds`，v2 使用 `positionIds`。协议版本、组合能力或资产未确认时保持未知。资产变化会使刷新失败并保留旧记录供核查。自动测试只使用明确标记的模拟上游；实际下单仅在管理员确认后执行。
 
-`POLYSPORTS_WALLETS` 是 `.env` 中的 JSON 数组，只接收 `label`、`wallet_address`、`signer_address`、`wallet_type`，禁止包含私钥；未配置时为 `[]`。可使用如下**模拟配置格式**，部署时必须替换为自己核实的钱包地址：
+`POLYSPORTS_WALLETS` 是 `.env` 中的 JSON 数组，只接收 `label`、`wallet_address`、`signer_address`、`wallet_type` 和可选的 `credential_ref`，禁止包含私钥；未配置时为 `[]`。可使用如下**模拟配置格式**，部署时必须替换为自己核实的钱包地址：
 
 ```dotenv
-POLYSPORTS_WALLETS=[{"label":"示例","wallet_address":"0x1111111111111111111111111111111111111111","signer_address":"0x2222222222222222222222222222222222222222","wallet_type":"POLY_PROXY"}]
+POLYSPORTS_WALLETS=[{"label":"示例","wallet_address":"0x1111111111111111111111111111111111111111","signer_address":"0x2222222222222222222222222222222222222222","wallet_type":"POLY_PROXY","credential_ref":"primary"}]
 ```
 
-钱包页面只读展示配置；当前未连接余额和授权查询，余额、授权、地区限制及 Builder 能力均标记未知。真实账户签名、余额与交易前检查将在 6F 阶段实现。
+钱包页面只读展示配置；配置有效凭据时可只读查询 pUSD 余额，未能确认的信息保持未知。每次下单会按选定资产和交易所核验余额与授权，不会自动设置授权或部署钱包。地区受限或无法核验时拒绝下单。
 
 官方参考：[Gamma 事件游标分页](https://docs.polymarket.com/api-reference/events/list-events-keyset-pagination)、[市场字段](https://docs.polymarket.com/api-reference/markets/list-markets)、[Protocol V2 迁移](https://docs.polymarket.com/migrate/polymarket-v2/api-integrations)。
+
+## 单场订单与凭据
+
+真实资金单场交易需要使用独立的受限 `.env` 或环境变量配置 `POLYSPORTS_WALLET_CREDENTIALS` JSON 对象，其键对应钱包的 `credential_ref`。每项包含 `private_key`；CLOB 的 `clob_api_key`、`clob_api_secret`、`clob_api_passphrase` 必须全部提供或全部省略，省略时由官方 SDK 获取。智能钱包还须配置 `POLYSPORTS_POLYGON_RPC_URL`，且钱包必须已部署在 Polygon 主网。**不要把真实私钥、凭证或带密钥的 RPC 地址提交到 Git，也不要在浏览器页面输入私钥。**
+
+格式示意（尖括号为占位符，不是可用凭据）：
+
+```dotenv
+POLYSPORTS_WALLET_CREDENTIALS={"primary":{"private_key":"<仅在本机安全配置>","clob_api_key":"<可选>","clob_api_secret":"<可选>","clob_api_passphrase":"<可选>"}}
+POLYSPORTS_POLYGON_RPC_URL=<仅在本机安全配置>
+```
+
+在赛事详情确认映射后选择某个结果进入订单预览，输入方向、限价和份额。确认页展示钱包、赛事、选项、金额与价格；点击确认会提交**真实资金订单**。系统在提交前重新核验地区、钱包类型、盘口、余额与授权；价格或盘口变化须重新预览。订单被接受并不代表成交，订单状态和逐笔成交以交易所返回的证据为准。
+
+订单提交或撤单发生超时时，不要重复提交；在交易记录中按原幂等键查询并安排只读对账。若交易所订单编号未知，可只读查询相似的未完成订单；相似并不证明其属于本次提交，只有独立核实后才能手动关联编号。未找到候选不代表订单不存在。后台对账需要运行独立 worker。
+
+本阶段自动化测试使用模拟交易所和测试专用私钥，绝不发送真实订单。真实钱包、额度、签名和部署环境仍需在用户自己的目标环境中单独核验。
 
 ## 测试
 
@@ -80,4 +97,4 @@ $env:POLYSPORTS_TEST_DATABASE_URL = 'postgresql+psycopg://测试用户:测试密
 uv run --locked pytest -q
 ```
 
-本阶段测试不证明外部赛事 API 或真实交易可用；独立 VPS 部署和真实交易将在后续阶段实施。
+本阶段测试不证明外部赛事 API 或真实交易可用；独立 VPS 部署和组合交易将在后续阶段实施。

@@ -15,6 +15,7 @@ class WalletConfig(BaseModel):
     wallet_address: str
     signer_address: str
     wallet_type: Literal['EOA','POLY_PROXY','GNOSIS_SAFE','DEPOSIT_WALLET']
+    credential_ref: str | None = Field(default=None,pattern=r'^[A-Za-z0-9_-]{1,64}$')
 
     @field_validator('wallet_address','signer_address')
     @classmethod
@@ -22,6 +23,20 @@ class WalletConfig(BaseModel):
         import re
         if not re.fullmatch(r'0x[0-9a-fA-F]{40}',value): raise ValueError('invalid wallet address')
         return value.lower()
+
+
+class WalletSecrets(BaseModel):
+    model_config = ConfigDict(extra='forbid',hide_input_in_errors=True)
+    private_key: SecretStr
+    clob_api_key: SecretStr | None = None
+    clob_api_secret: SecretStr | None = None
+    clob_api_passphrase: SecretStr | None = None
+
+    @model_validator(mode='after')
+    def complete_clob_credentials(self):
+        values=[x.get_secret_value() if x else '' for x in (self.clob_api_key,self.clob_api_secret,self.clob_api_passphrase)]
+        if any(values) and not all(values): raise ValueError('CLOB credentials must all be set or all omitted')
+        return self
 
 
 class Settings(BaseSettings):
@@ -33,6 +48,8 @@ class Settings(BaseSettings):
     api_football_key: SecretStr | None = None
     balldontlie_key: SecretStr | None = None
     wallets: list[WalletConfig] = Field(default_factory=list)
+    wallet_credentials: dict[str, WalletSecrets] = Field(default_factory=dict,repr=False)
+    polygon_rpc_url: SecretStr | None = None
 
     @model_validator(mode="after")
     def unique_wallets(self):

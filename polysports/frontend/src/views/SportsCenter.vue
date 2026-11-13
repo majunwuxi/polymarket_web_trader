@@ -32,6 +32,13 @@ async function load(append=false) {
   } catch { message.value='赛事加载失败，请检查服务状态。'; if(!append) games.value=[] }
   finally { loading.value=false }
 }
+async function followGame(game:Game) {
+  try {
+    const data=await api('/games/'+game.id+'/watch',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:'{}'})
+    message.value=data.state==='completed'?'赛事已完赛，已加入关注记录。':'已关注，赛果任务将按计划执行。'
+    if(detail.value?.id===game.id) await showDetail(game)
+  } catch { message.value='关注失败，请检查服务状态。' }
+}
 async function showDetail(game:Game) { try { detail.value=await api('/games/'+game.id) } catch {message.value='赛事详情加载失败。'} }
 function edit(team:Team){editor.value=team; chinese.value=team.name_zh || ''; alias.value=''}
 async function saveTeam() {
@@ -43,19 +50,19 @@ async function saveTeam() {
   } catch {message.value='球队资料保存失败，译名可能已保存；请刷新后核对。'}
 }
 async function signOut() {try {await logout(); await router.replace('/login')} catch(e) {if(e instanceof ApiError && e.status===401) {clearSession(); await router.replace('/login')} else message.value='退出请求未确认，请重试。'}}
-watch(()=>route.params.sport,()=>{detail.value=null;selectedRange.value='upcoming';load()},{immediate:true})
+watch(()=>route.params.sport,()=>{menuOpen.value=false;detail.value=null;selectedRange.value='upcoming';load()},{immediate:true})
 </script>
 <template>
 <div class="app-layout">
   <header class="mobile-header"><div class="brand"><span class="brand-mark">P</span> PolySports</div><button class="menu-button" :aria-expanded="menuOpen" aria-controls="primary-nav" @click="menuOpen=!menuOpen">菜单</button></header>
-  <aside id="primary-nav" class="sidebar" :class="{open:menuOpen}"><div class="brand sidebar-brand"><span class="brand-mark">P</span> PolySports</div><p class="nav-label">工作台</p><nav aria-label="主导航"><RouterLink to="/">总览</RouterLink><RouterLink to="/sports/football">足球赛事</RouterLink><RouterLink to="/sports/nba">NBA 赛事</RouterLink><span aria-disabled="true">组合交易 <small>即将开放</small></span><span aria-disabled="true">交易记录 <small>即将开放</small></span><span aria-disabled="true">系统管理 <small>即将开放</small></span></nav></aside>
+  <aside id="primary-nav" class="sidebar" :class="{open:menuOpen}"><div class="brand sidebar-brand"><span class="brand-mark">P</span> PolySports</div><p class="nav-label">工作台</p><nav aria-label="主导航"><RouterLink to="/">总览</RouterLink><RouterLink to="/sports/football">足球赛事</RouterLink><RouterLink to="/sports/nba">NBA 赛事</RouterLink><span aria-disabled="true">组合交易 <small>即将开放</small></span><span aria-disabled="true">交易记录 <small>即将开放</small></span><RouterLink to="/system">系统管理</RouterLink></nav></aside>
   <main class="workspace"><div class="workspace-top"><span class="breadcrumb">工作台 / {{title()}}</span><div class="account"><span>{{session.username}}</span><button class="text-button" @click="signOut">退出</button></div></div>
     <div class="page-heading"><div><p class="eyebrow">MATCH CENTER · UTC+8</p><h1>{{title()}}</h1><p class="muted">时间显示为北京时间；赛事由配置的数据源提供。</p></div></div>
     <div class="game-tools"><label for="range">赛事范围</label><select id="range" v-model="selectedRange" @change="load()"><option value="upcoming">未来 36 小时</option><option value="history">历史赛事</option></select><button class="text-button" @click="load()">刷新</button></div>
     <p class="muted" v-if="lastSync">最近同步：{{dateFormat(lastSync.started_at)}} UTC+8 · {{lastSync.status === 'succeeded' ? '成功' : lastSync.status === 'failed' ? '失败' : '进行中'}}<span v-if="lastSync.error_code">（{{lastSync.error_code}}）</span></p><p class="muted" v-else>尚无同步记录。</p><p role="status" class="form-message">{{message}}</p><p v-if="loading && !games.length">正在加载…</p><p v-else-if="!games.length && !message" class="muted">暂无已保存赛事。若尚未同步，请先配置数据源并运行同步命令。</p>
-    <div class="games-list"><article v-for="game in games" :key="game.id" class="game-card"><div class="game-meta">{{game.league?.name || (sport()==='nba'?'NBA':'联赛未知')}} · {{dateFormat(game.starts_at)}} UTC+8 · {{statusName(game.status)}}</div><div class="matchup"><div v-for="team in [game.home_team,game.away_team]" :key="team.id" class="team"><img v-if="team.logo_url" :src="team.logo_url" alt="" @error="team.logo_url=null"><span v-else class="logo-placeholder">队徽待补充</span><strong>{{name(team)}}</strong><small v-if="!team.name_zh">中文名待补充</small><button class="text-button" @click="edit(team)">维护球队</button></div></div><p v-if="game.home_score!==null && game.away_score!==null">{{game.home_score}} : {{game.away_score}}</p><button class="text-button" @click="showDetail(game)">查看详情</button></article></div>
+    <div class="games-list"><article v-for="game in games" :key="game.id" class="game-card"><div class="game-meta">{{game.league?.name || (sport()==='nba'?'NBA':'联赛未知')}} · {{dateFormat(game.starts_at)}} UTC+8 · {{statusName(game.status)}}</div><div class="matchup"><div v-for="team in [game.home_team,game.away_team]" :key="team.id" class="team"><img v-if="team.logo_url" :src="team.logo_url" alt="" @error="team.logo_url=null"><span v-else class="logo-placeholder">队徽待补充</span><strong>{{name(team)}}</strong><small v-if="!team.name_zh">中文名待补充</small><button class="text-button" @click="edit(team)">维护球队</button></div></div><p v-if="game.home_score!==null && game.away_score!==null">{{game.home_score}} : {{game.away_score}}</p><button class="text-button" @click="showDetail(game)">查看详情</button><button class="text-button" @click="followGame(game)">关注赛事</button></article></div>
     <button v-if="next" class="primary more" :disabled="loading" @click="load(true)">加载更多</button>
-    <section v-if="detail" class="welcome-card detail"><button class="text-button" @click="detail=null">关闭详情</button><h2>赛事详情</h2><p>来源：{{detail.provider}} · 来源 ID：{{detail.external_id}}</p><p>最近同步：{{detail.last_synced_at ? dateFormat(detail.last_synced_at)+' UTC+8' : '未知'}}</p><h3>变更记录</h3><p v-if="!detail.recent_revisions.length">暂无变更记录</p><p v-for="(revision,index) in detail.recent_revisions" :key="index">{{dateFormat(revision.observed_at)}} · {{revision.old_status}} → {{revision.new_status}}<span v-if="revision.old_starts_at !== revision.new_starts_at"> · 时间已调整</span></p></section>
+    <section v-if="detail" class="welcome-card detail"><button class="text-button" @click="detail=null">关闭详情</button><h2>赛事详情</h2><p>来源：{{detail.provider}} · 来源 ID：{{detail.external_id}}</p><p>最近同步：{{detail.last_synced_at ? dateFormat(detail.last_synced_at)+' UTC+8' : '未知'}}</p><p v-if="detail.watch">关注状态：{{detail.watch.state}}<span v-if="detail.watch.next_due_at"> · 下次查询：{{dateFormat(detail.watch.next_due_at)}} UTC+8</span></p><h3>变更记录</h3><p v-if="!detail.recent_revisions.length">暂无变更记录</p><p v-for="(revision,index) in detail.recent_revisions" :key="index">{{dateFormat(revision.observed_at)}} · {{revision.old_status}} → {{revision.new_status}}<span v-if="revision.old_starts_at !== revision.new_starts_at"> · 时间已调整</span></p></section>
     <section v-if="editor" class="welcome-card detail"><h2>维护球队：{{editor.source_name}}</h2><label for="chinese">已确认中文名（留空表示待补充）</label><input id="chinese" v-model="chinese" maxlength="200"><label for="alias">中文别名（可选）</label><input id="alias" v-model="alias" maxlength="200"><div><button class="text-button" @click="editor=null">取消</button><button class="text-button" @click="saveTeam">保存</button></div></section>
   </main>
 </div>

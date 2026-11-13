@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 
-from sqlalchemy import Integer, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func, text
+from sqlalchemy import Integer, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text, Time, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -106,17 +106,18 @@ class League(Base):
 
 class SyncRun(Base):
     __tablename__ = 'sync_runs'
-    __table_args__ = (Index('ix_sync_runs_provider_started','provider',text('started_at DESC')),)
+    __table_args__ = (Index('ix_sync_runs_provider_started','provider',text('started_at DESC')), Index('uq_sync_schedule_occurrence','schedule_id','scheduled_for',unique=True,postgresql_where=text('schedule_id IS NOT NULL')))
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     sport: Mapped[str] = mapped_column(String(16), nullable=False)
     trigger_type: Mapped[str] = mapped_column(String(16), nullable=False)
     scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey('sync_schedules.id', ondelete='RESTRICT'))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), nullable=False)
-    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     pages_fetched: Mapped[int] = mapped_column(Integer, nullable=False, server_default='0')
     items_received: Mapped[int] = mapped_column(Integer, nullable=False, server_default='0')
     items_upserted: Mapped[int] = mapped_column(Integer, nullable=False, server_default='0')
@@ -161,3 +162,79 @@ class GameRevision(Base):
     away_score: Mapped[int | None] = mapped_column(Integer)
     source_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey('sync_runs.id', ondelete='RESTRICT'))
     change_reason: Mapped[str] = mapped_column(String(80), nullable=False)
+
+class SyncSchedule(Base):
+    __tablename__ = 'sync_schedules'
+    __table_args__ = (UniqueConstraint('provider','sport','utc_time',name='uq_sync_schedule'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(32),nullable=False)
+    sport: Mapped[str] = mapped_column(String(16),nullable=False)
+    utc_time: Mapped[time] = mapped_column(Time,nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean,nullable=False,server_default=text('true'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class ScheduleRevision(Base):
+    __tablename__ = 'schedule_revisions'
+    __table_args__ = (CheckConstraint('id = 1',name='ck_schedule_revision_singleton'),)
+    id: Mapped[int] = mapped_column(Integer,primary_key=True,default=1)
+    revision: Mapped[int] = mapped_column(Integer,nullable=False,server_default='1')
+
+
+class WatchedGame(Base):
+    __tablename__ = 'watched_games'
+    __table_args__ = (UniqueConstraint('game_id',name='uq_watched_game'),CheckConstraint("state IN ('active','completed','paused')",name='ck_watched_state'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    game_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('games.id',ondelete='RESTRICT'),nullable=False)
+    state: Mapped[str] = mapped_column(String(20),nullable=False)
+    watched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    first_due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class Job(Base):
+    __tablename__ = 'jobs'
+    __table_args__ = (UniqueConstraint('dedupe_key',name='uq_jobs_dedupe'),CheckConstraint("kind IN ('sync','result_poll')",name='ck_jobs_kind'),CheckConstraint("status IN ('pending','leased','done','cancelled','failed')",name='ck_jobs_status'),CheckConstraint("(status = 'leased' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL AND lease_token IS NOT NULL) OR (status <> 'leased' AND lease_owner IS NULL AND lease_until IS NULL AND lease_token IS NULL)",name='ck_jobs_lease'),CheckConstraint("(kind = 'result_poll' AND watched_game_id IS NOT NULL AND sync_run_id IS NULL) OR (kind = 'sync' AND watched_game_id IS NULL AND sync_run_id IS NOT NULL)",name='ck_jobs_target'),Index('ix_jobs_pending_due','due_at','id',postgresql_where=text("status = 'pending'")),Index('ix_jobs_leased_until','lease_until','id',postgresql_where=text("status = 'leased'")),Index('ix_jobs_watched','watched_game_id'),Index('uq_jobs_sync_run','sync_run_id',unique=True,postgresql_where=text('sync_run_id IS NOT NULL')))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(String(24),nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(255),nullable=False)
+    watched_game_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('watched_games.id',ondelete='RESTRICT'))
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('sync_schedules.id',ondelete='RESTRICT'))
+    sync_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('sync_runs.id',ondelete='RESTRICT'))
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    status: Mapped[str] = mapped_column(String(16),nullable=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(128))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    attempt_count: Mapped[int] = mapped_column(Integer,nullable=False,server_default='0')
+    last_error_code: Mapped[str | None] = mapped_column(String(80))
+    last_error_summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class JobRun(Base):
+    __tablename__ = 'job_runs'
+    __table_args__ = (UniqueConstraint('job_id','attempt_no',name='uq_job_attempt'),Index('ix_job_runs_job_started','job_id',text('started_at DESC')))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('jobs.id',ondelete='RESTRICT'),nullable=False)
+    attempt_no: Mapped[int] = mapped_column(Integer,nullable=False)
+    lease_token: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result: Mapped[str] = mapped_column(String(20),nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_summary: Mapped[str | None] = mapped_column(Text)
+
+
+class WorkerHeartbeat(Base):
+    __tablename__ = 'worker_heartbeats'
+    worker_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    worker_version: Mapped[str | None] = mapped_column(String(80))
+    state: Mapped[str] = mapped_column(String(16),nullable=False)

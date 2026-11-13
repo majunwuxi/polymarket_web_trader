@@ -87,3 +87,11 @@ def test_nba_preseason_filter_is_explicit():
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         fetch_schedule('balldontlie','mock-key',START,client,season_type='preseason')
     assert seen==['preseason']
+
+
+def test_retry_after_is_exposed_without_secrets():
+    with httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(429,headers={'Retry-After':'3600'}))) as client:
+        with pytest.raises(SourceError) as exc:
+            fetch_schedule('balldontlie','mock-secret',START,client)
+    assert exc.value.code=='http_429' and exc.value.retry_after_seconds==3600
+    assert 'mock-secret' not in str(exc.value)

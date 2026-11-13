@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 
 from .config import get_settings
 from .database import make_engine
-from . import auth, sports_api
+from . import auth, sports_api, scheduler_api
 
 logger = logging.getLogger("polysports")
 
@@ -65,6 +65,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(sports_api.router)
+    app.include_router(scheduler_api.router)
 
     @app.get("/api/v1/health/live")
     def health(request: Request):

@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import auth
-from .models import AuditEvent, Game, GameRevision, League, SyncRun, Team, TeamAlias
+from .models import AuditEvent, Game, GameRevision, League, SyncRun, Team, TeamAlias, WatchedGame, Job
 
 router = APIRouter(prefix='/api/v1')
 
@@ -73,6 +73,10 @@ def game_detail(request: Request,game_id: uuid.UUID):
         game = db.get(Game,game_id)
         if not game: return auth.error(request,404,'NOT_FOUND','赛事不存在')
         result = game_data(db,game)
+        watch=db.scalar(select(WatchedGame).where(WatchedGame.game_id==game.id))
+        job=db.scalar(select(Job).where(Job.watched_game_id==watch.id)) if watch else None
+        from .scheduler_api import watch_data
+        result['watch']=watch_data(watch,job) if watch else None
         result['recent_revisions'] = [{'observed_at':r.observed_at.isoformat(),'old_starts_at':r.old_starts_at.isoformat() if r.old_starts_at else None,'new_starts_at':r.new_starts_at.isoformat() if r.new_starts_at else None,'old_status':r.old_status,'new_status':r.new_status,'home_score':r.home_score,'away_score':r.away_score} for r in db.scalars(select(GameRevision).where(GameRevision.game_id==game_id).order_by(GameRevision.observed_at.desc()).limit(20))]
         return envelope(request,result)
 
@@ -143,5 +147,5 @@ def sync_runs(request: Request,sport: Literal['football','nba'] | None = None,li
     query=select(SyncRun)
     if sport: query=query.where(SyncRun.sport==sport)
     with Session(request.app.state.engine) as db:
-        rows=db.scalars(query.order_by(SyncRun.started_at.desc(),SyncRun.id.desc()).limit(limit))
-        return envelope(request,{'items':[{'id':str(x.id),'provider':x.provider,'sport':x.sport,'status':x.status,'started_at':x.started_at.isoformat(),'finished_at':x.finished_at.isoformat() if x.finished_at else None,'pages_fetched':x.pages_fetched,'items_received':x.items_received,'items_upserted':x.items_upserted,'error_code':x.error_code,'error_summary':x.error_summary} for x in rows]})
+        rows=db.scalars(query.order_by(SyncRun.started_at.desc().nullslast(),SyncRun.scheduled_for.desc(),SyncRun.id.desc()).limit(limit))
+        return envelope(request,{'items':[{'id':str(x.id),'provider':x.provider,'sport':x.sport,'status':x.status,'started_at':x.started_at.isoformat() if x.started_at else x.scheduled_for.isoformat(),'finished_at':x.finished_at.isoformat() if x.finished_at else None,'pages_fetched':x.pages_fetched,'items_received':x.items_received,'items_upserted':x.items_upserted,'error_code':x.error_code,'error_summary':x.error_summary} for x in rows]})

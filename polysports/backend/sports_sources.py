@@ -10,9 +10,24 @@ import httpx
 class SourceError(Exception):
     """来源失败：不包含响应内容或认证信息。"""
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, retry_after_seconds: int = 0):
         self.code = code
+        self.retry_after_seconds = retry_after_seconds
         super().__init__(code)
+
+
+def retry_delay(response: httpx.Response) -> int:
+    """仅接受有限的非负秒数；不记录上游响应或请求凭据。"""
+    value=response.headers.get('retry-after','')
+    if value.isdecimal(): return int(value)
+    if value:
+        try:
+            from email.utils import parsedate_to_datetime
+            target=parsedate_to_datetime(value)
+            if target.tzinfo is not None:
+                return max(0,int((target-datetime.now(timezone.utc)).total_seconds())+1)
+        except (TypeError,ValueError,OverflowError): pass
+    return 0
 
 
 @dataclass(frozen=True)
@@ -137,7 +152,7 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
         try:
             response = client.get(url, params=params, headers=headers, timeout=20.0, follow_redirects=False)
             if response.status_code != 200:
-                raise SourceError('http_' + str(response.status_code))
+                raise SourceError('http_' + str(response.status_code), retry_delay(response))
             body = response.json()
         except httpx.TimeoutException as exc:
             raise SourceError('timeout') from exc
@@ -178,3 +193,40 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
             raise SourceError('pagination_loop')
         seen.add(next_value)
         params['page' if provider == 'api_football' else 'cursor'] = next_value
+
+
+def fetch_game(provider: str, key: str, external_id: str, client: httpx.Client) -> SourceGame:
+    if not key or key.startswith('CHANGE_ME'):
+        raise SourceError('missing_api_key')
+    if not external_id.isdecimal():
+        raise SourceError('invalid_identity')
+    if provider == 'api_football':
+        url='https://v3.football.api-sports.io/fixtures'
+        params={'id':external_id,'timezone':'UTC'}
+        headers={'x-apisports-key':key}
+    elif provider == 'balldontlie':
+        url='https://api.balldontlie.io/v1/games/'+external_id
+        params={}
+        headers={'Authorization':key}
+    else:
+        raise SourceError('invalid_provider')
+    try:
+        response=client.get(url,params=params,headers=headers,timeout=20.0,follow_redirects=False)
+        if response.status_code != 200: raise SourceError('http_'+str(response.status_code), retry_delay(response))
+        body=response.json()
+    except httpx.TimeoutException as exc:
+        raise SourceError('timeout') from exc
+    except (httpx.RequestError,ValueError) as exc:
+        raise SourceError('network_or_invalid_json') from exc
+    if not isinstance(body,dict): raise SourceError('invalid_response')
+    if provider=='api_football':
+        if body.get('errors') not in ([],{},None): raise SourceError('provider_error')
+        rows=body.get('response')
+        if not isinstance(rows,list) or len(rows)!=1: raise SourceError('fixture_unavailable')
+        result=football_game(rows[0])
+    else:
+        item=body.get('data')
+        if not isinstance(item,dict): raise SourceError('fixture_unavailable')
+        result=nba_game(item)
+    if result.external_id != external_id: raise SourceError('fixture_mismatch')
+    return result

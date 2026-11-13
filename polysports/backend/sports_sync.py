@@ -29,7 +29,7 @@ def upsert_team(db: Session, provider: str, sport: str, source: SourceTeam) -> T
     return obj
 
 
-def upsert_game(db: Session, source: SourceGame, run_id: uuid.UUID) -> None:
+def upsert_game(db: Session, source: SourceGame, run_id: uuid.UUID | None, *, reschedule: bool = True) -> None:
     home = upsert_team(db, source.provider, source.sport, source.home)
     away = upsert_team(db, source.provider, source.sport, source.away)
     league = None
@@ -45,6 +45,7 @@ def upsert_game(db: Session, source: SourceGame, run_id: uuid.UUID) -> None:
             league.updated_at = datetime.now(timezone.utc)
     game = db.scalar(select(Game).where(Game.provider == source.provider, Game.external_id == source.external_id).with_for_update())
     now = datetime.now(timezone.utc)
+    old_start = game.starts_at if game is not None else None
     if game is None:
         game = Game(id=uuid.uuid4(),provider=source.provider,external_id=source.external_id,sport=source.sport,home_team_id=home.id,away_team_id=away.id,starts_at=source.starts_at,status=source.status)
         db.add(game)
@@ -59,6 +60,9 @@ def upsert_game(db: Session, source: SourceGame, run_id: uuid.UUID) -> None:
     game.home_score, game.away_score = source.home_score, source.away_score
     game.last_synced_at = game.updated_at = now
     db.flush()
+    if reschedule and old_start is not None:
+        from .scheduler import reschedule_watch
+        reschedule_watch(db,game,old_start)
 
 
 def run_sync(engine, provider: str, key: str, *, client: httpx.Client | None = None, now: datetime | None = None) -> uuid.UUID:

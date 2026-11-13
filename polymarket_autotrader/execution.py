@@ -107,6 +107,8 @@ class CLOBOrderExecutor:
     ) -> None:
         self.dry_run = dry_run or env.dry_run
         self.clob_host = clob_host
+        self._env = env
+        self._protocol_v2_client = None
         self.price_precision = price_precision
         self.size_precision = size_precision
         
@@ -257,6 +259,45 @@ class CLOBOrderExecutor:
                 break
         return True, filled, None
 
+    def _get_book_version(self, asset_id: str) -> str:
+        response = requests.get(f"{self.clob_host.rstrip('/')}/book", params={"token_id": asset_id}, timeout=10)
+        response.raise_for_status()
+        book = response.json()
+        if not isinstance(book, dict):
+            raise ValueError("订单簿响应无效")
+        if str(book.get("asset_id") or "") != asset_id:
+            raise ValueError("订单簿资产标识不匹配")
+        version = book.get("version")
+        if version is None or version == "v1":
+            return "v1"
+        if version == "v2":
+            return "v2"
+        raise ValueError(f"不支持的订单簿版本: {version}")
+
+    def _place_protocol_v2_order(self, asset_id: str, side: str, price: float, size: float) -> dict[str, Any]:
+        try:
+            if self.clob_host.rstrip("/") != "https://clob.polymarket.com":
+                raise ValueError("统一 SDK 仅支持已配置的生产 CLOB 地址")
+            if not self._env.funder_address:
+                raise ValueError("V2 交易需要明确配置资金钱包地址")
+            if self._protocol_v2_client is None:
+                from polymarket import SecureClient
+                from polymarket.models.clob.api_key import ApiKeyCreds
+                values = (self._env.clob_api_key, self._env.clob_api_secret, self._env.clob_api_passphrase)
+                if any(values) and not all(values):
+                    raise ValueError("CLOB API 凭证不完整")
+                creds = ApiKeyCreds(apiKey=values[0], secret=values[1], passphrase=values[2]) if all(values) else None
+                self._protocol_v2_client = SecureClient.create(private_key=self._env.private_key, wallet=self._env.funder_address, credentials=creds)
+            client = self._protocol_v2_client
+            signed = client.create_limit_order(asset_id=asset_id, side=side.upper(), price=str(price), size=str(size))
+            response = client.post_order(signed)
+            if not response.ok:
+                return {"orderId": "", "status": "failed", "error": response.message}
+            return {"orderId": str(response.order_id), "status": "pending", "filled_size": None}
+        except Exception as exc:
+            logger.warning("Protocol V2 下单失败: %s", exc)
+            return {"orderId": "", "status": "failed", "error": str(exc)}
+
     def place_order(
         self, side: str, price: float, size: float, market_id: str, token_id: str
     ) -> dict[str, Any]:
@@ -277,24 +318,6 @@ class CLOBOrderExecutor:
             error_msg = f"token_id 格式无效: '{token_id}' (原始: '{original_token_id}')"
             logger.error(error_msg)
             return {"orderId": "", "status": "failed", "error": error_msg}
-        
-        # 验证 token_id 是否有效（通过 get_tick_size）
-        try:
-            if hasattr(self.client, 'get_tick_size'):
-                tick_size = self.client.get_tick_size(token_id)
-                logger.debug(f"token_id 验证成功，tick_size={tick_size}")
-        except Exception as tick_error:
-            error_str = str(tick_error)
-            if "404" in error_str or "market not found" in error_str.lower():
-                logger.warning(f"CLOB API 返回 404，可能是市场不存在或已关闭: {error_str}")
-                return {
-                    "orderId": "",
-                    "status": "failed",
-                    "error": f"市场不存在或已关闭: {error_str}",
-                    "market_not_found": True,
-                }
-            else:
-                logger.warning(f"token_id 验证时出现其他错误: {error_str}，继续尝试下单")
         
         # 简单的价格和数量验证（只做必要的范围检查，不做过度精度处理）
         import math
@@ -340,8 +363,32 @@ class CLOBOrderExecutor:
             )
             return {"orderId": order_id, "status": "simulated"}
 
-        if not self.dry_run:
-            self._ensure_api_creds()
+        try:
+            version = self._get_book_version(token_id)
+        except (requests.RequestException, ValueError) as exc:
+            return {"orderId": "", "status": "failed", "error": f"无法确认订单簿协议版本: {exc}"}
+        if version == "v2":
+            return self._place_protocol_v2_order(token_id, side, price, size)
+
+        # 验证 token_id 是否有效（通过 get_tick_size）
+        try:
+            if hasattr(self.client, 'get_tick_size'):
+                tick_size = self.client.get_tick_size(token_id)
+                logger.debug(f"token_id 验证成功，tick_size={tick_size}")
+        except Exception as tick_error:
+            error_str = str(tick_error)
+            if "404" in error_str or "market not found" in error_str.lower():
+                logger.warning(f"CLOB API 返回 404，可能是市场不存在或已关闭: {error_str}")
+                return {
+                    "orderId": "",
+                    "status": "failed",
+                    "error": f"市场不存在或已关闭: {error_str}",
+                    "market_not_found": True,
+                }
+            else:
+                logger.warning(f"token_id 验证时出现其他错误: {error_str}，继续尝试下单")
+        
+        self._ensure_api_creds()
 
         if IS_CLOB_V2:
             side_const = BUY if side.upper() == "BUY" else SELL

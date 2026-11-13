@@ -1144,61 +1144,44 @@ class PolymarketDataClient:
             return mapping[outcome]
         return None
 
+    @staticmethod
+    def _market_asset_ids(market: dict[str, Any]) -> dict[str, str]:
+        """Return outcome IDs in Gamma order for the market's protocol."""
+        version = str(market.get("version") or "v1").lower()
+        if version not in ("v1", "v2"):
+            return {}
+        raw_ids = (market.get("positionIds") or market.get("position_ids")) if version == "v2" else (market.get("clobTokenIds") or market.get("clob_token_ids"))
+        raw_outcomes = market.get("outcomes") or market.get("outcomeNames")
+
+        def parse(raw: Any) -> list[Any]:
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except (ValueError, TypeError):
+                    return []
+            return raw if isinstance(raw, list) else []
+
+        ids, outcomes = parse(raw_ids), parse(raw_outcomes)
+        if not ids or len(ids) != len(outcomes):
+            return {}
+        if any(not isinstance(x, str) or not x.isdigit() for x in ids):
+            return {}
+        if any(not isinstance(x, str) or not x.strip() for x in outcomes):
+            return {}
+        if len(set(outcomes)) != len(outcomes) or len(set(ids)) != len(ids):
+            return {}
+        return dict(zip(outcomes, ids))
+
     def get_clob_token_ids(self, market_id: str) -> dict[str, str]:
-        url = f"{self.gamma_base_url}/markets/{market_id}/clobTokenIds"
+        """Compatibility name: values are CTF token IDs or V2 position IDs."""
         try:
-            resp = retry_request(self.session, "GET", url, self.retry_config)
-            # Handle 404 gracefully (market/clobTokenIds not found)
-            if resp.status_code == 404:
-                logger.debug("clobTokenIds not found for market: %s", market_id)
-                data = {}
-            else:
-                data = resp.json()
-            if isinstance(data, dict) and data:
-                return {str(k): str(v) for k, v in data.items() if v}
-        except requests.HTTPError as exc:
-            logger.debug("Failed to get clobTokenIds for market %s: %s", market_id, exc)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Unexpected error getting clobTokenIds for market %s: %s", market_id, exc)
-        try:
-            market_resp = retry_request(
-                self.session,
-                "GET",
-                f"{self.gamma_base_url}/markets/{market_id}",
-                self.retry_config,
-            )
-            if market_resp.status_code != 200:
+            response = retry_request(self.session, "GET", f"{self.gamma_base_url}/markets/{market_id}", self.retry_config)
+            if response.status_code != 200:
                 return {}
-            market = market_resp.json()
-            if not isinstance(market, dict):
-                return {}
-
-            raw_tokens = market.get("clobTokenIds") or market.get("clob_token_ids") or []
-            raw_outcomes = market.get("outcomes") or market.get("outcomeNames") or []
-
-            def _parse_list(raw: Any) -> list[Any]:
-                if isinstance(raw, list):
-                    return raw
-                if isinstance(raw, str):
-                    value = raw.strip()
-                    if not value:
-                        return []
-                    try:
-                        parsed = json.loads(value)
-                        return parsed if isinstance(parsed, list) else []
-                    except Exception:  # noqa: BLE001
-                        return []
-                return []
-
-            token_ids = [str(x) for x in _parse_list(raw_tokens) if x]
-            outcomes = [str(x) for x in _parse_list(raw_outcomes) if x]
-            if not token_ids:
-                return {}
-            if len(outcomes) != len(token_ids):
-                outcomes = [f"Outcome {idx + 1}" for idx in range(len(token_ids))]
-            return {outcome: token_id for outcome, token_id in zip(outcomes, token_ids)}
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Fallback failed getting clobTokenIds for market %s: %s", market_id, exc)
+            market = response.json()
+            return self._market_asset_ids(market) if isinstance(market, dict) else {}
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("无法读取市场资产 %s: %s", market_id, exc)
             return {}
 
     def get_market_id_for_token(self, token_id: str) -> Optional[str]:
@@ -1492,14 +1475,16 @@ class PolymarketDataClient:
                     if not isinstance(m, dict):
                         continue
                     token_ids = _parse_token_ids(
-                        m.get("clobTokenIds") or m.get("clob_token_ids") or m.get("tokenIds")
+                        (m.get("positionIds") or m.get("position_ids")) if str(m.get("version") or "v1").lower() == "v2" else (m.get("clobTokenIds") or m.get("clob_token_ids") or m.get("tokenIds"))
                     )
                     if token_id_str in token_ids:
                         mid = m.get("id") or m.get("marketId") or m.get("market_id")
                         if mid:
                             return str(mid)
 
-            # token_id 未提供或未匹配：兜底返回第一个 market_id
+            # 指定资产时不能把未匹配的资产归到第一个市场。
+            if token_id:
+                return None
             m0 = markets[0]
             if isinstance(m0, dict):
                 mid = m0.get("id") or m0.get("marketId") or m0.get("market_id")

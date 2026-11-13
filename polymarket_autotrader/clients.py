@@ -949,185 +949,104 @@ class PolymarketDataClient:
             logger.warning("websocket-client 未安装，WebSocket 价格服务不可用")
 
     def fetch_positions_for_user(self, address: str, heartbeat_callback: Optional[Any] = None) -> list[dict[str, Any]]:
-        """
-        获取用户的持仓信息
-        
-        尝试多种 API 端点和参数格式：
-        1. /positions?user={address}
-        2. /positions?address={address}
-        3. /users/{address}/positions (如果支持)
-        
-        优化：快速失败机制，如果第一个端点成功就立即返回，避免尝试所有端点浪费时间
-        """
-        address_lower = address.lower()
-        start_time = time.time()
-        
-        # 尝试方法1: /positions?user={address} (最常用的端点)
-        url = f"{self.data_api_base_url}/positions"
-        params_list = [
-            {"user": address_lower},  # 最常用的参数格式
-            {"address": address_lower},
-        ]
-        
-        for params in params_list:
+        """Read a complete Data API v2 position snapshot before returning it."""
+        url = f"{self.data_api_base_url}/v2/positions"
+        positions: list[dict[str, Any]] = []
+        cursor = None
+        seen: set[str] = set()
+        while True:
+            params = {"user": address.lower(), "limit": 500, "filter_amount": 0}
+            if cursor:
+                params["cursor"] = cursor
             try:
                 resp = retry_request(self.session, "GET", url, self.retry_config, heartbeat_callback=heartbeat_callback, params=params)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    # Handle both dict response (with "positions" key) and direct list response
-                    if isinstance(data, list):
-                        elapsed = time.time() - start_time
-                        logger.debug("成功从 API 获取持仓信息 (%d 条记录，耗时 %.2f 秒)", len(data), elapsed)
-                        return data
-                    elif isinstance(data, dict):
-                        positions = data.get("positions") or data.get("data") or []
-                        if positions:
-                            elapsed = time.time() - start_time
-                            logger.debug("成功从 API 获取持仓信息 (%d 条记录，耗时 %.2f 秒)", len(positions), elapsed)
-                            return positions if isinstance(positions, list) else []
-                elif resp.status_code not in (400, 404):
-                    # 其他错误码，记录警告但继续尝试
-                    logger.debug("Positions API 返回状态码 %d (参数: %s)，继续尝试其他参数", resp.status_code, params)
-            except requests.HTTPError as exc:
-                if exc.response and exc.response.status_code == 200:
-                    # 如果是 200 但在异常中，继续处理
-                    continue
-                elif exc.response and exc.response.status_code not in (400, 404):
-                    logger.debug("Positions API 请求失败 (参数: %s): %s，继续尝试", params, exc)
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("尝试 positions API 参数 %s 时出错: %s，继续尝试", params, exc)
-        
-        # 如果前面的方法都失败，尝试备用方法（但限制尝试次数，避免浪费时间）
-        # 尝试方法2: /users/{address}/positions
+                resp.raise_for_status()
+                payload = resp.json()
+                if not isinstance(payload, dict) or not isinstance(payload.get("data"), list) or not isinstance(payload.get("pagination"), dict):
+                    raise ValueError("持仓响应格式无效")
+                page = payload["data"]
+                for row in page:
+                    if not isinstance(row, dict) or not row.get("token_id") or row.get("current_size") is None:
+                        raise ValueError("持仓记录缺少资产或数量")
+                    # Preserve v2 fields and map values used by the existing dashboard.
+                    mapped = dict(row)
+                    mapped.update({"asset": str(row["token_id"]), "size": row["current_size"],
+                                   "avgPrice": row.get("avg_price"), "curPrice": row.get("current_price"),
+                                   "currentValue": row.get("current_value"), "initialValue": row.get("entry_cost_usdc"),
+                                   "cashPnl": row.get("unrealized_pnl"), "percentPnl": row.get("percent_pnl")})
+                    positions.append(mapped)
+                pagination = payload["pagination"]
+                next_cursor = pagination.get("next_cursor")
+                has_more = pagination.get("has_more")
+                if not isinstance(has_more, bool) or has_more != bool(next_cursor):
+                    raise ValueError("持仓分页信息无效")
+                if not next_cursor:
+                    return positions
+                if not isinstance(next_cursor, str) or next_cursor in seen or len(seen) >= 10000:
+                    raise ValueError("持仓分页游标无效或重复")
+                seen.add(next_cursor)
+                cursor = next_cursor
+            except (requests.RequestException, ValueError, TypeError) as exc:
+                raise RuntimeError("无法完整读取 Data API v2 持仓") from exc
+
+    def _find_market_by_filter(self, field: str, value: str, asset_id: str | None = None) -> dict[str, Any]:
+        """Query Gamma and verify the identifier rather than trusting an arbitrary result."""
+        if field not in ("condition_ids", "clob_token_ids", "position_ids") or not value:
+            return {}
         try:
-            url2 = f"{self.data_api_base_url}/users/{address_lower}/positions"
-            resp = retry_request(self.session, "GET", url2, self.retry_config)
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, list):
-                    elapsed = time.time() - start_time
-                    logger.debug("成功从备用端点获取持仓信息 (%d 条记录，耗时 %.2f 秒)", len(data), elapsed)
-                    return data
-                elif isinstance(data, dict):
-                    positions = data.get("positions") or data.get("data") or []
-                    if positions:
-                        elapsed = time.time() - start_time
-                        logger.debug("成功从备用端点获取持仓信息 (%d 条记录，耗时 %.2f 秒)", len(positions), elapsed)
-                        return positions if isinstance(positions, list) else []
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("尝试 /users/{address}/positions 端点时出错: %s", exc)
-        
-        # 所有方法都失败
-        elapsed = time.time() - start_time
-        logger.warning("无法从 API 获取持仓信息 (地址: %s，耗时 %.2f 秒)，将返回空列表", address[:20], elapsed)
-        return []
+            params = {field: value, "closed": "any", "limit": 100}
+            if field == "position_ids":
+                params["version"] = "v2"
+            response = retry_request(self.session, "GET", f"{self.gamma_base_url}/markets", self.retry_config, params=params)
+            response.raise_for_status()
+            rows = response.json()
+            if not isinstance(rows, list):
+                return {}
+            matches = []
+            for market in rows:
+                if not isinstance(market, dict):
+                    continue
+                if field == "condition_ids" and str(market.get("conditionId") or market.get("condition_id") or "").lower() != value.lower():
+                    continue
+                expected_asset = asset_id or (value if field != "condition_ids" else None)
+                if expected_asset and expected_asset not in self._market_asset_ids(market).values():
+                    continue
+                if market.get("id"):
+                    matches.append(market)
+            return matches[0] if len(matches) == 1 else {}
+        except (requests.RequestException, ValueError, TypeError):
+            return {}
 
     def get_market_for_trade(self, trade: dict[str, Any]) -> dict[str, Any]:
-        """
-        获取交易的市场信息
-        
-        优先级：
-        1. 通过 slug 获取（最可靠）
-        2. 通过 token_id 从 CLOB API 获取
-        3. 通过 market_id（多格式尝试）
-        """
-        token_id = self.get_token_id_for_trade(trade)
+        token_id = next((str(trade[k]) for k in ("asset", "assetId", "asset_id", "tokenId", "token_id", "token") if trade.get(k)), None)
         slug = str(trade.get("slug") or "").strip()
-        
-        # 方法1: 优先通过 slug 获取市场信息（最可靠，避免 422 错误）
-        if slug:
-            logger.debug("尝试通过 slug 获取市场信息: slug=%s", slug)
+        market_key = str(trade.get("market") or trade.get("market_id") or "").strip()
+        if market_key.startswith("0x"):
+            market = self._find_market_by_filter("condition_ids", market_key, token_id)
+            if market:
+                return market
+        elif market_key.isdigit():
             try:
-                # 通过 slug 获取 market_id
-                market_id_from_slug = self.get_market_id_for_slug(slug)
-                if market_id_from_slug:
-                    url = f"{self.gamma_base_url}/markets/{market_id_from_slug}"
-                    resp = retry_request(self.session, "GET", url, self.retry_config)
-                    if resp.status_code == 200:
-                        result = resp.json()
-                        if result and isinstance(result, dict):
-                            logger.info("✅ 通过 slug 成功获取市场信息: slug=%s, market_id=%s", slug, market_id_from_slug[:20])
-                            return result
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("通过 slug 获取市场信息失败: slug=%s, error=%s", slug, exc)
-        
-        # 方法2: 通过 token_id 从 CLOB API 获取 market_id
-        if token_id:
-            logger.debug("尝试通过 token_id 从 CLOB API 获取市场信息: token_id=%s", token_id[:20])
-            try:
-                clob_url = f"{self.clob_host}/book"
-                clob_resp = retry_request(self.session, "GET", clob_url, self.retry_config, params={"token_id": token_id})
-                if clob_resp.status_code == 200:
-                    clob_data = clob_resp.json()
-                    if isinstance(clob_data, dict):
-                        market_id_from_clob = clob_data.get("market") or clob_data.get("market_id")
-                        if market_id_from_clob:
-                            url = f"{self.gamma_base_url}/markets/{market_id_from_clob}"
-                            resp = retry_request(self.session, "GET", url, self.retry_config)
-                            if resp.status_code == 200:
-                                result = resp.json()
-                                if result and isinstance(result, dict):
-                                    logger.info("✅ 通过 token_id 从 CLOB API 成功获取市场信息: token_id=%s, market_id=%s", 
-                                              token_id[:20], market_id_from_clob[:20])
-                                    return result
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("通过 token_id 从 CLOB API 获取市场信息失败: token_id=%s, error=%s", token_id[:20] if token_id else "N/A", exc)
-        
-        # 方法3: 通过 trade 中的 market_id（多格式尝试，兜底方案）
-        market_id = trade.get("market") or trade.get("market_id")
-        if not market_id and token_id:
-            market_id = self.get_market_id_for_token(token_id)
-        
-        if not market_id:
-            logger.warning("获取市场信息失败：无 slug, 无 token_id CLOB 数据, 无 market_id")
+                resp = retry_request(self.session, "GET", f"{self.gamma_base_url}/markets/{market_key}", self.retry_config)
+                resp.raise_for_status()
+                market = resp.json()
+                if isinstance(market, dict) and str(market.get("id")) == market_key and (not token_id or token_id in self._market_asset_ids(market).values()):
+                    return market
+            except (requests.RequestException, ValueError):
+                pass
+        if market_key:
             return {}
-        
-        logger.debug("尝试通过 market_id 获取市场信息（兜底方案）: market_id=%s", market_id[:30])
-        
-        # 尝试多种 market_id 格式（处理 422 错误）
-        market_id_variants = [
-            market_id,  # 原始格式
-            market_id.lower(),  # 小写
-        ]
-        # 如果有 0x 前缀，也尝试去掉前缀的版本
-        if market_id.startswith("0x") or market_id.startswith("0X"):
-            market_id_variants.append(market_id[2:])  # 去掉 0x
-            market_id_variants.append(market_id[2:].lower())  # 去掉 0x 并小写
-        
-        last_error = None
-        for variant in market_id_variants:
-            url = f"{self.gamma_base_url}/markets/{variant}"
-            try:
-                resp = retry_request(self.session, "GET", url, self.retry_config)
-                if resp.status_code == 404:
-                    last_error = f"404 Not Found (variant: {variant[:20]})"
-                    continue
-                
-                result = resp.json()
-                if not result or not isinstance(result, dict):
-                    last_error = f"空数据 (variant: {variant[:20]})"
-                    continue
-                
-                if variant != market_id:
-                    logger.info("✅ 通过 market_id 成功获取市场信息（使用替代格式）: original=%s, used=%s", market_id[:20], variant[:20])
-                else:
-                    logger.debug("成功获取市场信息: market_id=%s", variant[:20])
-                return result
-                
-            except requests.HTTPError as exc:
-                status = getattr(exc.response, 'status_code', 'N/A')
-                if status == 422:
-                    last_error = f"422 Unprocessable Entity (variant: {variant[:20]})"
-                    logger.debug("market_id 格式不被接受: variant=%s, status=422", variant[:20])
-                    continue
-                last_error = f"HTTP {status} (variant: {variant[:20]})"
-                continue
-            except Exception as exc:  # noqa: BLE001
-                last_error = f"异常: {str(exc)[:50]}"
-                continue
-        
-        logger.warning("获取市场信息失败（所有方法都失败）: slug=%s, token_id=%s, market_id=%s, 最后错误: %s", 
-                      slug or "N/A", token_id[:20] if token_id else "N/A", market_id[:30], last_error)
+        if slug:
+            market_id = self.get_market_id_for_slug(slug)
+            if market_id and market_id != market_key:
+                market = self.get_market_for_trade({"market_id": market_id, "asset": token_id})
+                if market:
+                    return market
+        if token_id:
+            for field in ("clob_token_ids", "position_ids"):
+                market = self._find_market_by_filter(field, token_id)
+                if market:
+                    return market
         return {}
 
     def get_token_id_for_trade(self, trade: dict[str, Any]) -> Optional[str]:
@@ -1138,7 +1057,8 @@ class PolymarketDataClient:
         market = trade.get("market") or trade.get("market_id")
         if not market:
             return None
-        mapping = self.get_clob_token_ids(market)
+        market_info = self.get_market_for_trade({"market": market})
+        mapping = self._market_asset_ids(market_info)
         outcome = trade.get("outcome") or trade.get("side")
         if isinstance(mapping, dict) and outcome in mapping:
             return mapping[outcome]
@@ -1185,85 +1105,11 @@ class PolymarketDataClient:
             return {}
 
     def get_market_id_for_token(self, token_id: str) -> Optional[str]:
-        """
-        Resolve market_id from a CLOB token_id.
-
-        Notes:
-        - Gamma's `/tokens/{token_id}` often 404s for long numeric CLOB token ids.
-        - Gamma supports searching markets by `clobTokenIds=<token_id>`.
-        """
+        """Return the Gamma market ID for a verified outcome asset."""
         if not token_id:
             return None
-
-        # Prefer CLOB /book?token_id=... which reliably returns `market` for active tokens.
-        try:
-            clob_url = f"{self.clob_host}/book"
-            clob_resp = retry_request(
-                self.session, "GET", clob_url, self.retry_config, params={"token_id": str(token_id)}
-            )
-            if clob_resp.status_code == 200:
-                clob_data = clob_resp.json()
-                if isinstance(clob_data, dict):
-                    mid = clob_data.get("market") or clob_data.get("market_id") or clob_data.get("marketId")
-                    if mid:
-                        return str(mid)
-        except Exception:  # noqa: BLE001
-            pass
-
-        # Attempt Gamma /markets?clobTokenIds=<token_id> (may be unsupported on some deployments).
-        try:
-            url = f"{self.gamma_base_url}/markets"
-            resp = retry_request(
-                self.session, "GET", url, self.retry_config, params={"clobTokenIds": str(token_id)}
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, list) and data:
-                    token_id_str = str(token_id)
-                    for m in data[:50]:
-                        if not isinstance(m, dict):
-                            continue
-                        raw = m.get("clobTokenIds") or m.get("clob_token_ids") or []
-                        token_ids = []
-                        if isinstance(raw, list):
-                            token_ids = [str(x) for x in raw if x]
-                        elif isinstance(raw, str):
-                            s = raw.strip()
-                            if s.startswith("["):
-                                try:
-                                    parsed = json.loads(s)
-                                    if isinstance(parsed, list):
-                                        token_ids = [str(x) for x in parsed if x]
-                                except Exception:  # noqa: BLE001
-                                    token_ids = []
-                        if token_id_str in token_ids:
-                            mid = m.get("id") or m.get("marketId") or m.get("market_id")
-                            if mid:
-                                return str(mid)
-                if isinstance(data, dict):
-                    mid = data.get("id") or data.get("marketId") or data.get("market_id")
-                    if mid:
-                        return str(mid)
-        except Exception:  # noqa: BLE001
-            pass
-
-        # Legacy attempt: Gamma /tokens/{token_id}
-        url = f"{self.gamma_base_url}/tokens/{token_id}"
-        try:
-            resp = retry_request(self.session, "GET", url, self.retry_config)
-            if resp.status_code == 404:
-                logger.debug("Token not found: %s", token_id)
-                return None
-            data = resp.json()
-            if isinstance(data, dict):
-                return data.get("market") or data.get("marketId") or data.get("market_id")
-            return None
-        except requests.HTTPError as exc:
-            logger.debug("Failed to get market_id for token %s: %s", token_id, exc)
-            return None
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Unexpected error getting market_id for token %s: %s", token_id, exc)
-            return None
+        market = self.get_market_for_trade({"asset": str(token_id)})
+        return str(market["id"]) if market.get("id") else None
 
     def get_order_book(self, token_id: str) -> Optional[OrderBook]:
         """
@@ -1351,202 +1197,40 @@ class PolymarketDataClient:
             return None
 
     def get_market_id_for_slug(self, slug: str) -> Optional[str]:
-        """
-        通过市场 slug 获取 market_id
-        
-        Args:
-            slug: 市场 slug (例如: "lol-dk-ns-2025-12-11")
-            
-        Returns:
-            market_id 或 None
-        """
         if not slug:
             return None
-        
-        # 尝试通过 data-api 的搜索或事件端点获取
-        # 方法1: 尝试通过 /events/{slug} 端点
+        from urllib.parse import quote
         try:
-            url = f"{self.data_api_base_url}/events/{slug}"
-            resp = retry_request(self.session, "GET", url, self.retry_config)
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, dict):
-                    # 尝试从响应中提取 market_id
-                    market_id = data.get("id") or data.get("marketId") or data.get("market_id")
-                    if market_id:
-                        return str(market_id)
-                    # 如果有 markets 数组，取第一个
-                    markets = data.get("markets") or []
-                    if isinstance(markets, list) and len(markets) > 0:
-                        market = markets[0]
-                        if isinstance(market, dict):
-                            return str(market.get("id") or market.get("marketId") or market.get("market_id") or "")
-        except requests.HTTPError:
-            pass  # 404 或其他错误，继续尝试其他方法
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Failed to get market_id for slug %s via /events endpoint: %s", slug, exc)
-        
-        # 方法2: 尝试通过 gamma-api 的搜索端点
-        try:
-            url = f"{self.gamma_base_url}/markets"
-            params = {"slug": slug}
-            resp = retry_request(self.session, "GET", url, self.retry_config, params=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                # 如果返回数组，取第一个
-                if isinstance(data, list) and len(data) > 0:
-                    market = data[0]
-                    if isinstance(market, dict):
-                        return str(market.get("id") or market.get("marketId") or market.get("market_id") or "")
-                # 如果返回字典
-                elif isinstance(data, dict):
-                    market_id = data.get("id") or data.get("marketId") or data.get("market_id")
-                    if market_id:
-                        return str(market_id)
-        except requests.HTTPError:
+            resp = retry_request(self.session, "GET", f"{self.gamma_base_url}/markets/slug/{quote(slug, safe='')}", self.retry_config)
+            resp.raise_for_status()
+            market = resp.json()
+            if isinstance(market, dict) and market.get("slug") == slug and market.get("id"):
+                return str(market["id"])
+        except (requests.RequestException, ValueError):
             pass
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Failed to get market_id for slug %s via /markets endpoint: %s", slug, exc)
-
-        # 方法3: 很多体育/赛事类 slug 其实是 eventSlug（Gamma 的 /events?slug=...）
-        # 这里尝试从 event 的 markets 列表中拿到一个 market_id（不保证能定位到具体 outcome）
-        try:
-            return self.get_market_id_for_event_slug(slug, token_id=None)
-        except Exception:  # noqa: BLE001
-            return None
-        
-        return None
+        return self.get_market_id_for_event_slug(slug)
 
     def get_market_id_for_event_slug(self, event_slug: str, token_id: Optional[str] = None) -> Optional[str]:
-        """
-        通过 Gamma 的 /events?slug=<event_slug> 获取 market_id。
-
-        - 如果提供 token_id，会在 event.markets 中查找包含该 token 的 market。
-        - 如果未提供 token_id，则返回 event.markets 的第一个 market_id。
-        """
-        if not event_slug:
-            return None
-
-        url = f"{self.gamma_base_url}/events"
-        try:
-            resp = retry_request(
-                self.session, "GET", url, self.retry_config, params={"slug": event_slug}
-            )
-            if resp.status_code != 200:
-                return None
-            data = resp.json()
-            if isinstance(data, list) and data:
-                event_obj = data[0]
-            elif isinstance(data, dict):
-                event_obj = data
-            else:
-                return None
-
-            if not isinstance(event_obj, dict):
-                return None
-
-            markets = event_obj.get("markets") or []
-            if not isinstance(markets, list) or not markets:
-                return None
-
-            def _parse_token_ids(raw: Any) -> list[str]:
-                if raw is None:
-                    return []
-                if isinstance(raw, list):
-                    return [str(x) for x in raw if x]
-                if isinstance(raw, str):
-                    s = raw.strip()
-                    if not s:
-                        return []
-                    if s[0] == "[":
-                        try:
-                            parsed = json.loads(s)
-                            if isinstance(parsed, list):
-                                return [str(x) for x in parsed if x]
-                        except Exception:  # noqa: BLE001
-                            return []
-                    # fallback: comma-separated
-                    return [t.strip().strip('"') for t in s.split(",") if t.strip()]
-                return []
-
-            if token_id:
-                token_id_str = str(token_id)
-                for m in markets:
-                    if not isinstance(m, dict):
-                        continue
-                    token_ids = _parse_token_ids(
-                        (m.get("positionIds") or m.get("position_ids")) if str(m.get("version") or "v1").lower() == "v2" else (m.get("clobTokenIds") or m.get("clob_token_ids") or m.get("tokenIds"))
-                    )
-                    if token_id_str in token_ids:
-                        mid = m.get("id") or m.get("marketId") or m.get("market_id")
-                        if mid:
-                            return str(mid)
-
-            # 指定资产时不能把未匹配的资产归到第一个市场。
-            if token_id:
-                return None
-            m0 = markets[0]
-            if isinstance(m0, dict):
-                mid = m0.get("id") or m0.get("marketId") or m0.get("market_id")
-                if mid:
-                    return str(mid)
-            return None
-        except requests.HTTPError:
-            return None
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Failed to get market_id for event slug %s: %s", event_slug, exc)
-            return None
+        event = self.get_event_for_slug(event_slug)
+        markets = [m for m in (event.get("markets") or []) if isinstance(m, dict) and m.get("id")]
+        if token_id:
+            markets = [m for m in markets if str(token_id) in self._market_asset_ids(m).values()]
+        return str(markets[0]["id"]) if len(markets) == 1 else None
 
     def get_market_ids_for_event_slug(self, slug: str) -> list[str]:
-        """
-        通过 event slug 获取该 event 下所有 market_id。
-
-        Data API 的 /events/{slug} 通常返回 markets 列表。
-        """
-        if not slug:
-            return []
-        url = f"{self.data_api_base_url}/events/{slug}"
-        try:
-            resp = retry_request(self.session, "GET", url, self.retry_config)
-            if resp.status_code != 200:
-                return []
-            data = resp.json()
-            markets = []
-            if isinstance(data, dict):
-                markets = data.get("markets") or data.get("marketIds") or data.get("markets_ids") or []
-            ids: list[str] = []
-            if isinstance(markets, list):
-                for m in markets:
-                    if isinstance(m, dict):
-                        mid = m.get("id") or m.get("marketId") or m.get("market_id")
-                        if mid:
-                            ids.append(str(mid))
-                    else:
-                        ids.append(str(m))
-            return [i for i in ids if i]
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Failed to get market_ids for event slug %s: %s", slug, exc)
-            return []
+        event = self.get_event_for_slug(slug)
+        return [str(m["id"]) for m in (event.get("markets") or []) if isinstance(m, dict) and m.get("id")]
 
     def get_event_for_slug(self, slug: str) -> dict[str, Any]:
-        """Fetch a Gamma event by slug, including its nested markets when present."""
         if not slug:
             return {}
-        url = f"{self.gamma_base_url}/events"
+        from urllib.parse import quote
         try:
-            resp = retry_request(self.session, "GET", url, self.retry_config, params={"slug": slug})
-            if resp.status_code != 200:
-                return {}
-            data = resp.json()
-            if isinstance(data, list) and data:
-                event = data[0]
-            elif isinstance(data, dict):
-                event = data
-            else:
-                return {}
-            return event if isinstance(event, dict) else {}
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Failed to get event for slug %s: %s", slug, exc)
+            resp = retry_request(self.session, "GET", f"{self.gamma_base_url}/events/slug/{quote(slug, safe='')}", self.retry_config)
+            resp.raise_for_status()
+            event = resp.json()
+            return event if isinstance(event, dict) and event.get("slug") == slug else {}
+        except (requests.RequestException, ValueError):
             return {}
 
     def get_market_info_for_token(self, token_id: str) -> dict[str, Any]:
@@ -1594,6 +1278,8 @@ class PolymarketDataClient:
                 outcomes = market_info.get("outcomes") or market_info.get("outcomeTokens") or []
                 if isinstance(outcomes, list):
                     for outcome in outcomes:
+                        if not isinstance(outcome, dict):
+                            continue
                         outcome_token_id = outcome.get("tokenId") or outcome.get("token_id") or outcome.get("id")
                         if str(outcome_token_id) == str(token_id):
                             outcome_name = outcome.get("name") or outcome.get("title") or outcome.get("outcome") or ""
@@ -1749,23 +1435,6 @@ class PolymarketDataClient:
         """
         return self.get_best_price(market_id, side="midpoint")
 
-    def fetch_user_balance_usdc(self, address: str) -> Optional[float]:
-        # Basic balance endpoint; may vary depending on API surface.
-        url = f"{self.gamma_base_url}/wallets/{address}/balances"
-        resp = retry_request(self.session, "GET", url, self.retry_config)
-        data = resp.json()
-        # Handle both dict and other response types
-        if isinstance(data, dict):
-            balance = (
-                data.get("pUSD")
-                or data.get("pusd")
-                or data.get("Polymarket USD")
-                or data.get("USDC")
-                or data.get("usdc")
-                or data.get("USDC.e")
-            )
-            return float(balance) if balance is not None else None
-        return None
 
 
 class PolygonBalanceProvider:

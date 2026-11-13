@@ -6,11 +6,11 @@
 
 - 多钱包配置和切换
 - 密码和 TOTP 2FA 登录保护
-- 查询当前钱包持仓、均价、当前价、盈亏、现金余额和持仓市值
+- 通过 Data API v2 分页查询当前钱包持仓、均价、当前价、盈亏、现金余额和持仓市值
 - 按 25%、50%、75%、全仓比例卖出已有持仓
 - 通过 Polymarket URL 拉取市场 outcome 和盘口价格后下单
 - 按日期查找 SPX daily close up/down 市场并快速下单
-- 从 Polygon RPC 查询 pUSD 余额，失败时回退 Polymarket API
+- 从 Polygon RPC 查询 pUSD 余额；无法读取时显示未知
 
 ## 快速开始
 

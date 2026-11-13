@@ -1831,6 +1831,7 @@
             <div class="panel-title-block">
               <div class="panel-title-main">
                 <span class="highlight">Polymarket 持仓</span>
+                <span id="positionsDataStatus" style="font-size:12px; color:var(--warning); margin-left:8px;"></span>
               </div>
               <div class="panel-stats-rows">
                 <div class="panel-stats-row">
@@ -2139,6 +2140,8 @@
           throw new Error(data.error);
         }
         positionsData = data.positions || [];
+        const statusEl = document.getElementById('positionsDataStatus');
+        if (statusEl) statusEl.textContent = data._meta && data._meta.stale ? '数据已过期，正在尝试刷新' : '';
         lastPositionsFetchAt = Date.now();
         renderPositions();
         updatePositionsStats(data);
@@ -2709,7 +2712,9 @@
       }).join('');
 
       const posEl = document.getElementById('spxMyPositionsInfo');
-      if (data.my_positions && data.my_positions.length > 0) {
+      if (data.my_positions === null) {
+        posEl.textContent = '持仓暂时无法获取';
+      } else if (data.my_positions && data.my_positions.length > 0) {
         posEl.innerHTML = '<strong style="color:var(--warning);">持仓:</strong> ' + data.my_positions.map(p =>
           `${p.outcome}: ${formatNumber(p.size, 2)} @ ${(p.avg_cost * 100).toFixed(1)}¢`
         ).join(' · ');
@@ -2808,7 +2813,9 @@
       if (tradeArea) tradeArea.style.display = 'block';
 
       const posEl = document.getElementById('myPositionsInfo');
-      if (data.my_positions && data.my_positions.length > 0) {
+      if (data.my_positions === null) {
+        posEl.textContent = '持仓暂时无法获取';
+      } else if (data.my_positions && data.my_positions.length > 0) {
         posEl.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg><strong style="color:var(--accent);">当前持仓:</strong> ' + data.my_positions.map(p =>
           `${p.outcome}: ${formatNumber(p.size, 2)} @ ${(p.avg_cost * 100).toFixed(1)}¢`
         ).join(' · ');

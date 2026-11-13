@@ -244,36 +244,14 @@ def _get_cash_balance_fast(wallet_address: str, timeout_seconds: float = 2.0) ->
         if v is not None:
             return float(v)
 
-    # Fallback to API balance (best-effort).
-    if not data_client:
-        return None
-
-    result_box = {"v": None}
-
-    def _run_api():
-        try:
-            result_box["v"] = data_client.fetch_user_balance_usdc(wallet_address)
-        except Exception:  # noqa: BLE001
-            result_box["v"] = None
-
-    t2 = threading.Thread(target=_run_api, daemon=True)
-    t2.start()
-    t2.join(timeout=max(0.1, timeout_seconds))
-    if t2.is_alive():
-        return None
-    v = result_box.get("v")
-    return float(v) if v is not None else None
+    return None
 
 
 def _build_positions_payload(wallet_address: str) -> Dict[str, Any]:
     if not data_client:
         raise RuntimeError("Data client not initialized")
 
-    try:
-        positions_from_api = data_client.fetch_positions_for_user(wallet_address) or []
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to fetch positions from API: %s", exc)
-        positions_from_api = []
+    positions_from_api = data_client.fetch_positions_for_user(wallet_address)
 
     positions_by_token: Dict[str, Dict[str, Any]] = {}
     missing_market_info_tokens: list[str] = []
@@ -292,8 +270,6 @@ def _build_positions_payload(wallet_address: str) -> Dict[str, Any]:
 
         avg_price = float(pos.get("avgPrice") or pos.get("avg_price") or pos.get("avgCost") or pos.get("avg_cost") or 0)
         current_value = float(pos.get("currentValue") or pos.get("current_value") or 0)
-        if current_value == 0 or avg_price <= 0.01:
-            continue
 
         market_title = pos.get("title") or pos.get("question") or pos.get("marketTitle") or ""
         outcome_name = pos.get("outcome") or pos.get("outcomeName") or ""
@@ -313,7 +289,9 @@ def _build_positions_payload(wallet_address: str) -> Dict[str, Any]:
             else:
                 missing_market_info_tokens.append(token_id)
 
-        cur_price = pos.get("curPrice") or pos.get("currentPrice") or pos.get("cur_price")
+        cur_price = pos.get("current_price")
+        if cur_price is None:
+            cur_price = pos.get("curPrice") or pos.get("currentPrice") or pos.get("cur_price")
         if cur_price is not None:
             try:
                 cur_price = float(cur_price)
@@ -350,7 +328,7 @@ def _build_positions_payload(wallet_address: str) -> Dict[str, Any]:
             "outcome_name": outcome_name,
             "market_id": market_id,
             "initial_value": initial_value,
-            "current_value": current_value if current_value > 0 else (cur_price * position_size if cur_price else None),
+            "current_value": current_value,
             "cash_pnl": cash_pnl,
             "percent_pnl": percent_pnl,
         }
@@ -363,17 +341,6 @@ def _build_positions_payload(wallet_address: str) -> Dict[str, Any]:
         size = float(pos.get("size", 0))
         avg_cost = float(pos.get("avg_cost", 0))
         current_price = pos.get("current_price")
-
-        # Speed/UX optimization: hide extreme-price positions (often near-settled / illiquid)
-        # to reduce rendering load and downstream market-info lookups.
-        if current_price is not None:
-            try:
-                px = float(current_price)
-            except (TypeError, ValueError):
-                px = None
-            if px is not None and (px > 0.98 or px < 0.02):
-                filtered_out += 1
-                continue
 
         market_title = pos.get("market_title") or f"Token {token_id[:12]}..."
         outcome_name = pos.get("outcome_name") or ""
@@ -664,23 +631,9 @@ def api_positions():
             return jsonify(cached)
         time.sleep(0.05)
 
-    current_wallet = get_current_wallet()
-    return jsonify({
-        "positions": [],
-        "total_count": 0,
-        "total_pnl": 0.0,
-        "cash_balance": None,
-        "positions_value": 0.0,
-        "wallet": {
-            "address": wallet_address,
-            "name": current_wallet.name if current_wallet else "Unknown",
-            "id": current_wallet_id if current_wallet_id else None,
-        },
-        "_meta": {
-            "refreshing": True,
-            "last_refresh_error": positions_last_refresh_error,
-        },
-    })
+    error = positions_last_refresh_error or "持仓数据正在加载，请稍后重试"
+    return jsonify({"error": error, "refreshing": positions_refresh_inflight}), 503
+
 
 
 @app.route("/api/wallets")
@@ -1206,7 +1159,7 @@ def api_market_fetch():
             return jsonify({"error": "No trading tokens found for this market"}), 404
 
         wallet_address = get_dashboard_wallet_address()
-        my_positions = []
+        my_positions = [] if wallet_address else None
         if wallet_address:
             try:
                 all_positions = data_client.fetch_positions_for_user(wallet_address)
@@ -1224,6 +1177,7 @@ def api_market_fetch():
                             break
             except Exception as exc:
                 logger.debug("Failed to fetch user positions: %s", exc)
+                my_positions = None
 
         return jsonify({
             "status": "ok",
@@ -1504,7 +1458,7 @@ def api_market_spx():
 
         # Check user's existing positions
         wallet_address = get_dashboard_wallet_address()
-        my_positions = []
+        my_positions = [] if wallet_address else None
         if wallet_address:
             try:
                 all_positions = data_client.fetch_positions_for_user(wallet_address)
@@ -1522,6 +1476,7 @@ def api_market_spx():
                             break
             except Exception as exc:
                 logger.debug("Failed to fetch user positions for SPX: %s", exc)
+                my_positions = None
 
         event_title = str(event_info.get("title") or f"S&P 500 Daily Close {target_date}")
         event_slug = str(event_info.get("slug") or "")

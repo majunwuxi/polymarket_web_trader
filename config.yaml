@@ -1,0 +1,15 @@
+# Polymarket API endpoints
+gamma_base_url: "https://gamma-api.polymarket.com"
+data_api_base_url: "https://data-api.polymarket.com"
+clob_host: "https://clob.polymarket.com"
+
+# Dashboard/runtime label
+server_name: "polymarket-dashboard"
+
+# Enable only when code paths explicitly request live WebSocket prices.
+enable_websocket_price_service: true
+
+# Order and price formatting
+min_price: 0.01
+price_precision: 4
+size_precision: 4

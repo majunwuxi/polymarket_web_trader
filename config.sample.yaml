@@ -1,0 +1,12 @@
+# Polymarket Dashboard configuration
+
+gamma_base_url: "https://gamma-api.polymarket.com"
+data_api_base_url: "https://data-api.polymarket.com"
+clob_host: "https://clob.polymarket.com"
+
+server_name: "polymarket-dashboard"
+enable_websocket_price_service: true
+
+min_price: 0.01
+price_precision: 4
+size_precision: 4

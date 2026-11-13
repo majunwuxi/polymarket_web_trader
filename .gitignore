@@ -1,0 +1,20 @@
+# Sensitive configuration - never commit
+.env
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Logs
+*.log
+dashboard_server.err.log
+dashboard_server.out.log
+
+# OS / editor
+.DS_Store
+Thumbs.db

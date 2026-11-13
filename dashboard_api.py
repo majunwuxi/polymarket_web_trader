@@ -950,10 +950,12 @@ def api_trade_sell():
             token_id=token_id
         )
         
+        if not order_id:
+            return jsonify({"status": "failed", "error": "订单提交失败或无法确认"}), 400
         return jsonify({
-            "status": "success", 
-            "order_id": order_id, 
-            "message": f"Sold {sell_size:.2f} at {best_bid_price}"
+            "status": "success",
+            "order_id": order_id,
+            "message": f"Sell order submitted: {sell_size:.2f} at {best_bid_price}"
         })
         
     except Exception as e:
@@ -1639,13 +1641,23 @@ def api_trade_place():
             try:
                 order_status = executor.get_order(order_id)
                 if order_status:
-                    filled_size = order_status.get("filledSize") or order_status.get("filled_size") or filled_size
+                    for key in ("size_matched", "sizeMatched", "filledSize", "filled_size"):
+                        if order_status.get(key) is not None:
+                            try:
+                                matched = float(order_status[key])
+                                if 0 <= matched <= size:
+                                    filled_size = matched
+                                    status = "filled" if matched >= size else "pending"
+                            except (TypeError, ValueError):
+                                pass
+                            break
             except Exception:
                 pass
 
         return jsonify({
             "status": "success" if status in ("success", "filled", "pending", "simulated") else status,
             "order_id": order_id,
+            "order_status": status,
             "side": side,
             "size": size,
             "price": round(price, 4),

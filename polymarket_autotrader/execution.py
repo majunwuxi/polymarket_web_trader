@@ -235,31 +235,27 @@ class CLOBOrderExecutor:
             logger.error("Failed to derive API credentials: %s", exc, exc_info=True)
         return False
 
-    def _validate_order_response(self, resp: Any, order_size: float) -> tuple[bool, float, str | None]:
-        """
-        验证订单响应，判断订单是否成功
-        
-        Returns:
-            (success, filled_size, error_msg)
-        """
-        if resp is None:
-            return False, 0.0, "订单响应为空"
-        if isinstance(resp, dict):
-            if "error" in resp or "errorMessage" in resp:
-                error_msg = resp.get("error") or resp.get("errorMessage", "未知错误")
-                return False, 0.0, f"订单错误: {error_msg}"
-            status = resp.get("status", "").lower()
-            if status in ("error", "failed", "rejected", "cancelled"):
-                return False, 0.0, f"订单状态: {status}"
-            filled_size = resp.get("filledSize") or resp.get("filled_size") or resp.get("filled")
-            if filled_size is not None:
-                filled_size = float(filled_size)
-            else:
-                filled_size = order_size
-            if status in ("success", "filled", "open", "pending") or status == "":
-                return True, filled_size, None
-            return True, filled_size, None
-        return True, order_size, None
+    def _validate_order_response(self, resp: Any, order_size: float) -> tuple[bool, Optional[float], Optional[str]]:
+        if not isinstance(resp, dict):
+            return False, None, "无法确认订单响应"
+        error = resp.get("error") or resp.get("errorMessage")
+        status = str(resp.get("status") or "").lower()
+        if error or resp.get("success") is False or status in ("error", "failed", "rejected", "cancelled", "canceled"):
+            return False, None, str(error or status or "订单被拒绝")
+        order_id = resp.get("orderID") or resp.get("orderId") or resp.get("order_id") or resp.get("id")
+        if not order_id:
+            return False, None, "订单响应缺少订单编号，无法确认提交"
+        filled = None
+        for key in ("filledSize", "filled_size", "filled", "size_matched", "sizeMatched"):
+            if resp.get(key) is not None:
+                try:
+                    value = float(resp[key])
+                    if math.isfinite(value) and 0 <= value <= order_size:
+                        filled = value
+                except (ValueError, TypeError):
+                    pass
+                break
+        return True, filled, None
 
     def place_order(
         self, side: str, price: float, size: float, market_id: str, token_id: str
@@ -385,7 +381,7 @@ class CLOBOrderExecutor:
             success, filled_size, error_msg = self._validate_order_response(order, size)
             order_id = None
             if isinstance(order, dict):
-                order_id = order.get("orderID") or order.get("order_id") or order.get("id")
+                order_id = order.get("orderID") or order.get("orderId") or order.get("order_id") or order.get("id")
 
             if success:
                 logger.info(
@@ -394,7 +390,7 @@ class CLOBOrderExecutor:
                 )
                 return {
                     "orderId": order_id or "",
-                    "status": "pending" if filled_size < size else "filled",
+                    "status": "filled" if filled_size is not None and filled_size >= size else "pending",
                     "filled_size": filled_size,
                     "response": order,
                 }
@@ -457,16 +453,16 @@ class CLOBOrderExecutor:
                         success, filled_size, error_msg = self._validate_order_response(order, size)
                         order_id = None
                         if isinstance(order, dict):
-                            order_id = order.get("orderID") or order.get("order_id") or order.get("id")
+                            order_id = order.get("orderID") or order.get("orderId") or order.get("order_id") or order.get("id")
                         
                         if success:
                             logger.info(
-                                "\033[1;32m【订单成功】已下单: %s %.4f @ %.2f | token_id=%s | 成交: %.4f | order_id=%s\033[0m",
+                                "\033[1;32m【订单成功】已下单: %s %.4f @ %.2f | token_id=%s | 成交: %s | order_id=%s\033[0m",
                                 side, size, price, token_id[:16], filled_size, order_id
                             )
                             return {
                                 "orderId": order_id or "",
-                                "status": "pending" if filled_size < size else "filled",
+                                "status": "filled" if filled_size is not None and filled_size >= size else "pending",
                                 "filled_size": filled_size,
                             }
                         else:
@@ -541,16 +537,16 @@ class CLOBOrderExecutor:
                         success, filled_size, error_msg = self._validate_order_response(order, size)
                         order_id = None
                         if isinstance(order, dict):
-                            order_id = order.get("orderID") or order.get("order_id") or order.get("id")
+                            order_id = order.get("orderID") or order.get("orderId") or order.get("order_id") or order.get("id")
                         
                         if success:
                             logger.info(
-                                "\033[1;32m【订单成功】已下单: %s %.4f @ %.2f | token_id=%s | 成交: %.4f | order_id=%s\033[0m",
+                                "\033[1;32m【订单成功】已下单: %s %.4f @ %.2f | token_id=%s | 成交: %s | order_id=%s\033[0m",
                                 side, size, price, token_id[:16], filled_size, order_id
                             )
                             return {
                                 "orderId": order_id or "",
-                                "status": "pending" if filled_size < size else "filled",
+                                "status": "filled" if filled_size is not None and filled_size >= size else "pending",
                                 "filled_size": filled_size,
                             }
                         else:
@@ -698,20 +694,23 @@ class CLOBOrderExecutor:
             logger.warning("查询订单状态失败 (order_id: %s): %s", order_id[:16], exc)
             return None
 
-    def cancel_order(self, order_id: str) -> None:
+    def cancel_order(self, order_id: str) -> dict[str, Any]:
         if self.dry_run:
-            logger.info("[DRY RUN] cancel order %s", order_id)
-            return
+            return {"success": True, "status": "simulated"}
         try:
-            # Try cancel_orders (plural) first, as it's the newer API
-            if hasattr(self.client, 'cancel_orders'):
-                # cancel_orders might accept a list
-                self.client.cancel_orders([order_id])
-            elif hasattr(self.client, 'cancel_order'):
-                self.client.cancel_order(order_id)
+            if hasattr(self.client, "cancel_orders"):
+                result = self.client.cancel_orders([order_id])
+            elif hasattr(self.client, "cancel_order"):
+                result = self.client.cancel_order(order_id)
             else:
-                logger.warning("No cancel method available on ClobClient")
-                return
-            logger.info("Cancelled order %s", order_id)
-        except Exception as exc:  # noqa: BLE001
+                return {"success": False, "error": "客户端不支持撤单"}
+            if not isinstance(result, dict):
+                return {"success": False, "error": "无法确认撤单结果"}
+            if order_id in (result.get("canceled") or result.get("cancelled") or []):
+                return {"success": True, "status": "canceled"}
+            failures = result.get("not_canceled") or result.get("notCanceled") or {}
+            return {"success": False, "error": str(failures.get(order_id) or "交易所未确认撤单")}
+        except Exception as exc:
             logger.warning("Failed to cancel order %s: %s", order_id, exc)
+            return {"success": False, "error": str(exc)}
+

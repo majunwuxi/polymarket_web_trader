@@ -34,6 +34,7 @@ def pg(monkeypatch):
     command.upgrade(Config("alembic.ini"), "head")
     engine=create_engine(dsn)
     with engine.begin() as conn:
+        conn.execute(text("UPDATE market_links SET confirmed_by=NULL WHERE confirmed_by IS NOT NULL"))
         for table in ("admin_sessions", "audit_events", "auth_rate_limits", "admin_users"):
             conn.execute(text(f"DELETE FROM {table}"))
         conn.execute(text("INSERT INTO admin_users (id,username,password_hash) VALUES (:id,:name,:hash)"), {"id":uuid.uuid4(),"name":"mock-admin","hash":hasher.hash(MOCK_PASSWORD)})

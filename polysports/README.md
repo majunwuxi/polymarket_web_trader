@@ -1,6 +1,6 @@
-# PolySports（6D 持久调度阶段）
+# PolySports（6E 市场发现阶段）
 
-本目录是独立的 PolySports 项目，提供管理员认证、足球和 NBA 赛程同步、赛事中心、球队译名维护、关注和独立后台调度。钱包和交易尚未实现，界面不显示虚构业务数据。不需要启动仓库原有 Flask Dashboard。
+本目录是独立的 PolySports 项目，提供管理员认证、足球和 NBA 赛程同步、赛事中心、球队译名维护、关注、独立后台调度、Polymarket 候选市场映射和只读钱包列表。交易尚未实现，界面不显示虚构业务数据。不需要启动仓库原有 Flask Dashboard。
 
 ## 环境与配置
 
@@ -44,6 +44,22 @@ uv run --locked python -m backend.worker
 worker 通过 PostgreSQL 生成和领取持久任务，允许多个实例并发运行；进程退出或机器重启后重新启动 worker 即可恢复到期任务。任务只会在数据库时间达到截止时间后被领取，过期租约的旧结果不会写入。系统管理页面提供计划修改、worker 心跳、任务和尝试记录；实际 VPS 的 systemd 服务配置在部署阶段提供。
 
 在赛事中心选择“关注赛事”后，足球首次赛果查询为开赛后 120 分钟，未完赛每 10 分钟查询；NBA 首次为开赛后 159 分钟，未完赛每 3 分钟查询。来源确认完赛后停止常规查询。延期、来源失败和限流将保留关注与任务记录；若来源提供 `Retry-After`，任务不会早于其指定时间重试。用户下单后自动关注将在交易阶段接入。
+
+## Polymarket 市场与钱包
+
+在赛事中心打开详情，选择“搜索候选市场”，然后使用“检查搜索状态”查看结果。系统查询 Polymarket Gamma 的体育事件，按运动、球队、主客顺序和相近开赛时间形成候选；即使名称相似也不会自动确认。请逐项核对来源球队、开赛时间和市场问题，确认或拒绝映射。来源错误、赛事改期或数据超过 15 分钟会使映射不可用于交易；需重新搜索核对。已确认映射也不能在本阶段下单。
+
+市场 ID、condition ID、资产 ID 分别保存；对于来源标识为 v1 的市场使用 `clobTokenIds`，v2 使用 `positionIds`。协议版本、组合能力或资产未确认时保持未知。资产变化会使刷新失败并保留旧记录供核查。接口和测试不会执行签名、下单、授权或部署钱包。
+
+`POLYSPORTS_WALLETS` 是 `.env` 中的 JSON 数组，只接收 `label`、`wallet_address`、`signer_address`、`wallet_type`，禁止包含私钥；未配置时为 `[]`。可使用如下**模拟配置格式**，部署时必须替换为自己核实的钱包地址：
+
+```dotenv
+POLYSPORTS_WALLETS=[{"label":"示例","wallet_address":"0x1111111111111111111111111111111111111111","signer_address":"0x2222222222222222222222222222222222222222","wallet_type":"POLY_PROXY"}]
+```
+
+钱包页面只读展示配置；当前未连接余额和授权查询，余额、授权、地区限制及 Builder 能力均标记未知。真实账户签名、余额与交易前检查将在 6F 阶段实现。
+
+官方参考：[Gamma 事件游标分页](https://docs.polymarket.com/api-reference/events/list-events-keyset-pagination)、[市场字段](https://docs.polymarket.com/api-reference/markets/list-markets)、[Protocol V2 迁移](https://docs.polymarket.com/migrate/polymarket-v2/api-integrations)。
 
 ## 测试
 

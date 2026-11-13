@@ -4,9 +4,24 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
+
+
+class WalletConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    label: str = Field(min_length=1,max_length=100)
+    wallet_address: str
+    signer_address: str
+    wallet_type: Literal['EOA','POLY_PROXY','GNOSIS_SAFE','DEPOSIT_WALLET']
+
+    @field_validator('wallet_address','signer_address')
+    @classmethod
+    def validate_address(cls, value: str) -> str:
+        import re
+        if not re.fullmatch(r'0x[0-9a-fA-F]{40}',value): raise ValueError('invalid wallet address')
+        return value.lower()
 
 
 class Settings(BaseSettings):
@@ -17,6 +32,13 @@ class Settings(BaseSettings):
     public_origin: str
     api_football_key: SecretStr | None = None
     balldontlie_key: SecretStr | None = None
+    wallets: list[WalletConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def unique_wallets(self):
+        addresses=[wallet.wallet_address for wallet in self.wallets]
+        if len(addresses)!=len(set(addresses)): raise ValueError("duplicate wallet address")
+        return self
 
     @field_validator("auth_secret")
     @classmethod

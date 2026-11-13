@@ -21,11 +21,16 @@ try {
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     const context = await browser.newContext({ viewport })
     let authenticated = false
+    let mockMappingState = 'candidate'
     await context.route('**/*', async route => {
       const url = new URL(route.request().url())
       if (url.origin !== base) return route.abort()
       if (!url.pathname.startsWith('/api/')) return route.continue()
       const endpoint = url.pathname.split('/').pop()
+      if (endpoint === 'wallets') return route.fulfill({status:200,json:{data:{items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'0x'+'1'.repeat(40),signer_address:'0x'+'2'.repeat(40),wallet_type:'EOA'}]}}})
+      if (endpoint === 'status' && url.pathname.includes('/wallets/')) return route.fulfill({status:200,json:{data:{wallet:{id:'mock-wallet'},collateral_balance:null,allowance_status:'unknown'}}})
+      if (endpoint === 'markets') return route.fulfill({status:200,json:{data:{refresh:{status:'succeeded'},items:[{link:{id:'mock-link',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟市场问题',gamma_market_id:'101',condition_id:'0x'+'a'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o1',label:'Yes',asset_kind:'ctf_token',asset_id:'1'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}}]}}})
+      if (endpoint === 'confirm' && url.pathname.includes('/market-links/')) {mockMappingState='confirmed';return route.fulfill({status:200,json:{data:{}}})}
       if (endpoint === 'sync-schedules') return route.fulfill({status:200,json:{data:{revision:1,items:[{sport:'football',provider:'api_football',utc_time:'00:00:00',enabled:true},{sport:'nba',provider:'balldontlie',utc_time:'08:00:00',enabled:true}]}}})
       if (endpoint === 'jobs') return route.fulfill({status:200,json:{data:{items:[]}}})
       if (endpoint === 'worker-status') return route.fulfill({status:200,json:{data:{workers:[]}}})
@@ -36,7 +41,7 @@ try {
         const game = { id:'mock-game', starts_at:'2026-01-01T18:00:00Z', status:'scheduled', home_team:team('mock-home','Mock Home'), away_team:team('mock-away','Mock Away'), home_score:null, away_score:null, league:null, last_synced_at:null }
         return route.fulfill({status:200,json:{data:{items:[game],next_cursor:null}}})
       }
-      if (endpoint === 'mock-game') return route.fulfill({status:200,json:{data:{provider:'mock-test-provider',external_id:'mock-id',last_synced_at:null,recent_revisions:[]}}})
+      if (endpoint === 'mock-game') return route.fulfill({status:200,json:{data:{id:'mock-game',provider:'mock-test-provider',external_id:'mock-id',last_synced_at:null,recent_revisions:[]}}})
       const data = endpoint === 'csrf' ? { csrf_token: 'mock-login-csrf' } : endpoint === 'login' ? { authenticated: true, csrf_token: 'mock-session-csrf' } : { username: 'mock-admin', csrf_token: 'mock-session-csrf', expires_at: '2099-01-01T00:00:00Z' }
       if (endpoint === 'session' && !authenticated) return route.fulfill({ status: 401, json: { error: { message: 'mock unauthorized' } } })
       if (endpoint === 'login') authenticated = true
@@ -66,6 +71,10 @@ try {
     await page.getByText('已关注，赛果任务将按计划执行。').waitFor()
     await page.getByRole('button', {name:'查看详情'}).click()
     await page.getByText('来源：mock-test-provider · 来源 ID：mock-id').waitFor()
+    await page.getByText('模拟市场问题').waitFor()
+    await page.getByRole('button',{name:'核对并确认'}).click()
+    await page.getByRole('button',{name:'我已核对，确认映射'}).click()
+    await page.getByText('映射已确认；交易尚未开放。').waitFor()
     if (viewport.width < 600) await page.getByRole('button', {name:'菜单'}).click()
     await page.getByRole('link', {name:'NBA 赛事'}).click()
     await page.getByRole('heading', {name:'NBA 赛事中心'}).waitFor()
@@ -78,6 +87,12 @@ try {
     await page.getByRole('button', {name:'保存计划'}).click()
     await page.getByText('同步计划已保存。').waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 状态页横向溢出`)
+    if (viewport.width < 600) await page.getByRole('button', {name:'菜单'}).click()
+    await page.getByRole('link', {name:'钱包状态'}).click()
+    await page.getByRole('heading', {name:'钱包状态'}).waitFor()
+    await page.getByRole('button', {name:'查看只读状态'}).click()
+    await page.getByText('余额：未知').waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 钱包页横向溢出`)
     await page.getByRole('button', { name: '退出' }).click()
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
     console.log(`模拟浏览器测试通过: ${viewport.width}x${viewport.height}`)

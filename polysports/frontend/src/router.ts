@@ -3,6 +3,7 @@ import Login from './views/Login.vue'
 import Dashboard from './views/Dashboard.vue'
 import SportsCenter from './views/SportsCenter.vue'
 import SystemPage from './views/SystemPage.vue'
+import Wallets from './views/Wallets.vue'
 import { restoreSession } from './auth'
 
 export const router = createRouter({
@@ -12,6 +13,7 @@ export const router = createRouter({
     { path: '/', component: Dashboard, meta: { requiresAuth: true } },
     { path: '/sports/:sport(football|nba)', component: SportsCenter, meta: { requiresAuth: true } },
     { path: '/system', component: SystemPage, meta: { requiresAuth: true } },
+    { path: '/wallets', component: Wallets, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

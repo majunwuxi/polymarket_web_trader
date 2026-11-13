@@ -238,3 +238,74 @@ class WorkerHeartbeat(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
     worker_version: Mapped[str | None] = mapped_column(String(80))
     state: Mapped[str] = mapped_column(String(16),nullable=False)
+
+class PolyEvent(Base):
+    __tablename__ = 'poly_events'
+    __table_args__ = (UniqueConstraint('gamma_event_id',name='uq_poly_event_gamma'),CheckConstraint("sport IN ('football','nba')",name='ck_poly_event_sport'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    gamma_event_id: Mapped[str] = mapped_column(String(255),nullable=False)
+    slug: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str | None] = mapped_column(Text)
+    sport: Mapped[str] = mapped_column(String(16),nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    home_name: Mapped[str] = mapped_column(Text,nullable=False)
+    away_name: Mapped[str] = mapped_column(Text,nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class PolyMarket(Base):
+    __tablename__ = 'poly_markets'
+    __table_args__ = (UniqueConstraint('gamma_market_id',name='uq_poly_market_gamma'),UniqueConstraint('condition_id',name='uq_poly_market_condition'),CheckConstraint("condition_id ~ '^0x[0-9a-f]{64}$'",name='ck_poly_market_condition'),CheckConstraint("protocol_version IS NULL OR protocol_version IN ('v1','v2')",name='ck_poly_market_version'),Index('ix_poly_markets_event','poly_event_id'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    gamma_market_id: Mapped[str] = mapped_column(String(255),nullable=False)
+    poly_event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('poly_events.id',ondelete='RESTRICT'),nullable=False)
+    condition_id: Mapped[str] = mapped_column(String(66),nullable=False)
+    protocol_version: Mapped[str | None] = mapped_column(String(8))
+    slug: Mapped[str | None] = mapped_column(Text)
+    question: Mapped[str | None] = mapped_column(Text)
+    accepting_orders: Mapped[bool | None] = mapped_column(Boolean)
+    combo_enabled: Mapped[bool | None] = mapped_column(Boolean)
+    fingerprint: Mapped[str] = mapped_column(String(64),nullable=False)
+    last_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class MarketOutcome(Base):
+    __tablename__ = 'market_outcomes'
+    __table_args__ = (UniqueConstraint('market_id','outcome_index',name='uq_market_outcome_index'),UniqueConstraint('asset_id',name='uq_market_outcome_asset'),CheckConstraint('outcome_index >= 0',name='ck_market_outcome_index'),CheckConstraint("asset_id ~ '^(0|[1-9][0-9]{0,77})$'",name='ck_market_outcome_asset'),CheckConstraint("asset_kind IN ('ctf_token','position')",name='ck_market_outcome_kind'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    market_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('poly_markets.id',ondelete='RESTRICT'),nullable=False)
+    outcome_index: Mapped[int] = mapped_column(Integer,nullable=False)
+    label: Mapped[str] = mapped_column(Text,nullable=False)
+    asset_id: Mapped[str] = mapped_column(String(78),nullable=False)
+    asset_kind: Mapped[str] = mapped_column(String(16),nullable=False)
+    combo_leg_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class MarketLink(Base):
+    __tablename__ = 'market_links'
+    __table_args__ = (UniqueConstraint('game_id','market_id',name='uq_market_link_game_market'),CheckConstraint("state IN ('candidate','confirmed','rejected','stale')",name='ck_market_link_state'),Index('ix_market_links_market_state','market_id','state'),Index('ix_market_links_game_state','game_id','state'),Index('uq_market_confirmed_market','market_id',unique=True,postgresql_where=text("state = 'confirmed'")))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    game_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('games.id',ondelete='RESTRICT'),nullable=False)
+    market_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('poly_markets.id',ondelete='RESTRICT'),nullable=False)
+    state: Mapped[str] = mapped_column(String(16),nullable=False)
+    match_method: Mapped[str] = mapped_column(String(24),nullable=False)
+    evidence: Mapped[dict] = mapped_column(__import__('sqlalchemy').dialects.postgresql.JSONB,nullable=False,server_default=text("'{}'::jsonb"))
+    confirmed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('admin_users.id',ondelete='RESTRICT'))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class MarketRefresh(Base):
+    __tablename__ = 'market_refreshes'
+    game_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('games.id',ondelete='RESTRICT'),primary_key=True)
+    status: Mapped[str] = mapped_column(String(16),nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(80))

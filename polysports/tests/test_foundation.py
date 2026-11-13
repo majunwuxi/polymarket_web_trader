@@ -9,16 +9,17 @@ from pydantic import ValidationError
 from backend.config import Settings, get_settings
 from backend.main import create_app
 
+MOCK_AUTH_SECRET = "mock-only-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 MOCK_DATABASE_URL = "postgresql+psycopg://mock_user:mock_password@127.0.0.1:5432/polysports_test_mock"
 
 
 def test_config_requires_postgresql_and_redacts_password():
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, database_url="sqlite:///not-postgres")
+        Settings(_env_file=None, database_url="sqlite:///not-postgres", auth_secret=MOCK_AUTH_SECRET, public_origin="https://example.test")
     with pytest.raises(ValidationError) as invalid:
-        Settings(_env_file=None, database_url="sqlite://secret_password@bad")
+        Settings(_env_file=None, database_url="sqlite://secret_password@bad", auth_secret=MOCK_AUTH_SECRET, public_origin="https://example.test")
     assert "secret_password" not in str(invalid.value)
-    config = Settings(_env_file=None, database_url=MOCK_DATABASE_URL, environment="test")
+    config = Settings(_env_file=None, database_url=MOCK_DATABASE_URL, auth_secret=MOCK_AUTH_SECRET, public_origin="https://example.test", environment="test")
     assert "mock_password" not in repr(config)
 
 
@@ -30,6 +31,8 @@ def test_missing_config_fails(monkeypatch):
 
 def test_health_contract_and_request_id(monkeypatch):
     monkeypatch.setenv("POLYSPORTS_DATABASE_URL", MOCK_DATABASE_URL)
+    monkeypatch.setenv("POLYSPORTS_AUTH_SECRET", MOCK_AUTH_SECRET)
+    monkeypatch.setenv("POLYSPORTS_PUBLIC_ORIGIN", "https://example.test")
     get_settings.cache_clear()
     try:
         with TestClient(create_app()) as client:

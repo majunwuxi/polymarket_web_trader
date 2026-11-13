@@ -18,6 +18,8 @@ def test_isolated_postgres_upgrade_downgrade_upgrade(monkeypatch):
     if url.drivername != "postgresql+psycopg" or url.host not in ("127.0.0.1", "localhost", "::1") or not (url.database or "").startswith("polysports_test_"):
         pytest.fail("迁移测试只允许本地 polysports_test_ 前缀的隔离数据库")
     monkeypatch.setenv("POLYSPORTS_DATABASE_URL", dsn)
+    monkeypatch.setenv("POLYSPORTS_AUTH_SECRET", "mock-only-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+    monkeypatch.setenv("POLYSPORTS_PUBLIC_ORIGIN", "https://example.test")
     from backend.config import get_settings
     get_settings.cache_clear()
     cfg = Config("alembic.ini")

@@ -31,11 +31,16 @@ class WalletSecrets(BaseModel):
     clob_api_key: SecretStr | None = None
     clob_api_secret: SecretStr | None = None
     clob_api_passphrase: SecretStr | None = None
+    builder_api_key: SecretStr | None = None
+    builder_api_secret: SecretStr | None = None
+    builder_api_passphrase: SecretStr | None = None
 
     @model_validator(mode='after')
     def complete_clob_credentials(self):
         values=[x.get_secret_value() if x else '' for x in (self.clob_api_key,self.clob_api_secret,self.clob_api_passphrase)]
         if any(values) and not all(values): raise ValueError('CLOB credentials must all be set or all omitted')
+        builder=[x.get_secret_value() if x else '' for x in (self.builder_api_key,self.builder_api_secret,self.builder_api_passphrase)]
+        if any(builder) and not all(builder): raise ValueError('Builder credentials must all be set or all omitted')
         return self
 
 
@@ -50,6 +55,7 @@ class Settings(BaseSettings):
     wallets: list[WalletConfig] = Field(default_factory=list)
     wallet_credentials: dict[str, WalletSecrets] = Field(default_factory=dict,repr=False)
     polygon_rpc_url: SecretStr | None = None
+    combo_execution_enabled: bool = False
 
     @model_validator(mode="after")
     def unique_wallets(self):

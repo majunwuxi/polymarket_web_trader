@@ -5,3 +5,5 @@
 
 .market-card{border-top:1px solid #e5ebe7;margin-top:20px;padding-top:16px}.market-card p,.market-card li{font-size:13px;line-height:1.65;color:#53675c}.id-text{overflow-wrap:anywhere}.mapping-confirm{background:#f1f7f3;border-radius:8px;padding:12px}.wallet-address{overflow-wrap:anywhere;font-family:monospace}
 .detail form label,.detail form input,.detail form select{display:block;margin:10px 0}.detail form select{max-width:100%;padding:9px;border:1px solid #d9e5de;border-radius:7px}
+
+.combo-page select,.combo-page input{max-width:100%;box-sizing:border-box}.combo-page p{overflow-wrap:anywhere}.combo-page label{display:block;margin:12px 0}

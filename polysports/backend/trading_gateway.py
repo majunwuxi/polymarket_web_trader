@@ -75,6 +75,9 @@ class Gateway:
     def __init__(self, settings, wallet):
         self.settings=settings;self.wallet=wallet;self.client=None
 
+    def sdk_api_key(self, credential):
+        return None
+
     def __enter__(self):
         ensure_geography()
         ref=self.wallet.credential_ref
@@ -97,7 +100,7 @@ class Gateway:
         vals=[x.get_secret_value() if x else '' for x in (credential.clob_api_key,credential.clob_api_secret,credential.clob_api_passphrase)]
         creds=ApiKeyCreds(apiKey=vals[0],secret=vals[1],passphrase=vals[2]) if all(vals) else None
         try:
-            self.client=NoDeployClient.create(private_key=credential.private_key.get_secret_value(),wallet=Web3.to_checksum_address(self.wallet.wallet_address),credentials=creds)
+            self.client=NoDeployClient.create(private_key=credential.private_key.get_secret_value(),wallet=Web3.to_checksum_address(self.wallet.wallet_address),credentials=creds,api_key=self.sdk_api_key(credential))
             if str(self.client.wallet).lower()!=self.wallet.wallet_address or str(self.client.wallet_type)!=self.wallet.wallet_type:
                 raise TradingError('wallet_mismatch','SDK 钱包身份或类型不匹配')
         except TradingError:

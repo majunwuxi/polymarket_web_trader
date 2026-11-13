@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from . import auth
 from .markets import begin_refresh, refresh_game, trading_blockers, valid_link
-from .models import AuditEvent, Game, MarketLink, MarketOutcome, MarketRefresh, PolyEvent, PolyMarket, TradeIntent
+from .models import AuditEvent, ComboLeg, Game, MarketLink, MarketOutcome, MarketRefresh, PolyEvent, PolyMarket, TradeIntent
 from .scheduler import db_now
 
 router=APIRouter(prefix='/api/v1')
@@ -55,7 +55,8 @@ def confirm(request:Request,link_id:uuid.UUID):
                 return auth.error(request,409,'MAPPING_INVALID','映射证据不足或已过期，请重新刷新核对')
             if link.state=='confirmed': return ok(request,link_data(db,link))
             referenced=db.scalar(select(TradeIntent.id).join(MarketLink,TradeIntent.market_link_id==MarketLink.id).where(MarketLink.market_id==link.market_id,MarketLink.id!=link.id).limit(1))
-            if referenced:
+            referenced_combo=db.scalar(select(ComboLeg.id).join(MarketLink,ComboLeg.market_link_id==MarketLink.id).where(MarketLink.market_id==link.market_id,MarketLink.id!=link.id).limit(1))
+            if referenced or referenced_combo:
                 db.add(AuditEvent(id=uuid.uuid4(),actor_id=request.state.admin_session['admin_id'],action='market_link_conflict',entity_type='market_link',entity_id=link.id,details={'reason':'market_has_trade_history'}))
                 return auth.error(request,409,'MAPPING_CONFLICT','该市场已有其他赛事的订单历史')
             for other in db.scalars(select(MarketLink).where(MarketLink.market_id==link.market_id,MarketLink.state=='confirmed',MarketLink.id!=link.id).with_for_update()):
@@ -80,7 +81,7 @@ def reject(request:Request,link_id:uuid.UUID):
         db.execute(text("SELECT pg_advisory_xact_lock(hashtext('polysports-gamma'))"))
         link=db.scalar(select(MarketLink).where(MarketLink.id==link_id).with_for_update())
         if not link: return auth.error(request,404,'NOT_FOUND','映射不存在')
-        if db.scalar(select(TradeIntent.id).where(TradeIntent.market_link_id==link.id).limit(1)):
+        if db.scalar(select(TradeIntent.id).where(TradeIntent.market_link_id==link.id).limit(1)) or db.scalar(select(ComboLeg.id).where(ComboLeg.market_link_id==link.id).limit(1)):
             return auth.error(request,409,'MAPPING_IN_USE','映射已被订单引用，不能拒绝')
         if link.state!='rejected':
             link.state='rejected';link.confirmed_at=None;link.confirmed_by=None;link.updated_at=db_now(db)

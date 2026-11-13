@@ -7,10 +7,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from sqlalchemy import text
 
 from .config import get_settings
 from .database import make_engine
-from . import auth, sports_api, scheduler_api, market_api, trading_api
+from . import auth, sports_api, scheduler_api, market_api, trading_api, combo_api
 
 logger = logging.getLogger("polysports")
 
@@ -21,10 +22,22 @@ def create_app() -> FastAPI:
         settings = get_settings()
         app.state.settings = settings
         app.state.engine = make_engine(settings)
+        combo_lock = None
+        if settings.combo_execution_enabled:
+            try:
+                combo_lock = app.state.engine.connect()
+                if not combo_lock.scalar(text("SELECT pg_try_advisory_lock(hashtext('polysports-combo-api'))")):
+                    raise RuntimeError('组合交易仅支持单个 API 进程')
+                combo_lock.commit()
+            except BaseException:
+                if combo_lock is not None: combo_lock.close()
+                app.state.engine.dispose()
+                raise
         logger.info(json.dumps({"event": "application_started", "environment": settings.environment}))
         try:
             yield
         finally:
+            if combo_lock is not None: combo_lock.close()
             app.state.engine.dispose()
             logger.info(json.dumps({"event": "application_stopped"}))
 
@@ -68,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(scheduler_api.router)
     app.include_router(market_api.router)
     app.include_router(trading_api.router)
+    app.include_router(combo_api.router)
 
     @app.get("/api/v1/health/live")
     def health(request: Request):

@@ -22,6 +22,7 @@ try {
     const context = await browser.newContext({ viewport })
     let authenticated = false
     let mockMappingState = 'candidate'
+    let mockCombos = []
     await context.route('**/*', async route => {
       const url = new URL(route.request().url())
       if (url.origin !== base) return route.abort()
@@ -31,9 +32,12 @@ try {
       if (url.pathname.includes('/order-context/')) return route.fulfill({status:200,json:{data:{home:'Mock Home',away:'Mock Away',market_question:'模拟市场问题',outcome_label:'Yes',starts_at:'2026-01-01T18:00:00Z',asset_id:'1'.repeat(77),protocol_version:'v1'}}})
       if (endpoint === 'preview') {const order=route.request().postDataJSON();await new Promise(resolve => setTimeout(resolve,250));return route.fulfill({status:200,json:{data:{...order,preview_token:'mock-preview',estimated_notional:'2.5',expires_at:'2099-01-01T00:00:00Z'}}})}
       if (endpoint === 'single-orders' && route.request().method()==='POST') return route.fulfill({status:201,json:{data:{intent:{id:'mock-order',state:'pending',matched_size:null,retry_after_seconds:null}}}})
+      if (endpoint === 'combo-rfqs' && route.request().method()==='POST') {mockCombos=[{id:'mock-combo',state:'quoted',direction:'BUY',quantity:'10',wallet_address:'mock-wallet',external_rfq_id:'mock-rfq',error_code:null,legs:[{outcome_id:'o1',home:'Mock Home',away:'Mock Away',market_question:'模拟市场问题',outcome_label:'Yes',starts_at:'2026-01-01T18:00:00Z'}],quote:{id:'mock-quote',price:'0.5',total_required:'10',net_receive:'18',expires_at:'2099-01-01T00:00:00Z'}}];return route.fulfill({status:200,json:{data:mockCombos[0]}})}
+      if (endpoint === 'combo-rfqs') return route.fulfill({status:200,json:{data:{items:mockCombos}}})
+      if (endpoint === 'accept' && url.pathname.includes('/combo-rfqs/')) {mockCombos[0].state='executing';return route.fulfill({status:200,json:{data:mockCombos[0]}})}
       if (endpoint === 'wallets') return route.fulfill({status:200,json:{data:{items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'0x'+'1'.repeat(40),signer_address:'0x'+'2'.repeat(40),wallet_type:'EOA'}]}}})
       if (endpoint === 'status' && url.pathname.includes('/wallets/')) return route.fulfill({status:200,json:{data:{wallet:{id:'mock-wallet'},collateral_balance:null,allowance_status:'unknown'}}})
-      if (endpoint === 'markets') return route.fulfill({status:200,json:{data:{refresh:{status:'succeeded'},items:[{link:{id:'mock-link',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟市场问题',gamma_market_id:'101',condition_id:'0x'+'a'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o1',label:'Yes',asset_kind:'ctf_token',asset_id:'1'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}}]}}})
+      if (endpoint === 'markets') return route.fulfill({status:200,json:{data:{refresh:{status:'succeeded'},items:[{link:{id:'mock-link',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟市场问题',gamma_market_id:'101',condition_id:'0x'+'a'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o1',label:'Yes',asset_kind:'ctf_token',asset_id:'1'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}},{link:{id:'mock-link-2',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟第二市场',gamma_market_id:'102',condition_id:'0x'+'b'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o2',label:'No',asset_kind:'ctf_token',asset_id:'2'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}}]}}})
       if (endpoint === 'confirm' && url.pathname.includes('/market-links/')) {mockMappingState='confirmed';return route.fulfill({status:200,json:{data:{}}})}
       if (endpoint === 'sync-schedules') return route.fulfill({status:200,json:{data:{revision:1,items:[{sport:'football',provider:'api_football',utc_time:'00:00:00',enabled:true},{sport:'nba',provider:'balldontlie',utc_time:'08:00:00',enabled:true}]}}})
       if (endpoint === 'jobs') return route.fulfill({status:200,json:{data:{items:[]}}})
@@ -76,10 +80,13 @@ try {
     await page.getByRole('button', {name:'查看详情'}).click()
     await page.getByText('来源：mock-test-provider · 来源 ID：mock-id').waitFor()
     await page.getByText('模拟市场问题').waitFor()
-    await page.getByRole('button',{name:'核对并确认'}).click()
+    await page.getByRole('button',{name:'核对并确认'}).first().click()
     await page.getByRole('button',{name:'我已核对，确认映射'}).click()
     await page.getByText('映射已确认，可进行订单预览。').waitFor()
-    await page.getByRole('link',{name:'订单预览'}).click()
+    await page.getByRole('button',{name:'加入组合'}).nth(0).click()
+    await page.getByRole('button',{name:'加入组合'}).nth(1).click()
+    await page.getByText('已加入组合，请在组合交易页面核对。').waitFor()
+    await page.getByRole('link',{name:'订单预览'}).first().click()
     await page.getByRole('heading',{name:'单场订单预览'}).waitFor()
     await page.getByLabel('限价').fill('0.50')
     await page.getByLabel('份额').fill('5')
@@ -93,6 +100,16 @@ try {
     await page.getByRole('button',{name:'确认并提交真实订单'}).click()
     await page.getByText('订单已记录；请查看状态，接受不代表成交。').waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 订单页横向溢出`)
+    if (viewport.width < 600) await page.getByRole('button', {name:'菜单'}).click()
+    await page.getByRole('link', {name:'组合交易'}).click()
+    await page.getByRole('heading', {name:'组合询价'}).waitFor()
+    await page.getByText('Mock Home 对 Mock Away · 模拟市场问题 · Yes').waitFor()
+    await page.getByLabel('最高预算（含费用）').fill('10')
+    await page.getByRole('button',{name:'请求真实报价'}).click()
+    await page.getByText('已记录组合询价，请核对报价和状态。').waitFor()
+    await page.getByRole('button',{name:'确认接受真实资金报价'}).click()
+    await page.getByText('已处理确认请求；执行中不代表成交。').waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),true)
     if (viewport.width < 600) await page.getByRole('button', {name:'菜单'}).click()
     await page.getByRole('link', {name:'NBA 赛事'}).click()
     await page.getByRole('heading', {name:'NBA 赛事中心'}).waitFor()

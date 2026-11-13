@@ -104,7 +104,7 @@ def queue_sync(request: Request,body:ManualSync):
 
 
 @router.get('/jobs')
-def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile'] | None=None,status:Literal['pending','leased','done','cancelled','failed'] | None=None,limit:int=Query(100,ge=1,le=100)):
+def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','combo_reconcile'] | None=None,status:Literal['pending','leased','done','cancelled','failed'] | None=None,limit:int=Query(100,ge=1,le=100)):
     query=select(Job)
     if kind: query=query.where(Job.kind==kind)
     if status: query=query.where(Job.status==status)

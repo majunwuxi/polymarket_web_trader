@@ -31,12 +31,17 @@ def fetch_work(engine,job_id,token,settings,client):
         if not job or job.status!='leased' or job.lease_token!=token: raise LeaseLost()
         if job.kind=='sync':
             run=db.get(SyncRun,job.sync_run_id); provider=run.provider; start=run.window_start
+        elif job.kind=='combo_reconcile':
+            combo_id=job.combo_rfq_id
         elif job.kind=='trade_reconcile':
             from .trade_reconcile import fetch_order
             trade_id=job.trade_intent_id
         else:
             watched=db.get(WatchedGame,job.watched_game_id); game=db.get(Game,watched.game_id)
             provider=game.provider; external_id=game.external_id
+    if job.kind=='combo_reconcile':
+        from .combo_reconcile import fetch_combo
+        return fetch_combo(engine,combo_id,settings)
     if job.kind=='trade_reconcile': return fetch_order(engine,trade_id,settings)
     secret=settings.api_football_key if provider=='api_football' else settings.balldontlie_key
     key=secret.get_secret_value() if secret else ''
@@ -71,6 +76,9 @@ def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_aft
                     for game in games: upsert_game(db,game,run.id)
                     run.status='succeeded'; run.pages_fetched=pages; run.items_received=received; run.items_upserted=len(games); run.finished_at=now; run.error_code=run.error_summary=None
                     finish_attempt(db,job,now,'succeeded'); job.status='done'
+            elif job.kind=='combo_reconcile':
+                from .combo_reconcile import apply_combo
+                apply_combo(db,job,payload,error)
             elif job.kind=='trade_reconcile':
                 from .trade_reconcile import apply_reconciliation
                 apply_reconciliation(db,job,payload,error)

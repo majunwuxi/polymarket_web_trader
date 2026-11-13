@@ -150,14 +150,17 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
-| `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "amount":"10.00", "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；SELL 用 `size` 代替 `amount` | 首次 `201`：已得到报价或明确无报价的 `ComboRFQ` 并附 `Location`；`202`：仍在请求或结果未知；同键重复且结果明确为 `200` | 创建 Combo 草稿与 RFQ 记录，不触发接受或资金成交；至少两腿、不能重复 outcome，所有映射已确认且真实 Combo 能力已核实；BUY 的 amount 与 SELL 的 size 各最多六位小数 |
+| `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 首次 `201`：已得到报价或明确无报价的 `ComboRFQ` ；`202`：仍在请求或结果未知；同键重复且结果明确为 `200` | 创建 Combo 草稿与 RFQ 记录，不触发接受或资金成交；至少两腿、不能重复 outcome，所有映射已确认且真实 Combo 能力已核实；`quantity` 最多六位小数 |
+| `GET /combo-rfqs` | `limit`, `cursor` | `200` 分页组合记录 | 按创建时间及 ID 倒序 |
+| `GET /combo-rfqs/by-key/{key}` | 本地幂等键与 `wallet_id` | `200` 现有组合请求 | 用于查询不确定的本地请求，404 不证明外部未收到 |
+| `GET /combo-legs/{link_id}/{outcome_id}` | 已确认映射和选项 ID | `200` 目录 position ID | 仅读取目录身份；不代表账户获交易授权 |
 | `GET /combo-rfqs/{rfq_id}` | 本地 RFQ UUID | `200`：`ComboRFQ` | 返回本地状态和已核实的外部 RFQ ID；外部结果未知不能当作无报价或失败 |
 | `POST /combo-rfqs/{rfq_id}/accept` | `{ "quote_id":"uuid" }`；会话 + CSRF | `200`：明确拒绝或已确认执行的 RFQ；`202`：执行中或未知的 RFQ | 此请求表示用户确认报价及全部腿。锁定 RFQ 与意图，核对有效期、报价、账户、市场和映射；先原子持久化确认、所有赛事关注及接受开始状态，再调用 SDK。重复请求只返回已存在状态，不再次接受 |
-| `GET /combo-rfqs/{rfq_id}/events` | `limit`, `cursor` | `200` 分页脱敏 RFQ 状态事件 | 按 `observed_at,id` 排序；`executing` 不等于成交 |
+| `GET /combo-rfqs/{rfq_id}/events` | `limit`, `cursor` | `200` 分页脱敏 RFQ 状态事件 | 按 `created_at,id` 排序；`executing` 不等于成交 |
 
-`POST /combo-rfqs` 的幂等键同样映射 `trade_intents.client_request_id`，指纹覆盖钱包、方向、金额/份额和规范化腿。相同键/相同参数返回原本地 RFQ；参数不同返回 `409 IDEMPOTENCY_CONFLICT`。若请求结果未知，只能查询/对账原 RFQ；不能通过更换幂等键绕过未知状态。服务端必须使用 `(wallet_id, request_fingerprint)` 的未解决状态唯一约束阻止相同参数换键并发创建额外 RFQ；冲突响应带可查询的原本地意图 ID，不得暴露秘密。该约束也适用于单场未知或正在提交的相同业务参数。
+`POST /combo-rfqs` 的幂等键映射 `combo_rfqs.client_request_id`，指纹覆盖钱包、方向、金额/份额和规范化腿。相同键/相同参数返回原本地 RFQ；参数不同返回 `409 IDEMPOTENCY_CONFLICT`。若请求结果未知，只能查询/对账原 RFQ；不能通过更换幂等键绕过未知状态。服务端必须使用 `(wallet_id, fingerprint)` 的未解决状态唯一约束阻止相同参数换键并发创建额外 RFQ；冲突响应带可查询的原本地 RFQ ID，不得暴露秘密。该约束也适用于单场未知或正在提交的相同业务参数。
 
-官方 SDK 接受报价需要原始报价对象；该对象可能含上游签名，不写入数据库、日志或浏览器。第一版部署限制 FastAPI 为**单进程**，将有效报价对象以受限内存保存并按上游 `expires_at` 及时销毁；API 响应只返回 `ComboQuote` 的安全字段。服务重启或内存对象丢失但尚未发送接受请求时，旧报价不可接受，返回 `409 QUOTE_EXPIRED` 或 `QUOTE_UNAVAILABLE`，用户可重新询价；**已开始接受或结果未知的请求则不可重新询价替代，必须先对账或人工处理**。如未来改为多进程，须另行设计安全共享的短期对象存储和跨进程锁，不能直接扩容后假定报价仍可用。
+官方 SDK 接受报价需要原始报价对象；该对象可能含上游签名，不写入数据库、日志或浏览器。第一版部署限制 FastAPI 为**单进程**，将有效报价对象以受限内存保存并按上游 `expires_at` 及时销毁；API 响应只返回 `ComboQuote` 的安全字段。服务重启或内存对象丢失但尚未发送接受请求时，旧报价不可接受，返回 `409 QUOTE_EXPIRED` 或 `QUOTE_UNAVAILABLE`，用户可在旧报价过期后重新询价；**已开始接受或结果未知的请求则不可重新询价替代，必须先对账或人工处理**。如未来改为多进程，须另行设计安全共享的短期对象存储和跨进程锁，不能直接扩容后假定报价仍可用。
 
 接受后使用 SDK 返回的 RFQ ID 异步查询执行状态，超时后按同一 RFQ ID 对账。请求期间或系统重启中如果无法确认接受请求是否已发送，状态保持 `unknown`，不自动重新接受或创建新 RFQ。未获得必要 Builder 凭证、签名钱包、授权或市场支持时返回明确不可用错误，不生成模拟报价。
 
@@ -211,4 +214,4 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 - Combo 无报价、真实报价截止、对象丢失、重复接受、Last Look 拒绝、执行中、结果未知与 RFQ 对账；不得把单场批量下单当作 Combo。
 - 425、post-only、第三方故障和授权缺失；日志、状态、统计、CSV/XLSX 口径和公式防护。
 
-6F 已实现单场订单预览、提交、撤单、历史、只读对账、候选订单人工关联与成交证据查询；具体接口和配置见 [PolySports 运行说明](polysports/README.md) 与运行中的 OpenAPI。组合交易等后续功能仍为设计，模拟测试不能证明真实资金交易已通过。官方参考：[单场下单](https://docs.polymarket.com/trading/place-orders)、[Combo Builder](https://docs.polymarket.com/trading/combos/builders)、[撮合重启](https://docs.polymarket.com/trading/matching-engine)。
+6F 已实现单场订单预览、提交、撤单、历史、只读对账、候选订单人工关联与成交证据查询；具体接口和配置见 [PolySports 运行说明](polysports/README.md) 与运行中的 OpenAPI。6G 增加组合询价、接受、状态和事件接口；组合交易默认关闭，模拟测试不能证明真实资金交易已通过。官方参考：[单场下单](https://docs.polymarket.com/trading/place-orders)、[Combo Builder](https://docs.polymarket.com/trading/combos/builders)、[撮合重启](https://docs.polymarket.com/trading/matching-engine)。

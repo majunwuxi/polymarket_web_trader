@@ -198,7 +198,7 @@ class WatchedGame(Base):
 
 class Job(Base):
     __tablename__ = 'jobs'
-    __table_args__ = (UniqueConstraint('dedupe_key',name='uq_jobs_dedupe'),CheckConstraint("kind IN ('sync','result_poll','trade_reconcile')",name='ck_jobs_kind'),CheckConstraint("status IN ('pending','leased','done','cancelled','failed')",name='ck_jobs_status'),CheckConstraint("(status = 'leased' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL AND lease_token IS NOT NULL) OR (status <> 'leased' AND lease_owner IS NULL AND lease_until IS NULL AND lease_token IS NULL)",name='ck_jobs_lease'),CheckConstraint("(kind = 'result_poll' AND watched_game_id IS NOT NULL AND sync_run_id IS NULL AND trade_intent_id IS NULL) OR (kind = 'sync' AND watched_game_id IS NULL AND sync_run_id IS NOT NULL AND trade_intent_id IS NULL) OR (kind = 'trade_reconcile' AND trade_intent_id IS NOT NULL AND watched_game_id IS NULL AND sync_run_id IS NULL)",name='ck_jobs_target'),Index('ix_jobs_pending_due','due_at','id',postgresql_where=text("status = 'pending'")),Index('ix_jobs_leased_until','lease_until','id',postgresql_where=text("status = 'leased'")),Index('ix_jobs_watched','watched_game_id'),Index('uq_jobs_trade_intent','trade_intent_id',unique=True,postgresql_where=text('trade_intent_id IS NOT NULL')),Index('uq_jobs_sync_run','sync_run_id',unique=True,postgresql_where=text('sync_run_id IS NOT NULL')))
+    __table_args__ = (UniqueConstraint('dedupe_key',name='uq_jobs_dedupe'),CheckConstraint("kind IN ('sync','result_poll','trade_reconcile','combo_reconcile')",name='ck_jobs_kind'),CheckConstraint("status IN ('pending','leased','done','cancelled','failed')",name='ck_jobs_status'),CheckConstraint("(status = 'leased' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL AND lease_token IS NOT NULL) OR (status <> 'leased' AND lease_owner IS NULL AND lease_until IS NULL AND lease_token IS NULL)",name='ck_jobs_lease'),CheckConstraint("(kind = 'result_poll' AND watched_game_id IS NOT NULL AND sync_run_id IS NULL AND trade_intent_id IS NULL AND combo_rfq_id IS NULL) OR (kind = 'sync' AND watched_game_id IS NULL AND sync_run_id IS NOT NULL AND trade_intent_id IS NULL AND combo_rfq_id IS NULL) OR (kind = 'trade_reconcile' AND trade_intent_id IS NOT NULL AND watched_game_id IS NULL AND sync_run_id IS NULL AND combo_rfq_id IS NULL) OR (kind = 'combo_reconcile' AND combo_rfq_id IS NOT NULL AND watched_game_id IS NULL AND sync_run_id IS NULL AND trade_intent_id IS NULL)",name='ck_jobs_target'),Index('ix_jobs_pending_due','due_at','id',postgresql_where=text("status = 'pending'")),Index('ix_jobs_leased_until','lease_until','id',postgresql_where=text("status = 'leased'")),Index('ix_jobs_watched','watched_game_id'),Index('uq_jobs_trade_intent','trade_intent_id',unique=True,postgresql_where=text('trade_intent_id IS NOT NULL')),Index('uq_jobs_combo_rfq','combo_rfq_id',unique=True,postgresql_where=text('combo_rfq_id IS NOT NULL')),Index('uq_jobs_sync_run','sync_run_id',unique=True,postgresql_where=text('sync_run_id IS NOT NULL')))
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
     kind: Mapped[str] = mapped_column(String(24),nullable=False)
     dedupe_key: Mapped[str] = mapped_column(String(255),nullable=False)
@@ -206,6 +206,7 @@ class Job(Base):
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('sync_schedules.id',ondelete='RESTRICT'))
     sync_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('sync_runs.id',ondelete='RESTRICT'))
     trade_intent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('trade_intents.id',ondelete='RESTRICT'))
+    combo_rfq_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('combo_rfqs.id',ondelete='RESTRICT',name='fk_jobs_combo_rfq'))
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
     status: Mapped[str] = mapped_column(String(16),nullable=False)
     lease_owner: Mapped[str | None] = mapped_column(String(128))
@@ -366,3 +367,48 @@ class TradeFill(Base):
     status: Mapped[str] = mapped_column(String(40),nullable=False)
     matched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class ComboRFQ(Base):
+    __tablename__ = 'combo_rfqs'
+    __table_args__ = (UniqueConstraint('wallet_id','client_request_id',name='uq_combo_wallet_request'),UniqueConstraint('external_rfq_id',name='uq_combo_external_rfq'),Index('uq_combo_unresolved','wallet_id','fingerprint',unique=True,postgresql_where=text("state IN ('requesting','quoted','accepting','executing','unknown')")),CheckConstraint("state IN ('requesting','quoted','accepting','executing','confirmed','expired','rejected','failed','unknown')",name='ck_combo_state'),CheckConstraint("direction IN ('BUY','SELL') AND quantity > 0",name='ck_combo_quantity'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    wallet_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(42),nullable=False)
+    client_request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64),nullable=False)
+    direction: Mapped[str] = mapped_column(String(4),nullable=False)
+    quantity: Mapped[__import__('decimal').Decimal] = mapped_column(__import__('sqlalchemy').Numeric(38,18),nullable=False)
+    state: Mapped[str] = mapped_column(String(24),nullable=False)
+    external_rfq_id: Mapped[str | None] = mapped_column(String(255))
+    quote_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    quote_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quote_price: Mapped[__import__('decimal').Decimal | None] = mapped_column(__import__('sqlalchemy').Numeric(38,18))
+    quote_required: Mapped[__import__('decimal').Decimal | None] = mapped_column(__import__('sqlalchemy').Numeric(38,18))
+    quote_receive: Mapped[__import__('decimal').Decimal | None] = mapped_column(__import__('sqlalchemy').Numeric(38,18))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    tx_hash: Mapped[str | None] = mapped_column(String(255))
+    accept_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class ComboLeg(Base):
+    __tablename__ = 'combo_legs'
+    __table_args__ = (UniqueConstraint('rfq_id','outcome_id',name='uq_combo_leg_outcome'),UniqueConstraint('rfq_id','position_id',name='uq_combo_leg_position'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    rfq_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('combo_rfqs.id',ondelete='RESTRICT'),nullable=False)
+    game_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('games.id',ondelete='RESTRICT'),nullable=False)
+    market_link_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('market_links.id',ondelete='RESTRICT'),nullable=False)
+    outcome_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('market_outcomes.id',ondelete='RESTRICT'),nullable=False)
+    position_id: Mapped[str] = mapped_column(String(78),nullable=False)
+
+
+class ComboEvent(Base):
+    __tablename__ = 'combo_events'
+    __table_args__ = (Index('ix_combo_events_rfq_time','rfq_id','created_at'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    rfq_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('combo_rfqs.id',ondelete='RESTRICT'),nullable=False)
+    state: Mapped[str] = mapped_column(String(24),nullable=False)
+    code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
 import requests
+from polymarket import RequestRejectedError
 from eth_account import Account
 from web3 import Web3
 
@@ -14,6 +16,33 @@ from .config import EnvConfig
 
 logger = logging.getLogger(__name__)
 WALLET_TYPES = {0: "EOA", 1: "POLY_PROXY", 2: "GNOSIS_SAFE", 3: "DEPOSIT_WALLET"}
+
+
+def _restriction_result(code: str, retry_after: Any = None) -> dict[str, Any]:
+    if code == "engine_restarting":
+        message = "Polymarket 撮合引擎正在重启，暂时无法处理交易请求。请稍后重试；恢复后新订单可能暂时仅接受 post-only 订单。"
+    else:
+        message = "Polymarket 当前处于 post-only 模式，普通订单暂不可提交，请稍后重试。"
+    result: dict[str, Any] = {"orderId": "", "status": "failed", "code": code, "error": message}
+    try:
+        delay = float(retry_after)
+        if math.isfinite(delay) and delay >= 0:
+            result["retry_after"] = delay
+            result["error"] += f" 服务端建议等待至少 {delay:g} 秒。"
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return result
+
+
+def _classify_restriction(exc: Exception) -> Optional[dict[str, Any]]:
+    if isinstance(exc, RequestRejectedError):
+        if exc.status == 425 or exc.restriction == "restarting":
+            return _restriction_result("engine_restarting", exc.retry_after)
+        if exc.restriction == "post_only" or exc.code == "post_only_mode":
+            return _restriction_result("post_only_mode", exc.retry_after)
+    if isinstance(exc, requests.HTTPError) and exc.response is not None and exc.response.status_code == 425:
+        return _restriction_result("engine_restarting", exc.response.headers.get("Retry-After"))
+    return None
 
 
 class CLOBOrderExecutor:
@@ -72,6 +101,8 @@ class CLOBOrderExecutor:
             try:
                 client = SecureClient.create(private_key=env.private_key, wallet=wallet, credentials=credentials)
             except Exception as exc:
+                if _classify_restriction(exc):
+                    raise
                 logger.warning("无法初始化统一交易客户端 (%s)", type(exc).__name__)
                 raise ValueError("交易客户端初始化失败，请检查钱包、CLOB 凭证和网络") from exc
             if str(client.wallet).lower() != wallet.lower() or client.wallet_type != WALLET_TYPES[env.signature_type]:
@@ -127,6 +158,9 @@ class CLOBOrderExecutor:
             _, tick, minimum = self._get_book_context(token_id)
             self._validate_order_constraints(price, size, tick, minimum)
         except (requests.RequestException, ValueError) as exc:
+            restriction = _classify_restriction(exc)
+            if restriction:
+                return restriction
             return {"orderId": "", "status": "failed", "error": f"订单规则校验失败: {exc}"}
         if self.dry_run:
             return {"orderId": f"dryrun-{uuid.uuid4()}", "status": "simulated"}
@@ -135,6 +169,8 @@ class CLOBOrderExecutor:
             signed = client.create_limit_order(asset_id=token_id, side=side, price=str(price), size=str(size))
             response = client.post_order(signed)
             if not response.ok:
+                if getattr(response, "code", None) == "post_only_mode":
+                    return _restriction_result("post_only_mode")
                 return {"orderId": "", "status": "failed", "error": str(response.message)}
             order_id = str(response.order_id or "")
             if not order_id:
@@ -143,6 +179,9 @@ class CLOBOrderExecutor:
         except ValueError as exc:
             return {"orderId": "", "status": "failed", "error": str(exc)}
         except Exception as exc:
+            restriction = _classify_restriction(exc)
+            if restriction:
+                return restriction
             logger.warning("提交订单失败 (%s)", type(exc).__name__)
             return {"orderId": "", "status": "failed", "error": "提交订单失败，请检查日志、钱包余额和授权状态"}
 
@@ -169,5 +208,8 @@ class CLOBOrderExecutor:
                 return {"success": True, "status": "canceled"}
             return {"success": False, "error": str(result.not_canceled.get(order_id) or "交易所未确认撤单")}
         except Exception as exc:
+            restriction = _classify_restriction(exc)
+            if restriction:
+                return {"success": False, **{k: v for k, v in restriction.items() if k not in ("orderId", "status")}}
             logger.warning("撤单失败 (%s)", type(exc).__name__)
             return {"success": False, "error": "撤单失败，请检查钱包和网络"}

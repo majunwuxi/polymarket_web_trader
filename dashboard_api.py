@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 
 from polymarket_autotrader.clients import PolymarketDataClient, PolygonBalanceProvider, RetryConfig
 from polymarket_autotrader.config import BotConfig, EnvConfig, WalletConfig, load_bot_config, load_env, load_wallets
-from polymarket_autotrader.execution import CLOBOrderExecutor
+from polymarket_autotrader.execution import CLOBOrderExecutor, _classify_restriction
 SELL = "SELL"
 BUY = "BUY"
 
@@ -811,6 +811,21 @@ def api_auth_check():
         return jsonify({"authenticated": True})
     return jsonify({"authenticated": False}), 401
 
+def _trade_error_response(result: dict[str, Any]):
+    code = result.get("code")
+    payload = {"status": "failed", "error": result.get("error") or "订单提交失败或无法确认"}
+    if code not in ("engine_restarting", "post_only_mode"):
+        return jsonify(payload), 400
+    payload["code"] = code
+    response = jsonify(payload)
+    retry_after = result.get("retry_after")
+    if isinstance(retry_after, (int, float)) and math.isfinite(retry_after) and retry_after >= 0:
+        payload["retry_after"] = retry_after
+        response = jsonify(payload)
+        response.headers["Retry-After"] = str(math.ceil(retry_after))
+    return response, 503
+
+
 @app.route("/api/trade/sell", methods=["POST"])
 def api_trade_sell():
     """Sell position (requires auth)"""
@@ -896,7 +911,7 @@ def api_trade_sell():
         result = executor.place_order(price=best_bid_price, size=sell_size, side=SELL, market_id=token_id, token_id=token_id)
         order_id = result.get("orderId", "")
         if not order_id:
-            return jsonify({"status": "failed", "error": result.get("error") or "订单提交失败或无法确认"}), 400
+            return _trade_error_response(result)
         return jsonify({
             "status": "success",
             "order_id": order_id,
@@ -904,10 +919,11 @@ def api_trade_sell():
         })
         
     except Exception as e:
+        restriction = _classify_restriction(e)
+        if restriction:
+            return _trade_error_response(restriction)
         logger.error(f"Sell failed: {e}")
         error_str = str(e)
-        if "425" in error_str or "service not ready" in error_str.lower():
-            error_str = "CLOB API 凭证未就绪 (425)。请检查钱包是否已在 Polymarket 注册并授权。如问题持续，请重启服务重试。"
         return jsonify({"error": error_str}), 500
 
 import re
@@ -1577,10 +1593,7 @@ def api_trade_place():
         error_msg = result.get("error")
 
         if status == "failed" and error_msg:
-            user_error = error_msg
-            if "425" in error_msg or "service not ready" in error_msg.lower():
-                user_error = "CLOB API 凭证未就绪 (425)。请检查钱包是否已在 Polymarket 注册并授权。如问题持续，请重启服务重试。"
-            return jsonify({"error": user_error, "status": "failed"}), 400
+            return _trade_error_response(result)
 
         # 查询订单成交状态
         filled_size = result.get("filled_size")
@@ -1614,10 +1627,11 @@ def api_trade_place():
         })
 
     except Exception as exc:
+        restriction = _classify_restriction(exc)
+        if restriction:
+            return _trade_error_response(restriction)
         logger.error("Trade place failed: %s", exc, exc_info=True)
         error_str = str(exc)
-        if "425" in error_str or "service not ready" in error_str.lower():
-            error_str = "CLOB API 凭证未就绪 (425)。请检查钱包是否已在 Polymarket 注册并授权。如问题持续，请重启服务重试。"
         return jsonify({"error": error_str}), 500
 
 

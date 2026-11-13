@@ -1132,6 +1132,11 @@ class PolymarketDataClient:
             bids = data.get("bids") or []
             asks = data.get("asks") or []
             return OrderBook(bids=bids, asks=asks)
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 425:
+                raise
+            logger.error("get_order_book HTTP error: %s", e)
+            return None
         except Exception as e:  # noqa: BLE001
             logger.error(f"get_order_book exception: {e}")
             return None

@@ -8,6 +8,7 @@ import math
 import time
 import uuid
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -259,7 +260,7 @@ class CLOBOrderExecutor:
                 break
         return True, filled, None
 
-    def _get_book_version(self, asset_id: str) -> str:
+    def _get_book_context(self, asset_id: str) -> tuple[str, Decimal, Decimal]:
         response = requests.get(f"{self.clob_host.rstrip('/')}/book", params={"token_id": asset_id}, timeout=10)
         response.raise_for_status()
         book = response.json()
@@ -268,11 +269,34 @@ class CLOBOrderExecutor:
         if str(book.get("asset_id") or "") != asset_id:
             raise ValueError("订单簿资产标识不匹配")
         version = book.get("version")
-        if version is None or version == "v1":
-            return "v1"
-        if version == "v2":
-            return "v2"
-        raise ValueError(f"不支持的订单簿版本: {version}")
+        if version is None:
+            version = "v1"
+        if version not in ("v1", "v2"):
+            raise ValueError(f"不支持的订单簿版本: {version}")
+        try:
+            tick = Decimal(str(book["tick_size"]))
+            minimum = Decimal(str(book["min_order_size"]))
+            if not tick.is_finite() or not minimum.is_finite() or not 0 < tick < Decimal("0.5") or minimum <= 0:
+                raise ValueError("订单簿交易规则无效")
+        except (KeyError, InvalidOperation, TypeError) as exc:
+            raise ValueError("订单簿缺少有效的价格增量或最小份额") from exc
+        return version, tick, minimum
+
+    @staticmethod
+    def _validate_order_constraints(price: Any, size: Any, tick: Decimal, minimum: Decimal) -> None:
+        try:
+            price_value = Decimal(str(price))
+            size_value = Decimal(str(size))
+            if not price_value.is_finite() or not size_value.is_finite():
+                raise ValueError("价格和份额必须是有限数字")
+            if price_value < tick or price_value > Decimal(1) - tick or price_value % tick != 0:
+                raise ValueError(f"价格必须为 {tick} 的整数倍，范围为 {tick} 至 {Decimal(1) - tick}")
+            if size_value <= 0 or size_value < minimum:
+                raise ValueError(f"订单份额不能小于 {minimum}")
+            if size_value % Decimal("0.01") != 0:
+                raise ValueError("订单份额最多支持两位小数")
+        except (InvalidOperation, TypeError) as exc:
+            raise ValueError("价格或份额格式无效") from exc
 
     def _place_protocol_v2_order(self, asset_id: str, side: str, price: float, size: float) -> dict[str, Any]:
         try:
@@ -319,54 +343,21 @@ class CLOBOrderExecutor:
             logger.error(error_msg)
             return {"orderId": "", "status": "failed", "error": error_msg}
         
-        # 简单的价格和数量验证（只做必要的范围检查，不做过度精度处理）
-        import math
-        if size <= 0:
-            error_msg = f"size <= 0: {size}"
-            logger.error(error_msg)
-            return {"orderId": "", "status": "failed", "error": error_msg}
-        
-        # 使用配置的精度进行四舍五入（优先根据聚合/环境配置）
         try:
-            price = round(price, int(self.price_precision))
-        except Exception:
-            price = round(price, 3)
-        
-        try:
-            size = round(size, int(self.size_precision))
-        except Exception:
-            size = round(size, 4)
-        
-        # 再进行边界钳制，避免 0.998 -> 1.00 的问题导致无效价格
-        if price >= 1.0:
-            logger.warning("Price rounded to >= 1.0, clamping to 0.999 (was %s)", price)
-            price = 0.999
-        elif price < 0.001:
-            logger.warning("Price rounded to < 0.001, clamping to 0.001 (was %s)", price)
-            price = 0.001
-        
-        # 根据最终钳制结果，再次按精度规范化一次，确保传参稳定
-        try:
-            price = round(price, int(self.price_precision))
-        except Exception:
-            price = round(price, 3)
-        
+            version, tick, minimum = self._get_book_context(token_id)
+            self._validate_order_constraints(price, size, tick, minimum)
+        except (requests.RequestException, ValueError) as exc:
+            return {"orderId": "", "status": "failed", "error": f"订单规则校验失败: {exc}"}
+
         if self.dry_run:
             order_id = f"dryrun-{uuid.uuid4()}"
-            logger.info(
-                "[DRY RUN] Place order %s %s %s size=%s price=%s",
-                market_id,
-                token_id,
-                side,
-                size,
-                price,
-            )
+            logger.info("[DRY RUN] Place order %s %s %s size=%s price=%s", market_id, token_id, side, size, price)
             return {"orderId": order_id, "status": "simulated"}
 
-        try:
-            version = self._get_book_version(token_id)
-        except (requests.RequestException, ValueError) as exc:
-            return {"orderId": "", "status": "failed", "error": f"无法确认订单簿协议版本: {exc}"}
+        # The installed legacy builder cannot encode these newer tick sizes.
+        if version == "v1" and tick not in (Decimal("0.1"), Decimal("0.01"), Decimal("0.001"), Decimal("0.0001")):
+            return {"orderId": "", "status": "failed", "error": f"当前 CTF 交易客户端不支持价格增量 {tick}"}
+
         if version == "v2":
             return self._place_protocol_v2_order(token_id, side, price, size)
 

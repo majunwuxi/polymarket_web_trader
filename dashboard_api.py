@@ -5,6 +5,8 @@ Polymarket 监控面板 API 服务
 """
 
 from __future__ import annotations
+from decimal import Decimal, ROUND_DOWN
+import math
 
 import json
 import logging
@@ -75,8 +77,8 @@ def _parse_positive_float(value: Any, field_name: str) -> tuple[Optional[float],
         parsed = float(value)
     except (TypeError, ValueError):
         return None, (jsonify({"error": f"Invalid {field_name}"}), 400)
-    if parsed <= 0:
-        return None, (jsonify({"error": f"{field_name} must be > 0"}), 400)
+    if not math.isfinite(parsed) or parsed <= 0:
+        return None, (jsonify({"error": f"{field_name} must be a finite number > 0"}), 400)
     return parsed, None
 
 
@@ -890,9 +892,7 @@ def api_trade_sell():
             return jsonify({"error": "Position size is 0"}), 400
             
         # 2. Calculate sell size
-        sell_size = current_size * percentage
-        if percentage >= 0.99: # Treat as full sell
-            sell_size = current_size
+        sell_size = float((Decimal(str(current_size)) * Decimal(str(percentage))).quantize(Decimal("0.01"), rounding=ROUND_DOWN))
             
         # 3. Get Best Price
         # We try to get the best BID price from the orderbook
@@ -943,15 +943,10 @@ def api_trade_sell():
         
         logger.info(f"Executing SELL {sell_size} of {token_id} at {best_bid_price} using wallet {current_wallet.name} ({current_wallet.address[:20]}...)")
         
-        order_id = executor.create_and_post_order(
-            price=best_bid_price,
-            size=sell_size,
-            side=SELL,
-            token_id=token_id
-        )
-        
+        result = executor.place_order(price=best_bid_price, size=sell_size, side=SELL, market_id=token_id, token_id=token_id)
+        order_id = result.get("orderId", "")
         if not order_id:
-            return jsonify({"status": "failed", "error": "订单提交失败或无法确认"}), 400
+            return jsonify({"status": "failed", "error": result.get("error") or "订单提交失败或无法确认"}), 400
         return jsonify({
             "status": "success",
             "order_id": order_id,
@@ -1569,8 +1564,8 @@ def api_trade_place():
             price = float(price)
         except (TypeError, ValueError):
             return jsonify({"error": "Invalid price"}), 400
-        if price <= 0:
-            return jsonify({"error": "price must be > 0"}), 400
+        if not math.isfinite(price) or price <= 0:
+            return jsonify({"error": "price must be a finite number > 0"}), 400
 
     current_wallet = get_current_wallet()
     if not current_wallet:

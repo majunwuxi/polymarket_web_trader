@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from decimal import Decimal
 from unittest.mock import Mock, patch
 from polymarket_autotrader.clients import PolymarketDataClient
 from polymarket_autotrader.execution import CLOBOrderExecutor
@@ -17,26 +18,26 @@ class MarketAssetTests(unittest.TestCase):
     def test_book_version(self, get):
         executor = CLOBOrderExecutor.__new__(CLOBOrderExecutor)
         executor.clob_host = 'https://clob.polymarket.com'
-        get.return_value.json.return_value = {'asset_id':'101','version':'v2'}
-        self.assertEqual(executor._get_book_version('101'), 'v2')
-        get.return_value.json.return_value = {'asset_id':'101'}
-        self.assertEqual(executor._get_book_version('101'), 'v1')
+        get.return_value.json.return_value = {'asset_id':'101','version':'v2', 'tick_size':'0.01', 'min_order_size':'5'}
+        self.assertEqual(executor._get_book_context('101')[0], 'v2')
+        get.return_value.json.return_value = {'asset_id':'101', 'tick_size':'0.01', 'min_order_size':'5'}
+        self.assertEqual(executor._get_book_context('101')[0], 'v1')
         get.return_value.json.return_value = {'asset_id':'101','version':'future'}
-        with self.assertRaises(ValueError): executor._get_book_version('101')
+        with self.assertRaises(ValueError): executor._get_book_context('101')
         get.return_value.json.return_value = {'asset_id':'wrong'}
-        with self.assertRaises(ValueError): executor._get_book_version('101')
+        with self.assertRaises(ValueError): executor._get_book_context('101')
 
     def test_live_order_routes_by_book_version(self):
         executor = CLOBOrderExecutor.__new__(CLOBOrderExecutor)
         executor.dry_run = False
         executor.price_precision = 3
         executor.size_precision = 2
-        executor._get_book_version = Mock(return_value='v2')
+        executor._get_book_context = Mock(return_value=('v2', Decimal('0.01'), Decimal('5')))
         executor._place_protocol_v2_order = Mock(return_value={'orderId':'order', 'status':'pending'})
         result = executor.place_order('BUY', 0.5, 10, 'market', '101')
         executor._place_protocol_v2_order.assert_called_once_with('101', 'BUY', 0.5, 10)
         self.assertEqual(result['orderId'], 'order')
-        executor._get_book_version.side_effect = ValueError('unknown version')
+        executor._get_book_context.side_effect = ValueError('unknown version')
         self.assertEqual(executor.place_order('BUY', 0.5, 10, 'market', '101')['status'], 'failed')
         executor._place_protocol_v2_order.assert_called_once()
 

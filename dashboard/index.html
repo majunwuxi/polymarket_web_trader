@@ -2860,9 +2860,13 @@
         alert('无法获取有效价格，请重试');
         return;
       }
-      const size = amountPUSD / price;
+      const size = Math.floor((amountPUSD / price) * 100) / 100;
+      if (size <= 0) {
+        alert('计算后的份额不足 0.01');
+        return;
+      }
 
-      if (!confirm(`确认买入 ${outcome.name}?\n金额: ${amountPUSD.toFixed(2)} pUSD\n预估份额: ${size.toFixed(4)}\n价格: ${(price * 100).toFixed(1)}¢`)) {
+      if (!confirm(`确认买入 ${outcome.name}?\n金额上限: ${amountPUSD.toFixed(2)} pUSD\n下单份额: ${size.toFixed(2)}\n价格: ${(price * 100).toFixed(1)}¢`)) {
         return;
       }
 

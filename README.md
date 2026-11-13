@@ -50,7 +50,7 @@ price_precision: 4
 size_precision: 4
 ```
 
-敏感配置放在 `.env`。至少需要：
+敏感配置放在 `.env`。签名类型必须与账户钱包一致（0 EOA、1 Proxy、2 Safe、3 Deposit Wallet）；详见 [配置指南](CONFIG_GUIDE.md)。例如：
 
 ```bash
 POLY_PRIVATE_KEY=0x...

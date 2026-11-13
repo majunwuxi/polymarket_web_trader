@@ -27,32 +27,22 @@ class MarketAssetTests(unittest.TestCase):
         get.return_value.json.return_value = {'asset_id':'wrong'}
         with self.assertRaises(ValueError): executor._get_book_context('101')
 
-    def test_live_order_routes_by_book_version(self):
+    def test_both_market_versions_use_unified_client(self):
         executor = CLOBOrderExecutor.__new__(CLOBOrderExecutor)
         executor.dry_run = False
-        executor.price_precision = 3
-        executor.size_precision = 2
-        executor._get_book_context = Mock(return_value=('v2', Decimal('0.01'), Decimal('5')))
-        executor._place_protocol_v2_order = Mock(return_value={'orderId':'order', 'status':'pending'})
-        result = executor.place_order('BUY', 0.5, 10, 'market', '101')
-        executor._place_protocol_v2_order.assert_called_once_with('101', 'BUY', 0.5, 10)
-        self.assertEqual(result['orderId'], 'order')
+        client = Mock()
+        client.post_order.return_value = SimpleNamespace(ok=True, order_id='order')
+        executor._get_client = Mock(return_value=client)
+        for version in ('v1', 'v2'):
+            with self.subTest(version=version):
+                executor._get_book_context = Mock(return_value=(version, Decimal('0.0025'), Decimal('5')))
+                result = executor.place_order('BUY', 0.5, 10, 'market', '101')
+                self.assertEqual(result['status'], 'pending')
+                self.assertIsNone(result['filled_size'])
+        self.assertEqual(client.create_limit_order.call_count, 2)
+        client.create_limit_order.assert_called_with(asset_id='101', side='BUY', price='0.5', size='10')
         executor._get_book_context.side_effect = ValueError('unknown version')
         self.assertEqual(executor.place_order('BUY', 0.5, 10, 'market', '101')['status'], 'failed')
-        executor._place_protocol_v2_order.assert_called_once()
-
-    def test_v2_signs_and_posts_selected_asset(self):
-        executor = CLOBOrderExecutor.__new__(CLOBOrderExecutor)
-        executor.clob_host = 'https://clob.polymarket.com'
-        executor._env = SimpleNamespace(funder_address='0xwallet')
-        client = Mock()
-        executor._protocol_v2_client = client
-        client.post_order.return_value = SimpleNamespace(ok=True, order_id='order')
-        result = executor._place_protocol_v2_order('101', 'BUY', 0.5, 10)
-        client.create_limit_order.assert_called_once_with(asset_id='101', side='BUY', price='0.5', size='10')
-        client.post_order.assert_called_once_with(client.create_limit_order.return_value)
-        self.assertEqual(result, {'orderId':'order','status':'pending','filled_size':None})
-        client.post_order.return_value = SimpleNamespace(ok=False, message='rejected')
-        self.assertEqual(executor._place_protocol_v2_order('101','BUY',0.5,10)['status'], 'failed')
+        self.assertEqual(client.post_order.call_count, 2)
 
 if __name__ == '__main__': unittest.main()

@@ -30,11 +30,8 @@ from dotenv import load_dotenv
 from polymarket_autotrader.clients import PolymarketDataClient, PolygonBalanceProvider, RetryConfig
 from polymarket_autotrader.config import BotConfig, EnvConfig, WalletConfig, load_bot_config, load_env, load_wallets
 from polymarket_autotrader.execution import CLOBOrderExecutor
-try:
-    from py_clob_client.order_builder.constants import SELL, BUY
-except ImportError:
-    SELL = "SELL"
-    BUY = "BUY"
+SELL = "SELL"
+BUY = "BUY"
 
 load_dotenv()
 
@@ -751,7 +748,7 @@ def api_wallets_status():
         wallet = wallets.get(wallet_id)
         has_creds = False
         try:
-            has_creds = getattr(executor.client, "creds", None) is not None
+            has_creds = executor.has_api_creds
         except Exception:  # noqa: BLE001
             pass
         wallet_status_list.append({

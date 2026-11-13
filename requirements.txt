@@ -5,18 +5,10 @@ pytz
 python-dotenv
 flask
 flask-cors
-py-clob-client
-py-clob-client-v2==1.0.0
 websocket-client
 openpyxl
 pyotp
 qrcode
-# Note: If PyPI is not accessible, install py-clob-client separately:
-# Option 1: Use mirror (recommended)
-# pip install py-clob-client -i https://pypi.tuna.tsinghua.edu.cn/simple
-# Option 2: Install from GitHub
-# pip install git+https://github.com/Polymarket/poly-eip712-structs.git
-# pip install git+https://github.com/Polymarket/py-clob-client.git
 
 # 官方统一 SDK：Protocol V2 市场签名
 polymarket-client==0.18.0

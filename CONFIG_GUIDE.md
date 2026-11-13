@@ -53,6 +53,17 @@ WALLET_2_SIGNATURE_TYPE=1
 
 如果同时配置多钱包和旧版 `POLY_*` 单钱包变量，系统优先使用多钱包配置。
 
+### 钱包与交易凭证
+
+`POLY_FUNDER_ADDRESS`（多钱包中为 `address`）是 Polymarket 账户钱包地址，`POLY_PRIVATE_KEY` 是其签名者私钥。`signature_type` 必须与账户类型一致：`0` 为 EOA，`1` 为 Proxy，`2` 为 Safe，`3` 为 Deposit Wallet。EOA 地址必须与签名私钥对应；智能钱包应填写账户钱包地址，而不是签名者地址。可在 Polymarket 账户菜单查看钱包地址。
+
+交易会话在首次下单或查询订单时建立，官方 SDK 会识别钱包类型并与配置核对。智能钱包必须已部署，且 `POLYGON_RPC_URL` 必须能访问 Polygon 主网；系统不会自动部署钱包或提交授权交易。首次交易前需通过 Polymarket 或官方流程完成资金、合约授权及相应 CLOB allowance 同步。
+
+可选地设置 `POLY_CLOB_API_KEY`、`POLY_CLOB_API_SECRET`、`POLY_CLOB_API_PASSPHRASE`；要么三项全部填写，要么全部留空由 SDK 获取。多钱包可分别使用 JSON 中的 `clob_api_key`、`clob_api_secret`、`clob_api_passphrase`，或编号变量 `WALLET_1_CLOB_API_KEY` 等。凭证属于对应签名者，请勿混用。钱包状态中的凭证标记表示会话已初始化；惰性初始化之前显示未就绪不代表配置有误。
+
+目前交易 SDK 仅支持生产 CLOB 地址。`DRY_RUN=true` 会验证实时订单簿，但不会初始化交易会话或发送订单，因此不验证钱包凭证和链上授权。
+
+
 ## 2FA
 
 运行以下命令生成 `DASHBOARD_2FA_SECRET`：

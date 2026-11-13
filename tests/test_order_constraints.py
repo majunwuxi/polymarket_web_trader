@@ -19,13 +19,13 @@ class OrderConstraintTests(unittest.TestCase):
         executor = CLOBOrderExecutor.__new__(CLOBOrderExecutor)
         executor.dry_run = True
         executor._get_book_context = Mock(return_value=('v2',Decimal('0.01'),Decimal('5')))
-        executor._place_protocol_v2_order = Mock()
+        executor._get_client = Mock()
         self.assertEqual(executor.place_order('BUY',0.515,10,'m','123')['status'], 'failed')
         self.assertEqual(executor.place_order('BUY',0.51,4.99,'m','123')['status'], 'failed')
         self.assertEqual(executor.place_order('BUY',0.51,5,'m','123')['status'], 'simulated')
         executor._get_book_context.side_effect = ValueError('missing rules')
         self.assertEqual(executor.place_order('BUY',0.51,5,'m','123')['status'], 'failed')
-        executor._place_protocol_v2_order.assert_not_called()
+        executor._get_client.assert_not_called()
 
     def test_sell_percentage_rounds_down_and_propagates_error(self):
         data = Mock()

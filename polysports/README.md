@@ -1,6 +1,6 @@
-# PolySports（6B 管理员认证阶段）
+# PolySports（6C 赛事中心阶段）
 
-本目录是独立的 PolySports 项目，提供单管理员登录、服务端会话、CSRF 防护和工作台基础界面。赛事、钱包和交易尚未实现，界面不显示虚构业务数据。不需要启动仓库原有 Flask Dashboard。
+本目录是独立的 PolySports 项目，提供管理员认证、足球和 NBA 赛事来源适配、赛程同步、赛事中心与球队译名维护。关注、自动调度、钱包和交易尚未实现，界面不显示虚构业务数据。不需要启动仓库原有 Flask Dashboard。
 
 ## 环境与配置
 
@@ -19,6 +19,19 @@ uv run --locked uvicorn backend.main:app --host 127.0.0.1 --port 8000
 初始化命令交互式要求输入两次至少 12 个字符的密码，不通过命令行参数传递密码。系统只允许一个管理员。健康探针为 `http://127.0.0.1:8000/api/v1/health/live`，仅表示进程存活，不代表数据库就绪。
 
 前端在 `frontend/` 执行 `npm run dev`，开发代理将 `/api` 转至本地 8000 端口；生产构建执行 `npm run build`。登录 Cookie 设置了 Secure，访问登录页面须通过可信 HTTPS 反向代理，并且浏览器实际源须与 `POLYSPORTS_PUBLIC_ORIGIN` 完全一致。反向代理应只向应用传递经过可信代理验证的客户端地址，不能信任任意客户端自带的转发头，否则按 IP 限流会失准。正式 Nginx 和 systemd 配置属于后续部署阶段。
+
+## 赛事数据同步
+
+在 `.env` 中设置 `POLYSPORTS_API_FOOTBALL_KEY` 和 `POLYSPORTS_BALLDONTLIE_KEY`，密钥只从本机环境加载，不写入数据库或 Git。根据供应商账户套餐与数据覆盖范围配置。迁移完成后，可手动同步：
+
+```bash
+uv run --locked python -m backend.sync_cli football
+uv run --locked python -m backend.sync_cli nba
+```
+
+每次调用以实际开始时间为起点，获取并精确过滤未来 36 小时；分页失败、来源限流、无权限或数据字段异常会明确记为失败，不将已有赛事删除或伪造结果。来源状态和同步时间可在赛事中心查看；中文名称由管理员核实维护，缺失队徽以占位显示。赛事和修改历史持续保留。当前版本需要手动执行同步命令，每日两次及可修改的持久调度在 6D 阶段实现。NBA 同步会额外请求默认不包含的季前赛；NBA 来源可能不提供队徽，界面会标记待补充。真实接口联调依赖用户提供有效 API key 和套餐，本阶段自动测试均使用模拟数据。
+
+接口依据：[API-Football fixtures](https://www.api-football.com/documentation-v3) 和 [BALLDONTLIE NBA games](https://docs.balldontlie.io/#get-all-games)。
 
 ## 测试
 
@@ -39,4 +52,4 @@ $env:POLYSPORTS_TEST_DATABASE_URL = 'postgresql+psycopg://测试用户:测试密
 uv run --locked pytest -q
 ```
 
-本阶段测试不证明外部赛事 API 或真实交易可用；部署、后台任务和真实交易将在后续阶段实施。
+本阶段测试不证明外部赛事 API 或真实交易可用；部署、自动后台任务和真实交易将在后续阶段实施。

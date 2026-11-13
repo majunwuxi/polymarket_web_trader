@@ -40,8 +40,8 @@ describe('管理员页面（模拟接口）', () => {
     session.username = 'mock-admin'; session.csrf = 'mock-session-csrf'; session.authenticated = true
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('mock network error')))
     const view = mount(Dashboard, { global: { plugins: [router] } })
-    expect(view.findAll('[aria-disabled="true"]')).toHaveLength(5)
-    expect(view.text()).toContain('不包含真实赛事')
+    expect(view.findAll('[aria-disabled="true"]')).toHaveLength(3)
+    expect(view.text()).toContain('不显示赛事')
     await view.get('.menu-button').trigger('click')
     expect(view.get('.menu-button').attributes('aria-expanded')).toBe('true')
     await view.get('.text-button').trigger('click'); await flushPromises()

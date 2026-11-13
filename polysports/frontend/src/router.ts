@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Login from './views/Login.vue'
 import Dashboard from './views/Dashboard.vue'
+import SportsCenter from './views/SportsCenter.vue'
 import { restoreSession } from './auth'
 
 export const router = createRouter({
@@ -8,6 +9,7 @@ export const router = createRouter({
   routes: [
     { path: '/login', component: Login },
     { path: '/', component: Dashboard, meta: { requiresAuth: true } },
+    { path: '/sports/:sport(football|nba)', component: SportsCenter, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

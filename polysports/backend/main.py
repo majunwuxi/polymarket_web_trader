@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 
 from .config import get_settings
 from .database import make_engine
-from . import auth
+from . import auth, sports_api
 
 logger = logging.getLogger("polysports")
 
@@ -64,6 +64,7 @@ def create_app() -> FastAPI:
         return auth.error(request, 422, "VALIDATION_ERROR", "请求参数不符合要求")
 
     app.include_router(auth.router)
+    app.include_router(sports_api.router)
 
     @app.get("/api/v1/health/live")
     def health(request: Request):

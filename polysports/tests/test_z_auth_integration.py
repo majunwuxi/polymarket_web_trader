@@ -125,3 +125,63 @@ def test_init_admin_creates_argon2_hash_without_disclosing_password(pg, monkeypa
     with pg.connect() as conn:
         saved = conn.execute(text('SELECT password_hash FROM admin_users WHERE username=:name'), {'name': 'new-admin'}).scalar_one()
     assert saved != MOCK_PASSWORD and hasher.verify(saved, MOCK_PASSWORD)
+
+
+def test_sports_sync_idempotency_history_concurrency_and_api(pg):
+    from datetime import datetime, timezone
+    import httpx
+    from backend.sports_sync import run_sync
+    from test_sports_sources import mock_football
+    start=datetime(2026,1,1,12,tzinfo=timezone.utc)
+    def response(row):
+        return httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={'errors':[],'paging':{'current':1,'total':1},'response':[row]})))
+    with pg.begin() as conn:
+        for table in ('game_revisions','games','team_aliases','team_source_ids','teams','leagues','sync_runs'):
+            conn.execute(text(f'DELETE FROM {table}'))
+    row=mock_football()
+    def execute():
+        with response(row) as client: return run_sync(pg,'api_football','mock-key',client=client,now=start)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(executor.map(lambda _: execute(), range(2)))
+    with pg.connect() as conn:
+        assert conn.execute(text('SELECT count(*) FROM games')).scalar_one()==1
+        assert conn.execute(text('SELECT count(*) FROM teams')).scalar_one()==2
+        assert conn.execute(text('SELECT count(*) FROM game_revisions')).scalar_one()==0
+    row=mock_football(when='2026-01-01T14:00:00Z',status='PST')
+    execute()
+    with pg.connect() as conn:
+        assert conn.execute(text('SELECT count(*) FROM games')).scalar_one()==1
+        assert conn.execute(text('SELECT count(*) FROM game_revisions')).scalar_one()==1
+        assert conn.execute(text('SELECT status FROM games')).scalar_one()=='postponed'
+    row=mock_football(when='2026-01-01T14:00:00Z',status='CANC')
+    row['goals']={'home':2,'away':1}
+    execute()
+    with pg.connect() as conn:
+        assert conn.execute(text('SELECT status FROM games')).scalar_one()=='cancelled'
+        assert conn.execute(text('SELECT count(*) FROM game_revisions')).scalar_one()==2
+    with httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(429))) as client:
+        failed=run_sync(pg,'api_football','mock-secret',client=client,now=start)
+    with pg.connect() as conn:
+        assert conn.execute(text('SELECT status FROM sync_runs WHERE id=:id'),{'id':failed}).scalar_one()=='failed'
+        assert conn.execute(text('SELECT count(*) FROM games')).scalar_one()==1
+    row=mock_football(ident=2,when='2026-01-01T15:00:00Z')
+    execute()
+    with TestClient(create_app(),base_url=ORIGIN) as client:
+        assert log_in(client).status_code==200
+        session=client.get('/api/v1/auth/session').json()['data']
+        headers={'origin':ORIGIN,'x-csrf-token':session['csrf_token']}
+        result=client.get('/api/v1/games',params={'sport':'football','from':'2026-01-01T00:00:00Z','to':'2026-01-03T00:00:00Z','limit':1})
+        assert result.status_code==200
+        page=result.json()['data']
+        game=page['items'][0]
+        assert page['next_cursor']
+        second=client.get('/api/v1/games',params={'sport':'football','from':'2026-01-01T00:00:00Z','to':'2026-01-03T00:00:00Z','limit':1,'cursor':page['next_cursor']}).json()['data']
+        assert len(second['items'])==1 and second['items'][0]['id']!=game['id'] and second['next_cursor'] is None
+        assert game['home_team']['name_zh'] is None
+        assert len(client.get('/api/v1/games/'+game['id']).json()['data']['recent_revisions'])==2
+        team_id=game['home_team']['id']
+        assert client.patch('/api/v1/teams/'+team_id,json={'name_zh':'模拟球队','translation_status':'verified'},headers=headers).status_code==200
+        alias={'alias':'模拟别名','language':'zh-CN','verified':True}
+        assert client.post('/api/v1/teams/'+team_id+'/aliases',json=alias,headers=headers).status_code==201
+        assert client.post('/api/v1/teams/'+team_id+'/aliases',json=alias,headers=headers).status_code==409
+        assert client.get('/api/v1/sync-runs').json()['data']['items'][0]['status'] in ('succeeded','failed')

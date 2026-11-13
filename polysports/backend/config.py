@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     auth_secret: SecretStr
     public_origin: str
+    api_football_key: SecretStr | None = None
+    balldontlie_key: SecretStr | None = None
 
     @field_validator("auth_secret")
     @classmethod

@@ -26,6 +26,13 @@ try {
       if (url.origin !== base) return route.abort()
       if (!url.pathname.startsWith('/api/')) return route.continue()
       const endpoint = url.pathname.split('/').pop()
+      if (endpoint === 'sync-runs') return route.fulfill({status:200,json:{data:{items:[]}}})
+      if (endpoint === 'games') {
+        const team = (id, name) => ({ id, source_name:name, name_zh:null, translation_status:'missing', logo_url:null })
+        const game = { id:'mock-game', starts_at:'2026-01-01T18:00:00Z', status:'scheduled', home_team:team('mock-home','Mock Home'), away_team:team('mock-away','Mock Away'), home_score:null, away_score:null, league:null, last_synced_at:null }
+        return route.fulfill({status:200,json:{data:{items:[game],next_cursor:null}}})
+      }
+      if (endpoint === 'mock-game') return route.fulfill({status:200,json:{data:{provider:'mock-test-provider',external_id:'mock-id',last_synced_at:null,recent_revisions:[]}}})
       const data = endpoint === 'csrf' ? { csrf_token: 'mock-login-csrf' } : endpoint === 'login' ? { authenticated: true, csrf_token: 'mock-session-csrf' } : { username: 'mock-admin', csrf_token: 'mock-session-csrf', expires_at: '2099-01-01T00:00:00Z' }
       if (endpoint === 'session' && !authenticated) return route.fulfill({ status: 401, json: { error: { message: 'mock unauthorized' } } })
       if (endpoint === 'login') authenticated = true
@@ -39,12 +46,24 @@ try {
     await page.getByRole('button', { name: /登录工作台/ }).click()
     await page.getByRole('heading', { name: '赛事总览' }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 横向溢出`)
-    assert.equal(await page.getByText('当前页面不包含真实赛事、报价或交易数据。').count(), 1)
+    assert.equal(await page.getByText('总览页面不显示赛事、报价或交易数据。').count(), 1)
     if (viewport.width < 600) {
       const menu = page.getByRole('button', { name: '菜单' })
       await menu.click()
       assert.equal(await menu.getAttribute('aria-expanded'), 'true')
     }
+    await page.getByRole('link', { name: '足球赛事' }).click()
+    await page.getByRole('heading', { name: '足球赛事中心' }).waitFor()
+    await page.getByText('Mock Home').waitFor()
+    assert.equal(await page.getByText('中文名待补充').count(), 2)
+    assert.equal(await page.getByText('队徽待补充').count(), 2)
+    assert.match(await page.locator('.game-meta').innerText(), /2026\/01\/02.*02:00/)
+    await page.getByRole('button', {name:'查看详情'}).click()
+    await page.getByText('来源：mock-test-provider · 来源 ID：mock-id').waitFor()
+    if (viewport.width < 600) await page.getByRole('button', {name:'菜单'}).click()
+    await page.getByRole('link', {name:'NBA 赛事'}).click()
+    await page.getByRole('heading', {name:'NBA 赛事中心'}).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 赛事页横向溢出`)
     await page.getByRole('button', { name: '退出' }).click()
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
     console.log(`模拟浏览器测试通过: ${viewport.width}x${viewport.height}`)

@@ -61,7 +61,13 @@ erDiagram
 
 `id uuid PK`；`admin_id uuid` 必填外键 → `admin_users.id`；`token_hash varchar(128)` 必填唯一，只保存不可逆会话令牌摘要；`csrf_secret_hash varchar(128)` 必填；`created_at`, `expires_at`, `last_seen_at` 为必填 timestamptz；`revoked_at timestamptz` 可空。索引 `(admin_id, expires_at)`；过期或撤销后不可继续访问。账户登录频率限制按共享存储实现，不依赖单进程计数。
 
-### 3.3 `settings`、`audit_events`
+### 3.3 `auth_rate_limits`、`worker_heartbeats`
+
+`auth_rate_limits`：`bucket_key varchar(128) PK`（使用服务端密钥对规范化 IP/账户等值计算 HMAC，不能保存明文密码）；`window_start timestamptz` 必填；`attempt_count integer` 必填且非负；`blocked_until timestamptz` 可空；`updated_at timestamptz` 必填。应用在事务中原子更新各维度计数与阻断时间；索引 `(updated_at)` 用于清理过期窗口；多进程共享生效。清理不得解除仍有效的阻断。
+
+`worker_heartbeats`：`worker_id uuid PK`；`started_at`, `last_seen_at timestamptz` 必填；`worker_version varchar(80)` 可空；`state varchar(16)` 必填，`running` / `stopping`。worker 周期性更新，状态页按数据库当前时间与心跳间隔判断新鲜度；不存在或过期时显示 `unknown` / `unavailable`，不能仅凭进程 ID 判定就绪。该记录不持久化凭证与租约令牌。
+
+### 3.4 `settings`、`audit_events`
 
 `settings`：`key varchar(120) PK`；`value jsonb` 必填，仅允许经白名单验证的非秘密配置；`revision bigint` 必填默认 1，用于乐观并发；`updated_at timestamptz` 必填；`updated_by uuid` 可空外键 → `admin_users.id`。调度时间在 `sync_schedules`，密钥统一从环境或受限文件加载，禁止写入本表。
 
@@ -106,7 +112,7 @@ erDiagram
 
 `sync_schedules`：`id uuid PK`；`provider varchar(32)`、`sport varchar(16)`、`utc_time time without time zone`、`enabled boolean` 必填；`created_at`, `updated_at` 必填。唯一 `(provider, sport, utc_time)`；初始数据分别为足球和 NBA 的 UTC `00:00`、`08:00`。修改时间须更新未来任务，保留已执行日志。时间列仅表示 UTC 时刻，不随数据库时区变化。
 
-`sync_runs`：`id uuid PK`；`schedule_id uuid` 可空外键（手动触发为空）；`provider varchar(32)`, `sport varchar(16)`, `trigger_type varchar(16)` 必填，触发类型 `scheduled` / `manual`；`scheduled_for`, `started_at timestamptz` 必填；`finished_at timestamptz` 可空；`status varchar(20)` 必填，取 `running`, `succeeded`, `partial`, `failed`；`window_start`, `window_end timestamptz` 必填；`pages_fetched`, `items_received`, `items_upserted integer` 必填默认 0 且非负；`error_code varchar(80)`, `error_summary text` 可空且脱敏。索引 `(provider, started_at DESC)`；定时运行使用部分唯一索引 `(schedule_id, scheduled_for) WHERE schedule_id IS NOT NULL`，防止一个计划时间重复产生运行记录；重试归属同一运行或由 `job_runs` 记录。
+`sync_runs`：`id uuid PK`；`schedule_id uuid` 可空外键（手动触发为空）；`provider varchar(32)`, `sport varchar(16)`, `trigger_type varchar(16)` 必填，触发类型 `scheduled` / `manual`；`scheduled_for timestamptz` 必填；`started_at timestamptz` 可空（领取运行后填入）；`finished_at timestamptz` 可空；`status varchar(20)` 必填，取 `queued`, `running`, `succeeded`, `partial`, `failed`；`window_start`, `window_end timestamptz` 可空（领取运行后根据实际开始时间填写）；`pages_fetched`, `items_received`, `items_upserted integer` 必填默认 0 且非负；`error_code varchar(80)`, `error_summary text` 可空且脱敏。索引 `(provider, started_at DESC)`；入队时可创建 `queued` 记录并返回其 ID，领取时设置 `started_at` 和 `running`；定时运行使用部分唯一索引 `(schedule_id, scheduled_for) WHERE schedule_id IS NOT NULL`，防止一个计划时间重复产生运行记录；重试归属同一运行或由 `job_runs` 记录。
 
 ### 5.2 `watched_games`、`jobs`、`job_runs`
 
@@ -122,6 +128,7 @@ erDiagram
 | `watched_game_id` | uuid，可空，FK → `watched_games.id` | `result_poll` 必填，其他类型为空 |
 | `trade_intent_id` | uuid，可空，FK → `trade_intents.id` | `trade_reconcile` 必填，其他类型为空 |
 | `schedule_id` | uuid，可空，FK → `sync_schedules.id` | 定时同步必填；手动同步允许为空 |
+| `sync_run_id` | uuid，可空，FK → `sync_runs.id` | `sync` 必填，其他类型为空；关联排队的同步运行 |
 | `due_at` | timestamptz 必填 | 不得在此之前执行 |
 | `status` | varchar(16) 必填 | `pending`, `leased`, `done`, `cancelled`, `failed` |
 | `lease_owner` | varchar(128) 可空 | worker 实例标识 |
@@ -131,7 +138,7 @@ erDiagram
 | `last_error_code`, `last_error_summary` | varchar(80), text 可空 | 脱敏错误 |
 | `created_at`, `updated_at` | timestamptz 必填 | 审计时间 |
 
-约束：`result_poll`、`trade_reconcile` 的目标外键互斥且分别必填；`sync` 不关联关注或交易意图；`status='leased'` 当且仅当 `lease_owner`、`lease_until`、`lease_token` 均非空。索引：`(due_at, id) WHERE status='pending'`、`(lease_until, id) WHERE status='leased'`、`(watched_game_id)`、`(trade_intent_id)`。同一关注赛事仅一条长期复用的常规轮询任务，`dedupe_key` 唯一保证不会重复排队。
+约束：`result_poll`、`trade_reconcile` 的目标外键互斥且分别必填；`sync` 不关联关注或交易意图，且必须关联一个同步运行；其他任务不得设置 `sync_run_id`；`status='leased'` 当且仅当 `lease_owner`、`lease_until`、`lease_token` 均非空。索引：`(due_at, id) WHERE status='pending'`、`(lease_until, id) WHERE status='leased'`、`(watched_game_id)`、`(trade_intent_id)`；`UNIQUE(sync_run_id) WHERE sync_run_id IS NOT NULL`。同一关注赛事仅一条长期复用的常规轮询任务，`dedupe_key` 唯一保证不会重复排队。
 
 `job_runs`：`id uuid PK`；`job_id uuid` 必填外键；`attempt_no integer` 必填；`lease_token uuid` 必填；`started_at timestamptz` 必填；`finished_at timestamptz` 可空；`result varchar(20)` 必填，`running`, `succeeded`, `failed`, `abandoned`；`error_code varchar(80)`, `error_summary text` 可空。唯一 `(job_id, attempt_no)`、索引 `(job_id, started_at DESC)`。日志保留每次尝试，不以新任务覆盖历史。
 
@@ -176,7 +183,7 @@ erDiagram
 
 `trade_legs`：`id uuid PK`；`intent_id uuid` 必填外键；`leg_index integer` 非负；`game_id uuid`、`market_link_id uuid`、`outcome_id uuid` 均必填外键；`outcome_label_snapshot text` 必填；`created_at timestamptz` 必填。唯一 `(intent_id, leg_index)`、`(intent_id, outcome_id)`；索引 `(game_id, intent_id)`。服务在同一事务中验证 `market_link.game_id = game_id`、`market_link.market_id = outcome.market_id` 且映射 confirmed，并在对外提交前重新验证。保存展示快照供审计，不替代来源 ID。
 
-创建确认意图、所有腿、相关 `watched_games` 及首次 `jobs` 的事务必须原子提交。单场提交前即关注；Combo 获取报价本身不发起交易，用户确认接受报价并准备提交时为所有腿创建关注。交易拒绝或未知不回滚已记录的关注。
+Combo 询价时可预先保存 `draft` 意图和所有腿；用户确认后更新意图、核验所有腿并创建相关 `watched_games` 及首次 `jobs` 的事务必须原子提交。单场可在确认时一次创建意图、腿、关注和任务。单场提交前即关注；Combo 获取报价本身不发起交易，用户确认接受报价并准备提交时为所有腿创建关注。交易拒绝或未知不回滚已记录的关注。
 
 ### 7.2 `order_submissions`、`order_fills`
 

@@ -150,14 +150,15 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
         if row.state!='quoted':return
         wallet=wallet_for(settings,row.wallet_id)
         if wallet.wallet_address!=row.wallet_address:raise TradingError('wallet_mismatch','钱包已变化')
+        with _quote_lock: cached=_quotes.get(ident)
+        if not cached or cached[0]!=quote_id:raise TradingError('quote_unavailable','报价已失效或服务重启，请重新询价')
+        if not hmac.compare_digest(cached[2],credential_fingerprint(settings,wallet)):raise TradingError('wallet_mismatch','询价后钱包凭证已改变')
+        quote=cached[1]
+        verify_quote(quote,rfq_id=row.external_rfq_id,direction=row.direction,quantity=row.quantity,now_ms=int(datetime.now(timezone.utc).timestamp()*1000))
         saved=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==ident)))
         current=resolve_legs(db,[(str(x.market_link_id),str(x.outcome_id)) for x in saved])
         positions=catalog([x[1] for x in current],[x[2] for x in current])
         if any(positions[x.outcome_id]!=x.position_id for x in saved):raise TradingError('combo_market_mismatch','组合市场已变更')
-    with _quote_lock: cached=_quotes.get(ident)
-    if not cached or cached[0]!=quote_id:raise TradingError('quote_unavailable','报价已失效或服务重启，请重新询价')
-    if not hmac.compare_digest(cached[2],credential_fingerprint(settings,wallet)):raise TradingError('wallet_mismatch','询价后钱包或 Builder 凭证已改变')
-    quote=cached[1]
     with gateway_cls(settings,wallet) as gateway:
         gateway.ensure_funding(quote, row.direction)
         with Session(engine) as tx,tx.begin():

@@ -22,6 +22,26 @@ function setup(response:()=>Promise<Response>,expires=Date.now()+60_000){
 }
 
 describe('组合接受反馈（模拟接口）',()=>{
+  it('询价返回后立即显示报价，无需等待历史记录刷新',async()=>{
+    localStorage.setItem('polysports_combo_legs',JSON.stringify([{label:'模拟一',market_link_id:'m1',outcome_id:'o1'},{label:'模拟二',market_link_id:'m2',outcome_id:'o2'}]))
+    const quote=row(Date.now()+60_000);quote.legs=[]
+    let recordReads=0
+    vi.stubGlobal('crypto',{randomUUID:()=> 'mock-id'})
+    vi.stubGlobal('fetch',vi.fn((url:string,options?:RequestInit)=>{
+      if(url.endsWith('/wallets'))return Promise.resolve(json({data:{items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'mock'}]}}))
+      if(options?.method==='POST')return Promise.resolve(json({data:quote}))
+      recordReads++
+      return Promise.resolve(json({data:{items:[]}}))
+    }))
+    const view=mount(Combos,{global:{plugins:[router]}})
+    await flushPromises()
+    await view.get('input[inputmode="decimal"]').setValue('1')
+    await view.findAll('button').find(button=>button.text()==='请求真实报价')!.trigger('click')
+    await flushPromises()
+    expect(view.get('[aria-label="最新组合报价"]').text()).toContain('确认接受真实资金报价')
+    expect(recordReads).toBe(1)
+    view.unmount()
+  })
   it('明确的发送前失败显示具体原因',async()=>{
     const {view}=setup(()=>Promise.resolve(json({error:{code:'ALLOWANCE_INSUFFICIENT',message:'组合交易授权不足'}},503)))
     await flushPromises();await view.get('.market-card button').trigger('click');await flushPromises()

@@ -123,6 +123,7 @@ def request_quote(engine,settings,body,key,gateway_cls=ComboGateway,catalog=fetc
                         row.quote_id=uuid.uuid4();row.quote_expires_at=datetime.fromtimestamp(quote.expires_at/1000,timezone.utc)
                         row.quote_price=quote.blended_price;row.quote_required=quote.total_required;row.quote_receive=quote.taker_amount if body.direction=='BUY' else quote.net_receive
                         record(tx,row,'quoted')
+                        if job.status=='pending':job.due_at=row.quote_expires_at
                         with _quote_lock:
                             now_ms=int(datetime.now(timezone.utc).timestamp()*1000)
                             for old_key,old in list(_quotes.items()):

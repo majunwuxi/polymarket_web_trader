@@ -24,6 +24,7 @@ try {
     let mockMappingState = 'candidate'
     let mockCombos = []
     let mockLiveCalls = 0
+    let mockProvider = 'mock-test-provider'
     await context.route('**/*', async route => {
       const url = new URL(route.request().url())
       if (url.origin !== base) return route.abort()
@@ -56,7 +57,7 @@ try {
         const game = { id:'mock-game', starts_at:'2026-01-01T18:00:00Z', status:'scheduled', home_team:team('mock-home','Mock Home'), away_team:team('mock-away','Mock Away'), home_score:null, away_score:null, league:null, last_synced_at:null }
         return route.fulfill({status:200,json:{data:{items:[game],next_cursor:null}}})
       }
-      if (endpoint === 'mock-game') return route.fulfill({status:200,json:{data:{id:'mock-game',provider:'mock-test-provider',external_id:'mock-id',last_synced_at:null,recent_revisions:[]}}})
+      if (endpoint === 'mock-game') return route.fulfill({status:200,json:{data:{id:'mock-game',provider:mockProvider,external_id:'mock-id',last_synced_at:null,recent_revisions:[]}}})
       const data = endpoint === 'csrf' ? { csrf_token: 'mock-login-csrf' } : endpoint === 'login' ? { authenticated: true, csrf_token: 'mock-session-csrf' } : { username: 'mock-admin', csrf_token: 'mock-session-csrf', expires_at: '2099-01-01T00:00:00Z' }
       if (endpoint === 'session' && !authenticated) return route.fulfill({ status: 401, json: { error: { message: 'mock unauthorized' } } })
       if (endpoint === 'login') authenticated = true
@@ -89,12 +90,19 @@ try {
     await page.getByText('正在查询市场…').waitFor()
     await page.keyboard.press('Escape')
     assert.equal(await page.getByRole('dialog', {name:'赛事详情'}).count(),0)
+    mockProvider='polymarket'
+    await page.getByRole('button', {name:'查看详情'}).click()
+    await page.getByText('站内暂不可下单').waitFor()
+    assert.equal(await page.getByRole('link',{name:'订单预览'}).count(),0)
+    assert.equal(await page.getByRole('link',{name:/在 Polymarket 查看/}).count(),1)
+    await page.getByRole('button',{name:'关闭详情'}).click()
+    mockProvider='mock-test-provider'
     await page.getByRole('button', {name:'查看详情'}).click()
     await page.getByText('模拟胜负问题').waitFor()
-    await page.getByText('Yes：42.0%').waitFor()
-    await page.getByText('No：未知').waitFor()
+    await page.locator('.market-tile').getByText('42.0%').waitFor()
+    await page.locator('.market-tile').getByText('未知').waitFor()
     await page.waitForTimeout(1100)
-    assert.equal(await page.getByText('Yes：17.0%').count(),0)
+    assert.equal(await page.locator('.market-tile').getByText('17.0%').count(),0)
     await page.getByText('来源：mock-test-provider · 来源 ID：mock-id').waitFor()
     await page.getByText('模拟市场问题').waitFor()
     await page.getByRole('button',{name:'核对并确认'}).first().click()

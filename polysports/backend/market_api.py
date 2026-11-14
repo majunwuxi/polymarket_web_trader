@@ -6,13 +6,34 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from . import auth
 from .markets import begin_refresh, refresh_game, trading_blockers, valid_link
-from .models import AuditEvent, ComboLeg, Game, MarketLink, MarketOutcome, MarketRefresh, PolyEvent, PolyMarket, TradeIntent
+from .models import AuditEvent, ComboLeg, Game, MarketLink, MarketOutcome, MarketRefresh, PolyEvent, PolyMarket, Team, TradeIntent
 from .scheduler import db_now
 
 router=APIRouter(prefix='/api/v1')
 
 
 def ok(request,data): return {'data':data,'request_id':request.state.request_id}
+
+
+@router.get('/games/{game_id}/live-markets')
+def live_markets(request:Request, game_id:uuid.UUID):
+    from .live_markets import fetch_live_markets
+    from .sports_sources import SourceError
+    import httpx
+    with Session(request.app.state.engine) as db:
+        game=db.get(Game,game_id)
+        if not game: return auth.error(request,404,'NOT_FOUND','赛事不存在')
+        home,away=db.get(Team,game.home_team_id),db.get(Team,game.away_team_id)
+        if not home or not away: return auth.error(request,503,'MARKETS_UNAVAILABLE','球队信息不完整，无法查询市场')
+        source_id=game.external_id if game.provider=='polymarket' else None
+        snapshot=(source_id,game.sport,game.starts_at,home.source_name,away.source_name)
+    try:
+        with httpx.Client() as client:
+            data=fetch_live_markets(client,source_id=snapshot[0],sport=snapshot[1],starts_at=snapshot[2],home=snapshot[3],away=snapshot[4])
+        return ok(request,data)
+    except SourceError as exc:
+        if exc.code=='ambiguous_game': return auth.error(request,409,'MARKET_MATCH_AMBIGUOUS','找到多个可能的比赛，无法确定市场归属')
+        return auth.error(request,503,'MARKETS_UNAVAILABLE','Polymarket 市场查询失败，请稍后重试')
 
 
 def link_data(db,link):

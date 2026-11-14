@@ -36,6 +36,26 @@ def logged_client():
     return client,{'origin':ORIGIN,'x-csrf-token':token}
 
 
+def test_live_market_endpoint_is_authenticated_and_handles_upstream_failure(pg,monkeypatch):
+    from backend import live_markets
+    from backend.sports_sources import SourceError
+    game_id,_=prepare(pg)
+    def mock_fetch(client,**kwargs):
+        assert kwargs['source_id'] is None and kwargs['sport']=='nba'
+        return {'events':[],'match_status':'candidate','observed_at':'2026-01-01T00:00:00+00:00'}
+    monkeypatch.setattr(live_markets,'fetch_live_markets',mock_fetch)
+    with TestClient(create_app(),base_url=ORIGIN) as client:
+        assert client.get(f'/api/v1/games/{game_id}/live-markets').status_code==401
+        assert log_in(client).status_code==200
+        result=client.get(f'/api/v1/games/{game_id}/live-markets')
+        assert result.status_code==200 and result.json()['data']['match_status']=='candidate'
+        monkeypatch.setattr(live_markets,'fetch_live_markets',lambda *_args,**_kwargs:(_ for _ in ()).throw(SourceError('ambiguous_game')))
+        assert client.get(f'/api/v1/games/{game_id}/live-markets').status_code==409
+        monkeypatch.setattr(live_markets,'fetch_live_markets',lambda *_args,**_kwargs:(_ for _ in ()).throw(SourceError('http_503')))
+        failure=client.get(f'/api/v1/games/{game_id}/live-markets')
+        assert failure.status_code==503 and 'http_503' not in failure.text
+
+
 def test_mapping_confirmation_expiry_failed_refresh_and_audit(pg):
     game_id,event=prepare(pg);refresh_mock(pg,game_id,event)
     client,headers=logged_client()

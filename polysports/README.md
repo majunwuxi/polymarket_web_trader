@@ -35,6 +35,8 @@ uv run --locked python -m backend.sync_cli nba
 
 足球赛事仅包含指定范围：英超、英冠、德甲、德乙、意甲、西甲、法甲、法乙、荷甲、荷乙、葡超、瑞超、挪超、芬超、欧冠、欧罗巴、欧协联、亚冠精英、世界杯、各洲世预赛、欧洲杯、欧国联和亚洲杯。仅在 Polymarket 足球赛事标签能唯一确认时收录；截至本次核验，公开体育目录中没有可确认的亚洲杯标识，因此亚洲杯尚不能自动识别。未知或冲突标签不猜测，既有历史不删除。
 
+点击赛事“查看详情”会打开弹窗并只读查询 Polymarket 市场、选项与来源参考价格，显示查询时间。Polymarket 来源足球比赛按来源比赛 ID 核对；其他来源按运动、主客队和时间寻找候选，候选不会自动变成交易映射。数据不可用时显示错误，不把空白或旧数据当作真实报价；参考价格不保证可以成交。
+
 接口依据：[API-Football fixtures](https://www.api-football.com/documentation-v3) 和 [BALLDONTLIE NBA games](https://docs.balldontlie.io/#get-all-games)。
 
 ## 后台任务和关注

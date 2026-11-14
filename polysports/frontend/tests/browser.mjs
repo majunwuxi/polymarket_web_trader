@@ -23,6 +23,7 @@ try {
     let authenticated = false
     let mockMappingState = 'candidate'
     let mockCombos = []
+    let mockLiveCalls = 0
     await context.route('**/*', async route => {
       const url = new URL(route.request().url())
       if (url.origin !== base) return route.abort()
@@ -42,6 +43,7 @@ try {
       if (endpoint === 'accept' && url.pathname.includes('/combo-rfqs/')) {mockCombos[0].state='executing';return route.fulfill({status:200,json:{data:mockCombos[0]}})}
       if (endpoint === 'wallets') return route.fulfill({status:200,json:{data:{items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'0x'+'1'.repeat(40),signer_address:'0x'+'2'.repeat(40),wallet_type:'EOA'}]}}})
       if (endpoint === 'status' && url.pathname.includes('/wallets/')) return route.fulfill({status:200,json:{data:{wallet:{id:'mock-wallet'},collateral_balance:null,allowance_status:'unknown',availability:'allowed',diagnostic:{code:'signer_mismatch',message:'签名私钥与配置的签名地址不一致。'}}}})
+      if (endpoint === 'live-markets') {const call=++mockLiveCalls;if(call===1)await new Promise(resolve=>setTimeout(resolve,1000));return route.fulfill({status:200,json:{data:{match_status:'candidate',observed_at:'2026-01-01T18:00:00Z',events:[{id:'mock-event',title:'模拟赛事市场',slug:'mock-event',markets:[{id:'mock-market',question:'模拟胜负问题',group:null,type:'moneyline',closed:false,accepting_orders:true,outcomes:[{label:'Yes',price:call===1?'0.17':'0.42'},{label:'No',price:null}]}]}]}}})}
       if (endpoint === 'markets') return route.fulfill({status:200,json:{data:{refresh:{status:'succeeded'},items:[{link:{id:'mock-link',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟市场问题',gamma_market_id:'101',condition_id:'0x'+'a'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o1',label:'Yes',asset_kind:'ctf_token',asset_id:'1'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}},{link:{id:'mock-link-2',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟第二市场',gamma_market_id:'102',condition_id:'0x'+'b'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o2',label:'No',asset_kind:'ctf_token',asset_id:'2'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}}]}}})
       if (endpoint === 'confirm' && url.pathname.includes('/market-links/')) {mockMappingState='confirmed';return route.fulfill({status:200,json:{data:{}}})}
       if (endpoint === 'sync-schedules') return route.fulfill({status:200,json:{data:{revision:1,items:[{sport:'football',provider:'polymarket',utc_time:'00:00:00',enabled:true},{sport:'nba',provider:'balldontlie',utc_time:'08:00:00',enabled:true}]}}})
@@ -83,6 +85,16 @@ try {
     await page.getByRole('button', {name:'关注赛事'}).click()
     await page.getByText('已关注，赛果任务将按计划执行。').waitFor()
     await page.getByRole('button', {name:'查看详情'}).click()
+    await page.getByRole('dialog', {name:'赛事详情'}).waitFor()
+    await page.getByText('正在查询市场…').waitFor()
+    await page.keyboard.press('Escape')
+    assert.equal(await page.getByRole('dialog', {name:'赛事详情'}).count(),0)
+    await page.getByRole('button', {name:'查看详情'}).click()
+    await page.getByText('模拟胜负问题').waitFor()
+    await page.getByText('Yes：42.0%').waitFor()
+    await page.getByText('No：未知').waitFor()
+    await page.waitForTimeout(1100)
+    assert.equal(await page.getByText('Yes：17.0%').count(),0)
     await page.getByText('来源：mock-test-provider · 来源 ID：mock-id').waitFor()
     await page.getByText('模拟市场问题').waitFor()
     await page.getByRole('button',{name:'核对并确认'}).first().click()

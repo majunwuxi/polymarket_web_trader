@@ -96,6 +96,7 @@
 | `GET /watches` | 可选 `sport`, `state`, `limit`, `cursor` | `200` 分页 `Watch` | 按下一次到期时间、ID 排序；无下次任务的排最后 |
 | `POST /games/{game_id}/watch` | `{}` | `200`：`Watch` | 幂等建立或返回已有关注；依据当前有效开赛时间计算首次截止时间；不重复建立任务 |
 | `GET /games/{game_id}/markets` | 无 | `200`：`{ "items": [{ "link": MarketLink, "market": Market }], "refresh": {"status":"..."} }` | 只读已有数据；未确认或歧义候选仍展示但不可交易，未知或过期需明确标注 |
+| `GET /games/{game_id}/live-markets` | 无 | `200`：`{ "events": [...], "match_status": "source_identity" / "candidate", "observed_at": "..." }` | 只读上游市场及参考价格；不同来源的候选不自动确认；分页失败或匹配歧义返回错误，缺失价格为 null |
 | `POST /games/{game_id}/markets/refresh` | `{}` | `202`：`{ "game_id":"uuid", "status":"refreshing" }` | 经 CSRF 校验后执行候选更新；上游失败显式标记，不将旧候选冒充新数据 |
 | `POST /market-links/{link_id}/confirm` | `{}` | `200`：确认后的 `MarketLink` | 检查来源身份、运动类型和冲突；写审计；已确认同一映射幂等 |
 | `POST /market-links/{link_id}/reject` | `{}` | `200`：拒绝后的 `MarketLink` | 已被交易引用或状态不允许时返回 `409`；不能删除交易历史 |

@@ -44,7 +44,7 @@ from sqlalchemy import select, tuple_
 from datetime import datetime
 from .sports_api import cursor_decode, cursor_encode
 from .combo_service import request_quote, accept_quote
-from .models import ComboRFQ, ComboLeg, ComboEvent, Game, Team
+from .models import ComboRFQ, ComboLeg, ComboEvent, Game, Team, WatchedGame, ResultBindingRequest, Job
 
 
 class ComboLegBody(BaseModel):
@@ -68,7 +68,10 @@ def combo_data(db,row):
     details=[]
     for leg in legs:
         game=db.get(Game,leg.game_id); link=db.get(MarketLink,leg.market_link_id); market=db.get(PolyMarket,link.market_id); outcome=db.get(MarketOutcome,leg.outcome_id); home=db.get(Team,game.home_team_id); away=db.get(Team,game.away_team_id)
-        details.append({'game_id':str(leg.game_id),'market_link_id':str(leg.market_link_id),'outcome_id':str(leg.outcome_id),'position_id':leg.position_id,'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label})
+        watch=db.scalar(select(WatchedGame).where(WatchedGame.game_id==game.id))
+        binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id))
+        job=db.scalar(select(Job).where(Job.watched_game_id==watch.id,Job.kind=='result_poll')) if watch else None
+        details.append({'game_id':str(leg.game_id),'sport':game.sport,'market_link_id':str(leg.market_link_id),'outcome_id':str(leg.outcome_id),'position_id':leg.position_id,'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label,'watch_state':watch.state if watch else None,'binding_state':binding.state if binding else None,'home_score':game.home_score,'away_score':game.away_score,'next_poll_at':job.due_at.isoformat() if job and job.status=='pending' else None})
     return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'tx_hash':row.tx_hash,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details, 'quote':{'id':str(row.quote_id),'expires_at':row.quote_expires_at.isoformat(),'price':str(row.quote_price),'total_required':str(row.quote_required),'net_receive':str(row.quote_receive) if row.quote_receive is not None else None} if row.quote_id and row.quote_expires_at else None}
 
 
@@ -91,9 +94,10 @@ def create_combo(request: Request,body:ComboBody,idempotency_key:str=Header(...,
 
 
 @router.get('/combo-rfqs')
-def list_combos(request:Request,limit:int=50,cursor:str | None=None):
+def list_combos(request:Request,limit:int=50,cursor:str | None=None,state:Literal['confirmed']|None=None):
     if not 1<=limit<=100:return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     query=select(ComboRFQ)
+    if state:query=query.where(ComboRFQ.state==state)
     try:
         if cursor:
             stamp,ident=cursor_decode(cursor);stamp=datetime.fromisoformat(stamp)

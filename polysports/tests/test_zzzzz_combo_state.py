@@ -122,7 +122,7 @@ def test_worker_recovers_known_rfq_without_resending(sample,monkeypatch):
 
 
 def test_polymarket_combo_binds_only_after_confirmed(sample,monkeypatch):
-    from backend.models import ResultBindingRequest
+    from backend.models import ResultBindingRequest, WatchedGame
     from backend.scheduler import claim_next
     from backend.worker import apply_work
     engine,client,headers,body=sample;settings=client.app.state.settings
@@ -145,6 +145,17 @@ def test_polymarket_combo_binds_only_after_confirmed(sample,monkeypatch):
         assert db.get(ComboRFQ,ident).state=='confirmed'
         request=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game_id))
         assert request and request.state=='pending' and request.provider=='balldontlie'
+        watch=db.scalar(select(WatchedGame).where(WatchedGame.game_id==game_id))
+        assert watch and watch.state=='active'
+        poll=db.scalar(select(Job).where(Job.watched_game_id==watch.id,Job.kind=='result_poll'))
+        assert poll and poll.due_at==watch.first_due_at
+    response=client.get('/api/v1/combo-rfqs?state=confirmed',headers=headers)
+    assert response.status_code==200
+    rows=response.json()['data']['items']
+    selected=next(row for row in rows if row['id']==str(ident))
+    leg=next(leg for leg in selected['legs'] if leg['game_id']==str(game_id))
+    assert leg['watch_state']=='active' and leg['binding_state']=='pending'
+    assert leg['next_poll_at'] is not None
 
 
 def test_no_quote_is_terminal_and_retry_permitted(sample,monkeypatch):

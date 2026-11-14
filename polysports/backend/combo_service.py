@@ -2,14 +2,14 @@
 from __future__ import annotations
 import hashlib, hmac, json, threading, uuid
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from polymarket import RequestRejectedError
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .combo_catalog import fetch_positions
 from .combo_gateway import ComboGateway
-from .combo_quote import verify_quote
+from .combo_quote import verify_quote, combo_position_id
 from .combo_transport import accept_once
 from .markets import valid_link
 from .models import ComboRFQ, ComboLeg, ComboEvent, Game, Job, MarketLink, MarketOutcome, PolyMarket
@@ -42,7 +42,40 @@ def body_data(body):
     legs=sorted((str(x.market_link_id),str(x.outcome_id)) for x in body.legs)
     if not 2<=len(legs)<=50 or len({x[1] for x in legs})!=len(legs): raise TradingError('combo_legs_invalid','需要 2 至 50 条不重复的组合腿')
     data={'wallet_id':str(body.wallet_id),'direction':body.direction,'quantity':canonical(amount),'legs':legs}
+    parent=getattr(body,'parent_combo_id',None)
+    if parent:
+        if body.direction!='SELL':raise TradingError('combo_legs_invalid','组合平仓必须是卖出')
+        data['parent_combo_id']=str(parent)
     return data,amount,hashlib.sha256(json.dumps(data,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+
+def verify_combo_close_origin(db,parent_id,wallet_id,legs,amount,positions=None,exclude_id=None):
+    if not parent_id:return None
+    original=db.get(ComboRFQ,uuid.UUID(str(parent_id)))
+    if not original or original.state!='confirmed' or original.direction!='BUY' or original.wallet_id!=wallet_id:
+        raise TradingError('combo_close_invalid','原组合成交或钱包无法核实')
+    old=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==original.id)))
+    if sorted((str(x.market_link_id),str(x.outcome_id)) for x in old)!=sorted(legs):
+        raise TradingError('combo_close_invalid','组合平仓选项与原组合不一致')
+    active_query=select(ComboRFQ.id).where(ComboRFQ.parent_combo_id==original.id,ComboRFQ.state.in_(['requesting','quoted','accepting','executing','unknown']))
+    if exclude_id is not None:active_query=active_query.where(ComboRFQ.id!=exclude_id)
+    if db.scalar(active_query.limit(1)):raise TradingError('duplicate_unresolved','原组合已有未解决的平仓请求')
+    sold=db.scalar(select(func.coalesce(func.sum(ComboRFQ.quantity),0)).where(ComboRFQ.parent_combo_id==original.id,ComboRFQ.state=='confirmed'))
+    with localcontext() as context:
+        context.prec=90
+        remaining=original.quote_receive-sold if original.quote_receive is not None else Decimal(0)
+    if original.quote_receive is None or original.quote_receive<=0 or amount>remaining:
+        raise TradingError('combo_close_invalid','平仓份额超过原组合可核验的报价份额')
+    if positions is not None and any(positions.get(x.outcome_id)!=x.position_id for x in old):
+        raise TradingError('combo_close_invalid','组合市场资产已变化')
+    return original
+
+
+def verify_combo_close_quote(quote,amount,expected_position):
+    if Decimal(quote.total_required)!=amount:
+        raise TradingError('combo_quote_mismatch','组合平仓报价未覆盖全部指定份额')
+    if expected_position is not None and combo_position_id(quote)!=expected_position:
+        raise TradingError('combo_quote_mismatch','组合平仓持仓标识与原组合不一致')
 
 
 def resolve_legs(db, legs):
@@ -74,15 +107,25 @@ def request_quote(engine,settings,body,key,gateway_cls=ComboGateway,catalog=fetc
         existing=get_existing(db,body.wallet_id,key,fp)
         if existing:return existing.id,False
         legs=resolve_legs(db,data['legs']);positions=catalog([x[1] for x in legs],[x[2] for x in legs])
+        origin=verify_combo_close_origin(db,data.get('parent_combo_id'),body.wallet_id,data['legs'],amount,positions)
+        if origin and origin.wallet_address!=wallet.wallet_address:raise TradingError('wallet_mismatch','原组合钱包已变化')
+        expected_position=origin.combo_position_id if origin else None
+        legacy_positions=None
+        if origin and expected_position is None:
+            from .close_positions import legacy_combo_receipt_positions
+            legacy_positions=legacy_combo_receipt_positions(settings,wallet.wallet_address,origin.tx_hash,amount)
         with gateway_cls(settings,wallet) as gateway:
             try:
                 with Session(engine) as tx,tx.begin():
                     previous=get_existing(tx,body.wallet_id,key,fp)
                     if previous:return previous.id,False
+                    if getattr(body,'parent_combo_id',None):
+                        tx.scalar(select(ComboRFQ).where(ComboRFQ.id==body.parent_combo_id).with_for_update())
                     for game_id in sorted({x[0].game_id for x in legs},key=str):tx.scalar(select(Game).where(Game.id==game_id).with_for_update())
                     for link_id,_ in data['legs']:tx.scalar(select(MarketLink).where(MarketLink.id==uuid.UUID(link_id)).with_for_update())
                     current=resolve_legs(tx,data['legs']); now=db_now(tx)
-                    row=ComboRFQ(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=key,fingerprint=fp,direction=body.direction,quantity=amount,state='requesting',gateway_mode='requester')
+                    verify_combo_close_origin(tx,data.get('parent_combo_id'),body.wallet_id,data['legs'],amount,positions)
+                    row=ComboRFQ(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=key,fingerprint=fp,direction=body.direction,quantity=amount,state='requesting',gateway_mode='requester',parent_combo_id=getattr(body,'parent_combo_id',None))
                     tx.add(row);tx.flush()
                     for link,market,outcome in current:tx.add(ComboLeg(id=uuid.uuid4(),rfq_id=row.id,game_id=link.game_id,market_link_id=link.id,outcome_id=outcome.id,position_id=positions[outcome.id]))
                     tx.add(ComboEvent(id=uuid.uuid4(),rfq_id=row.id,state='requesting'))
@@ -101,6 +144,9 @@ def request_quote(engine,settings,body,key,gateway_cls=ComboGateway,catalog=fetc
                 if not external or len(external)>255:raise ValueError('invalid rfq')
                 quote=result.quote
                 if quote is not None:
+                    if data.get('parent_combo_id'):verify_combo_close_quote(quote,amount,expected_position)
+                    if legacy_positions is not None and combo_position_id(quote) not in legacy_positions:
+                        raise TradingError('combo_close_invalid','卖出报价资产与原交易回执不一致')
                     try:verify_quote(quote,rfq_id=external,direction=body.direction,quantity=amount,now_ms=int(datetime.now(timezone.utc).timestamp()*1000))
                     except TradingError as exc:
                         if exc.code!='combo_quote_expired':raise
@@ -120,6 +166,11 @@ def request_quote(engine,settings,body,key,gateway_cls=ComboGateway,catalog=fetc
                         record(tx,row,'failed','no_quote')
                         if job.status=='pending':job.status='done'
                     else:
+                        row.combo_position_id=combo_position_id(quote)
+                        if row.parent_combo_id and legacy_positions is not None:
+                            parent=tx.scalar(select(ComboRFQ).where(ComboRFQ.id==row.parent_combo_id).with_for_update())
+                            if parent.combo_position_id not in (None,row.combo_position_id):raise TradingError('combo_close_invalid','原组合持仓标识已变更')
+                            parent.combo_position_id=row.combo_position_id
                         row.quote_id=uuid.uuid4();row.quote_expires_at=datetime.fromtimestamp(quote.expires_at/1000,timezone.utc)
                         row.quote_price=quote.blended_price;row.quote_required=quote.total_required;row.quote_receive=quote.taker_amount if body.direction=='BUY' else quote.net_receive
                         record(tx,row,'quoted')
@@ -160,6 +211,9 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
         current=resolve_legs(db,[(str(x.market_link_id),str(x.outcome_id)) for x in saved])
         positions=catalog([x[1] for x in current],[x[2] for x in current])
         if any(positions[x.outcome_id]!=x.position_id for x in saved):raise TradingError('combo_market_mismatch','组合市场已变更')
+        if row.parent_combo_id:
+            origin=verify_combo_close_origin(db,row.parent_combo_id,row.wallet_id,[(str(x.market_link_id),str(x.outcome_id)) for x in saved],row.quantity,positions,exclude_id=row.id)
+            if origin.combo_position_id is not None and row.combo_position_id!=origin.combo_position_id:raise TradingError('combo_quote_mismatch','组合平仓资产不一致')
     with gateway_cls(settings,wallet) as gateway:
         gateway.ensure_funding(quote, row.direction)
         with Session(engine) as tx,tx.begin():

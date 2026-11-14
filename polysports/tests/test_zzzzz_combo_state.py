@@ -22,7 +22,7 @@ class FakeGateway:
     def ensure_funding(self,*args):pass
     def request_combo_quote(self,**kwargs):
         type(self).calls+=1
-        return S(rfq_id='mock-rfq',quote=S(rfq_id='mock-rfq',direction='BUY',expires_at=int((datetime.now(timezone.utc)+timedelta(minutes=3)).timestamp()*1000),blended_price=Decimal('0.5'),maker_amount=Decimal('9'),taker_amount=Decimal('18'),total_required=Decimal('10'),net_receive=None))
+        return S(rfq_id='mock-rfq',quote=S(rfq_id='mock-rfq',position_id='123456',direction='BUY',expires_at=int((datetime.now(timezone.utc)+timedelta(minutes=3)).timestamp()*1000),blended_price=Decimal('0.5'),maker_amount=Decimal('9'),taker_amount=Decimal('18'),total_required=Decimal('10'),net_receive=None))
 
 
 @pytest.fixture
@@ -42,7 +42,9 @@ def sample(env):
     with engine.begin() as c:
         c.execute(text("DELETE FROM job_runs WHERE job_id IN (SELECT id FROM jobs WHERE combo_rfq_id IS NOT NULL)"))
         c.execute(text('DELETE FROM jobs WHERE combo_rfq_id IS NOT NULL'))
-        for table in ('combo_events','combo_legs','combo_rfqs'):c.execute(text(f'DELETE FROM {table}'))
+        for table in ('combo_events','combo_legs'):c.execute(text(f'DELETE FROM {table}'))
+        c.execute(text('DELETE FROM combo_rfqs WHERE parent_combo_id IS NOT NULL'))
+        c.execute(text('DELETE FROM combo_rfqs'))
 
 
 def catalog(markets,outcomes):return {x.id:str(i+1000) for i,x in enumerate(outcomes)}
@@ -156,6 +158,25 @@ def test_polymarket_combo_binds_only_after_confirmed(sample,monkeypatch):
     leg=next(leg for leg in selected['legs'] if leg['game_id']==str(game_id))
     assert leg['watch_state']=='active' and leg['binding_state']=='pending'
     assert leg['next_poll_at'] is not None
+
+
+def test_combo_close_uses_original_legs_and_blocks_second_unresolved_request(sample,monkeypatch):
+    engine,client,headers,body=sample;settings=client.app.state.settings
+    monkeypatch.setattr(combo_service,'credential_fingerprint',lambda settings,wallet:b'mock-credential-fingerprint')
+    original,_=combo_service.request_quote(engine,settings,body,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE combo_rfqs SET state='confirmed',quote_receive=18 WHERE id=:id"),{'id':original})
+    def sell_quote(self,**kwargs):
+        assert kwargs['direction']=='SELL'
+        return S(rfq_id='mock-sell-rfq',quote=S(rfq_id='mock-sell-rfq',position_id='123456',direction='SELL',expires_at=int((datetime.now(timezone.utc)+timedelta(minutes=3)).timestamp()*1000),blended_price=Decimal('0.4'),maker_amount=Decimal('5'),taker_amount=Decimal('2'),total_required=Decimal('5'),net_receive=Decimal('2')))
+    monkeypatch.setattr(FakeGateway,'request_combo_quote',sell_quote)
+    sell=body.model_copy(update={'direction':'SELL','quantity':'5','parent_combo_id':original})
+    close,_=combo_service.request_quote(engine,settings,sell,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
+    with Session(engine) as db:
+        row=db.get(ComboRFQ,close)
+        assert row.parent_combo_id==original and row.combo_position_id=='123456' and row.state=='quoted'
+    with pytest.raises(TradingError,match='未解决'):
+        combo_service.request_quote(engine,settings,sell,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
 
 
 def test_no_quote_is_terminal_and_retry_permitted(sample,monkeypatch):

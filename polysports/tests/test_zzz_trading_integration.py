@@ -41,7 +41,9 @@ def env(pg,monkeypatch):
     with pg.begin() as conn:
         conn.execute(text("DELETE FROM job_runs WHERE job_id IN (SELECT id FROM jobs WHERE trade_intent_id IS NOT NULL)"))
         conn.execute(text('DELETE FROM jobs WHERE trade_intent_id IS NOT NULL'))
-        for table in ('trade_fills','trade_state_events','trade_submissions','trade_intents'):conn.execute(text(f'DELETE FROM {table}'))
+        for table in ('trade_fills','trade_state_events','trade_submissions'):conn.execute(text(f'DELETE FROM {table}'))
+        conn.execute(text('DELETE FROM trade_intents WHERE parent_trade_id IS NOT NULL'))
+        conn.execute(text('DELETE FROM trade_intents'))
     game_id,event=prepare_game(pg);refresh_mock(pg,game_id,event)
     wallet={'label':'模拟钱包','wallet_address':'0x'+'1'*40,'signer_address':'0x'+'1'*40,'wallet_type':'EOA'}
     monkeypatch.setenv('POLYSPORTS_WALLETS',json.dumps([wallet]));get_settings.cache_clear()

@@ -2,7 +2,7 @@
 from decimal import Decimal
 from types import SimpleNamespace as S
 import pytest
-from backend.combo_quote import verify_quote
+from backend.combo_quote import verify_quote, combo_position_id
 from backend.trading_gateway import TradingError
 
 
@@ -26,3 +26,9 @@ def test_sell_requires_proceeds_and_correct_shares():
     verify_quote(value,rfq_id='mock-rfq',direction='SELL',quantity=Decimal('5'),now_ms=1000)
     for value in (quote(direction='SELL',total_required=Decimal('6'),net_receive=Decimal('2')),quote(direction='SELL',net_receive=None)):
         with pytest.raises(TradingError):verify_quote(value,rfq_id='mock-rfq',direction='SELL',quantity=Decimal('5'),now_ms=1000)
+
+
+def test_combo_position_identity_must_be_uint256_digits():
+    assert combo_position_id(quote(position_id='123456'))=='123456'
+    for bad in ('', '-1', 'abc', '１', str(2**256)):
+        with pytest.raises(TradingError):combo_position_id(quote(position_id=bad))

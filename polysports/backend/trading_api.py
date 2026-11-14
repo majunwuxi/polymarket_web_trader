@@ -23,6 +23,8 @@ class OrderBody(BaseModel):
     side:Literal['BUY','SELL']
     limit_price:StrictStr=Field(min_length=1,max_length=64)
     size:StrictStr=Field(min_length=1,max_length=64)
+    order_type:Literal['GTC','FOK']='GTC'
+    parent_trade_id:uuid.UUID|None=None
 
 class SubmitBody(OrderBody):
     preview_token:StrictStr=Field(min_length=1,max_length=3000)
@@ -94,6 +96,13 @@ def detail(request:Request,intent_id:uuid.UUID):
         subs=db.scalars(select(TradeSubmission).where(TradeSubmission.intent_id==intent_id))
         events=db.scalars(select(TradeStateEvent).where(TradeStateEvent.intent_id==intent_id).order_by(TradeStateEvent.created_at))
         return ok(request,{'intent':as_data(intent,db),'rfqs':[],'submissions':[{'state':x.state,'error_code':x.error_code,'started_at':x.started_at.isoformat(),'finished_at':x.finished_at.isoformat() if x.finished_at else None} for x in subs],'state_events':[{'state':x.state,'code':x.code,'created_at':x.created_at.isoformat()} for x in events]})
+
+
+@router.get('/trade-intents/{intent_id}/close-context')
+def close_context(request:Request,intent_id:uuid.UUID):
+    from .close_positions import inspect_single_position
+    try:return ok(request,inspect_single_position(request.app.state.engine,request.app.state.settings,intent_id))
+    except TradingError as exc:return error(request,exc)
 
 
 @router.get('/trade-intents/{intent_id}/resolution')

@@ -193,6 +193,13 @@ class Gateway:
         # 不使用 place_limit_order：该快捷方法可能自动授权并重试。
         return self.client.post_order(signed)
 
+    def sign_fok(self,outcome,side,price,size):
+        """FOK 为未签名的提交类型；复用严格核验的签名，禁止挂单。"""
+        from dataclasses import replace
+        if side!='SELL':raise TradingError('invalid_amount','仅支持 FOK 卖出平仓')
+        signed=self.sign(outcome,side,price,size)
+        return replace(signed,order_type='FOK')
+
     def get_order(self,order_id): return self.client.get_order(order_id=order_id)
     def fills(self,asset_id,condition_id,order_id,side,wallet_address,requested_size):
         items=[];seen=set();truncated=False

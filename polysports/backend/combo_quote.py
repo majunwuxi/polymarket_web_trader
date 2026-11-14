@@ -3,6 +3,13 @@ from decimal import Decimal, InvalidOperation
 from .trading_gateway import TradingError
 
 
+def combo_position_id(quote):
+    value=str(getattr(quote,'position_id',''))
+    if not value.isascii() or not value.isdigit() or len(value)>78 or int(value)>=2**256:
+        raise TradingError('combo_quote_mismatch','组合持仓标识无效')
+    return value
+
+
 def verify_quote(quote, *, rfq_id: str, direction: str, quantity: Decimal, now_ms: int):
     if quote is None or str(quote.rfq_id) != rfq_id or str(quote.direction).upper().split('.')[-1] != direction:
         raise TradingError('combo_quote_mismatch', '组合报价身份或方向不一致')

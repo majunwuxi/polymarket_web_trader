@@ -57,6 +57,7 @@ class ComboBody(BaseModel):
     direction: Literal['BUY','SELL']
     quantity: StrictStr = Field(min_length=1,max_length=64)
     legs: list[ComboLegBody] = Field(min_length=2,max_length=50)
+    parent_combo_id: uuid.UUID | None = None
 
 
 class AcceptBody(BaseModel):
@@ -72,7 +73,7 @@ def combo_data(db,row):
         binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id))
         job=db.scalar(select(Job).where(Job.watched_game_id==watch.id,Job.kind=='result_poll')) if watch else None
         details.append({'game_id':str(leg.game_id),'sport':game.sport,'market_link_id':str(leg.market_link_id),'outcome_id':str(leg.outcome_id),'position_id':leg.position_id,'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label,'watch_state':watch.state if watch else None,'binding_state':binding.state if binding else None,'home_score':game.home_score,'away_score':game.away_score,'next_poll_at':job.due_at.isoformat() if job and job.status=='pending' else None})
-    return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'tx_hash':row.tx_hash,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details, 'quote':{'id':str(row.quote_id),'expires_at':row.quote_expires_at.isoformat(),'price':str(row.quote_price),'total_required':str(row.quote_required),'net_receive':str(row.quote_receive) if row.quote_receive is not None else None} if row.quote_id and row.quote_expires_at else None}
+    return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'tx_hash':row.tx_hash,'parent_combo_id':str(row.parent_combo_id) if row.parent_combo_id else None,'combo_position_id':row.combo_position_id,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details, 'quote':{'id':str(row.quote_id),'expires_at':row.quote_expires_at.isoformat(),'price':str(row.quote_price),'total_required':str(row.quote_required),'net_receive':str(row.quote_receive) if row.quote_receive is not None else None} if row.quote_id and row.quote_expires_at else None}
 
 
 def failure(request,exc):
@@ -125,6 +126,13 @@ def get_combo(request:Request,ident:uuid.UUID):
         row=db.get(ComboRFQ,ident)
         if not row:return auth.error(request,404,'NOT_FOUND','组合询价不存在')
         return {'data':combo_data(db,row),'request_id':request.state.request_id}
+
+
+@router.get('/combo-rfqs/{ident}/close-context')
+def combo_close_context(request:Request,ident:uuid.UUID):
+    from .close_positions import inspect_combo_position
+    try:return {'data':inspect_combo_position(request.app.state.engine,request.app.state.settings,ident),'request_id':request.state.request_id}
+    except TradingError as exc:return failure(request,exc)
 
 
 @router.post('/combo-rfqs/{ident}/accept',responses={202:{'description':'执行中或结果未知'}})

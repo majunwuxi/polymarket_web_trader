@@ -315,7 +315,7 @@ class MarketRefresh(Base):
 
 class TradeIntent(Base):
     __tablename__ = 'trade_intents'
-    __table_args__ = (UniqueConstraint('wallet_id','client_request_id',name='uq_trade_wallet_request'),UniqueConstraint('external_order_id',name='uq_trade_external_order'),Index('uq_trade_unresolved_fingerprint','wallet_id','request_fingerprint',unique=True,postgresql_where=text("state IN ('submitting','pending','partially_filled','unknown')")),Index('ix_trade_created','created_at','id'),CheckConstraint("state IN ('submitting','pending','partially_filled','filled','rejected','cancelled','unknown')",name='ck_trade_state'),CheckConstraint("side IN ('BUY','SELL')",name='ck_trade_side'),CheckConstraint('limit_price > 0 AND limit_price < 1 AND requested_size > 0 AND (matched_size IS NULL OR (matched_size >= 0 AND matched_size <= requested_size))',name='ck_trade_amounts'))
+    __table_args__ = (UniqueConstraint('wallet_id','client_request_id',name='uq_trade_wallet_request'),UniqueConstraint('external_order_id',name='uq_trade_external_order'),Index('uq_trade_unresolved_fingerprint','wallet_id','request_fingerprint',unique=True,postgresql_where=text("state IN ('submitting','pending','partially_filled','unknown')")),Index('ix_trade_created','created_at','id'),Index('ix_trade_intents_parent_trade','parent_trade_id'),CheckConstraint("state IN ('submitting','pending','partially_filled','filled','rejected','cancelled','unknown')",name='ck_trade_state'),CheckConstraint("side IN ('BUY','SELL')",name='ck_trade_side'),CheckConstraint('limit_price > 0 AND limit_price < 1 AND requested_size > 0 AND (matched_size IS NULL OR (matched_size >= 0 AND matched_size <= requested_size))',name='ck_trade_amounts'),CheckConstraint("(order_type='GTC' AND parent_trade_id IS NULL) OR (order_type='FOK' AND side='SELL' AND parent_trade_id IS NOT NULL)",name='ck_trade_order_type'))
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
     wallet_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),nullable=False)
     wallet_address: Mapped[str] = mapped_column(String(42),nullable=False)
@@ -325,6 +325,8 @@ class TradeIntent(Base):
     market_link_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('market_links.id',ondelete='RESTRICT'),nullable=False)
     outcome_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('market_outcomes.id',ondelete='RESTRICT'),nullable=False)
     side: Mapped[str] = mapped_column(String(4),nullable=False)
+    parent_trade_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('trade_intents.id',ondelete='RESTRICT'))
+    order_type: Mapped[str] = mapped_column(String(3),nullable=False,server_default='GTC')
     limit_price: Mapped[__import__('decimal').Decimal] = mapped_column(__import__('sqlalchemy').Numeric(38,18),nullable=False)
     requested_size: Mapped[__import__('decimal').Decimal] = mapped_column(__import__('sqlalchemy').Numeric(38,18),nullable=False)
     state: Mapped[str] = mapped_column(String(24),nullable=False)
@@ -391,7 +393,7 @@ class TradeFill(Base):
 
 class ComboRFQ(Base):
     __tablename__ = 'combo_rfqs'
-    __table_args__ = (UniqueConstraint('wallet_id','client_request_id',name='uq_combo_wallet_request'),UniqueConstraint('external_rfq_id',name='uq_combo_external_rfq'),Index('uq_combo_unresolved','wallet_id','fingerprint',unique=True,postgresql_where=text("state IN ('requesting','quoted','accepting','executing','unknown')")),CheckConstraint("state IN ('requesting','quoted','accepting','executing','confirmed','expired','rejected','failed','unknown')",name='ck_combo_state'),CheckConstraint("direction IN ('BUY','SELL') AND quantity > 0",name='ck_combo_quantity'))
+    __table_args__ = (UniqueConstraint('wallet_id','client_request_id',name='uq_combo_wallet_request'),UniqueConstraint('external_rfq_id',name='uq_combo_external_rfq'),Index('uq_combo_unresolved','wallet_id','fingerprint',unique=True,postgresql_where=text("state IN ('requesting','quoted','accepting','executing','unknown')")),Index('ix_combo_rfqs_parent_combo','parent_combo_id'),CheckConstraint("state IN ('requesting','quoted','accepting','executing','confirmed','expired','rejected','failed','unknown')",name='ck_combo_state'),CheckConstraint("direction IN ('BUY','SELL') AND quantity > 0",name='ck_combo_quantity'),CheckConstraint("parent_combo_id IS NULL OR direction='SELL'",name='ck_combo_close_direction'))
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
     wallet_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),nullable=False)
     wallet_address: Mapped[str] = mapped_column(String(42),nullable=False)
@@ -402,6 +404,8 @@ class ComboRFQ(Base):
     state: Mapped[str] = mapped_column(String(24),nullable=False)
     external_rfq_id: Mapped[str | None] = mapped_column(String(255))
     gateway_mode: Mapped[str] = mapped_column(String(16),nullable=False,server_default='builder')
+    combo_position_id: Mapped[str | None] = mapped_column(String(78))
+    parent_combo_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('combo_rfqs.id',ondelete='RESTRICT'))
     quote_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     quote_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     quote_price: Mapped[__import__('decimal').Decimal | None] = mapped_column(__import__('sqlalchemy').Numeric(38,18))

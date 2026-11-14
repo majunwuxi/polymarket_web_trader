@@ -2,7 +2,7 @@ from __future__ import annotations
 import base64,hashlib,hmac,json,re,uuid
 from datetime import timedelta
 from decimal import Decimal, localcontext
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .config import Settings
@@ -35,7 +35,28 @@ def wallet_for(settings:Settings,ident:uuid.UUID):
 def normalize(body):
     price=finite_decimal(body.limit_price,'价格');size=finite_decimal(body.size,'份额')
     data={'wallet_id':str(body.wallet_id),'market_link_id':str(body.market_link_id),'outcome_id':str(body.outcome_id),'side':body.side,'limit_price':canonical(price),'size':canonical(size)}
+    order_type=getattr(body,'order_type','GTC');parent=getattr(body,'parent_trade_id',None)
+    if order_type=='FOK':
+        if body.side!='SELL' or parent is None:raise TradingError('invalid_amount','立即平仓需要原买入订单和卖出方向')
+        data.update({'order_type':'FOK','parent_trade_id':str(parent)})
+    elif order_type!='GTC' or parent is not None:raise TradingError('invalid_amount','订单类型与来源不一致')
     return data,price,size
+
+
+def verify_close_origin(db,body,size):
+    if getattr(body,'order_type','GTC')!='FOK':return
+    original=db.get(TradeIntent,body.parent_trade_id)
+    if not original or original.side!='BUY' or original.matched_size is None or original.matched_size<=0:
+        raise TradingError('position_unavailable','原订单没有可核实的买入成交')
+    if (original.wallet_id!=body.wallet_id or original.market_link_id!=body.market_link_id or original.outcome_id!=body.outcome_id):
+        raise TradingError('position_mismatch','平仓钱包或资产与原订单不一致')
+    active=db.scalar(select(TradeIntent.id).where(TradeIntent.parent_trade_id==original.id,TradeIntent.state.in_(['submitting','pending','partially_filled','unknown'])).limit(1))
+    if active:raise TradingError('duplicate_unresolved','原订单已有未解决的平仓请求')
+    sold=db.scalar(select(func.coalesce(func.sum(TradeIntent.matched_size),0)).where(TradeIntent.parent_trade_id==original.id,TradeIntent.state.in_(['filled','cancelled'])))
+    with localcontext() as context:
+        context.prec=90
+        remaining=original.matched_size-sold
+    if size>remaining:raise TradingError('position_unavailable','平仓份额超过原订单未平仓的已成交数量')
 
 
 def fingerprint(data): return hashlib.sha256(json.dumps(data,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -78,6 +99,7 @@ def event_for_inspection(db,link,market):
 def prepare(engine,settings,body,gateway_cls=Gateway):
     data,price,size=normalize(body);wallet=wallet_for(settings,body.wallet_id)
     with Session(engine) as db:
+        verify_close_origin(db,body,size)
         link,market,outcome=resolve(db,body)
         game_id=link.game_id
         with gateway_cls(settings,wallet) as gateway: context=gateway.inspect(market,outcome,body.side,price,size,event_for_inspection(db,link,market))
@@ -94,7 +116,7 @@ def get_existing(db,wallet,request_id,fp):
 
 
 def as_data(intent,db=None):
-    value={'id':str(intent.id),'wallet_id':str(intent.wallet_id),'game_id':str(intent.game_id),'market_link_id':str(intent.market_link_id),'outcome_id':str(intent.outcome_id),'side':intent.side,'limit_price':canonical(intent.limit_price),'size':canonical(intent.requested_size),'state':intent.state,'external_order_id':intent.external_order_id,'matched_size':canonical(intent.matched_size) if intent.matched_size is not None else None,'cancel_state':intent.cancel_state,'error_code':intent.error_code,'retry_after_seconds':intent.retry_after_seconds,'created_at':intent.created_at.isoformat(),'updated_at':intent.updated_at.isoformat()}
+    value={'id':str(intent.id),'wallet_id':str(intent.wallet_id),'game_id':str(intent.game_id),'market_link_id':str(intent.market_link_id),'outcome_id':str(intent.outcome_id),'side':intent.side,'order_type':intent.order_type,'parent_trade_id':str(intent.parent_trade_id) if intent.parent_trade_id else None,'limit_price':canonical(intent.limit_price),'size':canonical(intent.requested_size),'state':intent.state,'external_order_id':intent.external_order_id,'matched_size':canonical(intent.matched_size) if intent.matched_size is not None else None,'cancel_state':intent.cancel_state,'error_code':intent.error_code,'retry_after_seconds':intent.retry_after_seconds,'created_at':intent.created_at.isoformat(),'updated_at':intent.updated_at.isoformat()}
     if db:
         game=db.get(Game,intent.game_id);link=db.get(MarketLink,intent.market_link_id);market=db.get(PolyMarket,link.market_id);outcome=db.get(MarketOutcome,intent.outcome_id)
         home=db.get(Team,game.home_team_id);away=db.get(Team,game.away_team_id)
@@ -128,6 +150,7 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
     with Session(engine) as db:
         now=db_now(db)
         if token.get('fingerprint')!=fp or type(token.get('expires_at')) is not int or token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期或订单参数改变')
+        verify_close_origin(db,body,size)
         link,market,outcome=resolve(db,body)
         with gateway_cls(settings,wallet) as gateway:
             context=gateway.inspect(market,outcome,body.side,price,size,event_for_inspection(db,link,market))
@@ -139,10 +162,13 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
                     tx.scalar(select(Game).where(Game.id==link.game_id).with_for_update())
                     tx.scalar(select(PolyMarket).where(PolyMarket.id==link.market_id).with_for_update())
                     tx.scalar(select(MarketLink).where(MarketLink.id==body.market_link_id).with_for_update())
+                    if getattr(body,'parent_trade_id',None):
+                        tx.scalar(select(TradeIntent).where(TradeIntent.id==body.parent_trade_id).with_for_update())
                     verified,_,_=resolve(tx,body)
+                    verify_close_origin(tx,body,size)
                     now=db_now(tx)
                     if token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期，请重新预览')
-                    intent=TradeIntent(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=request_id,request_fingerprint=fp,game_id=verified.game_id,market_link_id=verified.id,outcome_id=body.outcome_id,side=body.side,limit_price=price,requested_size=size,state='submitting')
+                    intent=TradeIntent(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=request_id,request_fingerprint=fp,game_id=verified.game_id,market_link_id=verified.id,outcome_id=body.outcome_id,side=body.side,limit_price=price,requested_size=size,state='submitting',order_type=getattr(body,'order_type','GTC'),parent_trade_id=getattr(body,'parent_trade_id',None))
                     tx.add(intent);tx.flush()
                     game=tx.get(Game,intent.game_id)
                     if game and game.provider!='polymarket': watch_game(tx,intent.game_id)
@@ -157,7 +183,7 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
                     active=lookup.scalar(select(TradeIntent).where(TradeIntent.wallet_id==body.wallet_id,TradeIntent.request_fingerprint==fp,TradeIntent.state.in_(['submitting','pending','partially_filled','unknown'])))
                     if active: raise TradingError('duplicate_unresolved','已有相同参数的未解决订单：'+str(active.id)) from exc
                 raise
-            try: signed=gateway.sign(outcome,body.side,price,size)
+            try: signed=gateway.sign_fok(outcome,body.side,price,size) if getattr(body,'order_type','GTC')=='FOK' else gateway.sign(outcome,body.side,price,size)
             except TradingError as exc:
                 save_result(engine,intent_id,'rejected',exc.code,retry_after=exc.retry_after);return intent_id,True
             except Exception:

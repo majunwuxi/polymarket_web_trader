@@ -13,6 +13,7 @@
 .order-history .order-card{min-width:0;margin-top:16px;padding:22px 24px;background:#fff;border:1px solid #e6eee8;border-radius:14px;box-shadow:0 5px 18px rgba(34,69,50,.09),0 1px 4px rgba(34,69,50,.05);overflow-wrap:anywhere;transition:box-shadow .2s ease,transform .2s ease}
 .order-history .order-card:hover{transform:translateY(-2px);box-shadow:0 10px 25px rgba(34,69,50,.13),0 2px 6px rgba(34,69,50,.06)}
 .order-history .order-card h2,.order-history .order-card h3{margin:0 0 12px;color:#244638;font-size:17px}
+.order-history .text-button:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:600px){.order-history .order-card{padding:18px 16px}.order-history > .welcome-card{padding:18px 14px}}
 @media(prefers-reduced-motion:reduce){.order-history .order-card{transition:none}.order-history .order-card:hover{transform:none}}
 .detail-sticky{position:sticky;top:0;z-index:10;margin:-20px -24px 0;padding:20px 24px 10px;background:#f3f6f4;max-height:60vh;overflow:auto;overscroll-behavior:contain}

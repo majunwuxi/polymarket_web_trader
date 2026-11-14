@@ -109,7 +109,7 @@
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
 | `GET /wallets` | 无 | `200`：`{ "items": [Wallet] }` | 只列服务器预配置的钱包；不接收或返回私钥 |
-| `GET /wallets/{wallet_id}/status` | 无 | `200`：`{ "wallet": Wallet, "collateral_balance": "..." / null, "allowance_status": "ready" / "insufficient" / "unknown", "checked_at": ... }` | 查询失败时标记未知，不以 0 替代；不触发授权或部署 |
+| `GET /wallets/{wallet_id}/status` | 无 | `200`：`{ "wallet": Wallet, "collateral_balance": "..." / null, "allowance_status": "unknown", "availability": "allowed" / "blocked" / "unknown", "checked_at": ... / null, "diagnostic": null / { "code": "...", "message": "..." } }` | 失败返回固定安全诊断，不返回异常原文或密钥；地区与其他检查分开，授权和 Builder 不在此处验证；不触发授权或部署 |
 | `GET /outcomes/{outcome_id}/book` | 无 | `200`：`{ "outcome_id": "...", "bids": [{"price":"...","size":"..."}], "asks": [...], "tick_size": "...", "min_order_size": "...", "observed_at": "..." }` | 来自真实上游订单簿，按实际可用性返回错误；价格和份额为字符串 |
 | `POST /single-orders/preview` | `{ "wallet_id":"uuid", "market_link_id":"uuid", "outcome_id":"uuid", "side":"BUY", "limit_price":"0.52", "size":"10" }` | `200`：`{ "preview_token":"...", "expires_at":"...", "game_id":"...", "market_link_id":"...", "outcome_id":"...", "side":"BUY", "limit_price":"0.52", "size":"10", "estimated_notional":"5.20", "fee_estimate":null, "book_observed_at":"...", "warnings":[] }` | 不签名、不发送订单、不创建关注；确认映射、市场规则、钱包/可用性；预览 token 是短期、不可篡改、绑定上述规范化字段与过期时间的服务端认证令牌，不含秘密和上游签名 |
 

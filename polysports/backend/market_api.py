@@ -92,6 +92,24 @@ def reject(request:Request,link_id:uuid.UUID):
 def wallet_id(address): return uuid.uuid5(uuid.NAMESPACE_URL,'polysports:wallet:'+address)
 
 
+WALLET_DIAGNOSTICS = {
+    'credentials_missing': '未找到钱包凭据，请检查 credential_ref 与凭据名称是否一致。',
+    'geoblock_blocked': 'Polymarket 报告服务器当前出口受地区限制。',
+    'geoblock_unknown': '无法确认地区状态，请检查服务器到 Polymarket 的网络连接。',
+    'wallet_invalid': '签名私钥格式无效，请在服务器安全配置中检查。',
+    'signer_mismatch': '签名私钥与配置的签名地址不一致。',
+    'wallet_mismatch': '钱包地址、签名地址或钱包类型不匹配，请核对账户配置。',
+    'wallet_deployment_unknown': '无法通过 Polygon RPC 核验钱包，请检查 RPC 配置与网络连接。',
+    'rpc_wrong_chain': 'RPC 连接的不是 Polygon 主网，请检查网络配置。',
+    'wallet_undeployed': '未在 Polygon 主网发现钱包合约，请核对钱包地址和类型。',
+    'sdk_unavailable': '交易客户端初始化失败，请检查钱包类型、CLOB 凭据和网络。',
+    'balance_unavailable': '余额查询失败，请检查 CLOB 凭据和网络后重试。',
+    'engine_restarting': 'Polymarket 撮合服务正在重启，请稍后重试。',
+    'post_only_mode': 'Polymarket 当前处于交易限制状态，请稍后重试。',
+    'status_unavailable': '钱包状态暂时不可用，请检查服务配置和网络后重试。',
+}
+
+
 @router.get('/wallets')
 def wallets(request:Request):
     return ok(request,{'items':[{'id':str(wallet_id(w.wallet_address)),'label':w.label,'wallet_address':w.wallet_address,'signer_address':w.signer_address,'wallet_type':w.wallet_type} for w in request.app.state.settings.wallets]})
@@ -101,13 +119,20 @@ def wallets(request:Request):
 def wallet_status(request:Request,wallet_id_value:uuid.UUID):
     wallet=next((w for w in request.app.state.settings.wallets if wallet_id(w.wallet_address)==wallet_id_value),None)
     if not wallet: return auth.error(request,404,'NOT_FOUND','钱包不存在')
-    result={'wallet':{'id':str(wallet_id_value),'label':wallet.label,'wallet_address':wallet.wallet_address,'signer_address':wallet.signer_address,'wallet_type':wallet.wallet_type},'collateral_balance':None,'allowance_status':'unknown','checked_at':None,'availability':'unknown','builder_access':'unknown'}
+    result={'wallet':{'id':str(wallet_id_value),'label':wallet.label,'wallet_address':wallet.wallet_address,'signer_address':wallet.signer_address,'wallet_type':wallet.wallet_type},'collateral_balance':None,'allowance_status':'unknown','checked_at':None,'availability':'unknown','builder_access':'unknown','diagnostic':None}
     if wallet.credential_ref and wallet.credential_ref in request.app.state.settings.wallet_credentials:
         try:
             from .trading_gateway import Gateway
-            with Gateway(request.app.state.settings,wallet) as gateway: result.update(gateway.wallet_status())
+            gateway=Gateway(request.app.state.settings,wallet)
+            with gateway: result.update(gateway.wallet_status())
             from datetime import datetime,timezone
             result['checked_at']=datetime.now(timezone.utc).isoformat();result['availability']='allowed'
         except Exception as exc:
-            if getattr(exc,'code',None)=='geoblock_blocked': result['availability']='blocked'
+            code=getattr(exc,'code',None)
+            code=code if isinstance(code,str) and code in WALLET_DIAGNOSTICS else 'status_unavailable'
+            result['diagnostic']={'code':code,'message':WALLET_DIAGNOSTICS[code]}
+            if code=='geoblock_blocked': result['availability']='blocked'
+            elif 'gateway' in locals() and getattr(gateway,'geography_verified',False): result['availability']='allowed'
+    else:
+        result['diagnostic']={'code':'credentials_missing','message':WALLET_DIAGNOSTICS['credentials_missing']}
     return ok(request,result)

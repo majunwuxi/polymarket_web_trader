@@ -73,13 +73,14 @@ def ensure_geography() -> None:
 
 class Gateway:
     def __init__(self, settings, wallet):
-        self.settings=settings;self.wallet=wallet;self.client=None
+        self.settings=settings;self.wallet=wallet;self.client=None;self.geography_verified=False
 
     def sdk_api_key(self, credential):
         return None
 
     def __enter__(self):
         ensure_geography()
+        self.geography_verified=True
         ref=self.wallet.credential_ref
         credential=self.settings.wallet_credentials.get(ref) if ref else None
         if credential is None: raise TradingError('credentials_missing','钱包未配置有效凭据')
@@ -93,8 +94,10 @@ class Gateway:
             if not self.settings.polygon_rpc_url: raise TradingError('wallet_deployment_unknown','未配置 Polygon RPC，无法核对钱包部署')
             try:
                 web3=Web3(Web3.HTTPProvider(self.settings.polygon_rpc_url.get_secret_value(),request_kwargs={'timeout':10}))
-                if web3.eth.chain_id!=137 or not web3.eth.get_code(Web3.to_checksum_address(self.wallet.wallet_address)):
-                    raise TradingError('wallet_undeployed','钱包未部署或 RPC 链不正确')
+                if web3.eth.chain_id!=137:
+                    raise TradingError('rpc_wrong_chain','RPC 不是 Polygon 主网')
+                if not web3.eth.get_code(Web3.to_checksum_address(self.wallet.wallet_address)):
+                    raise TradingError('wallet_undeployed','钱包未部署')
             except TradingError: raise
             except Exception as exc: raise TradingError('wallet_deployment_unknown','无法核对钱包部署状态') from exc
         vals=[x.get_secret_value() if x else '' for x in (credential.clob_api_key,credential.clob_api_secret,credential.clob_api_passphrase)]

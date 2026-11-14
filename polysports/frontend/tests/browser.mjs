@@ -41,7 +41,7 @@ try {
       if (endpoint === 'combo-rfqs') return route.fulfill({status:200,json:{data:{items:mockCombos}}})
       if (endpoint === 'accept' && url.pathname.includes('/combo-rfqs/')) {mockCombos[0].state='executing';return route.fulfill({status:200,json:{data:mockCombos[0]}})}
       if (endpoint === 'wallets') return route.fulfill({status:200,json:{data:{items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'0x'+'1'.repeat(40),signer_address:'0x'+'2'.repeat(40),wallet_type:'EOA'}]}}})
-      if (endpoint === 'status' && url.pathname.includes('/wallets/')) return route.fulfill({status:200,json:{data:{wallet:{id:'mock-wallet'},collateral_balance:null,allowance_status:'unknown'}}})
+      if (endpoint === 'status' && url.pathname.includes('/wallets/')) return route.fulfill({status:200,json:{data:{wallet:{id:'mock-wallet'},collateral_balance:null,allowance_status:'unknown',availability:'allowed',diagnostic:{code:'signer_mismatch',message:'签名私钥与配置的签名地址不一致。'}}}})
       if (endpoint === 'markets') return route.fulfill({status:200,json:{data:{refresh:{status:'succeeded'},items:[{link:{id:'mock-link',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟市场问题',gamma_market_id:'101',condition_id:'0x'+'a'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o1',label:'Yes',asset_kind:'ctf_token',asset_id:'1'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}},{link:{id:'mock-link-2',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟第二市场',gamma_market_id:'102',condition_id:'0x'+'b'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o2',label:'No',asset_kind:'ctf_token',asset_id:'2'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}}]}}})
       if (endpoint === 'confirm' && url.pathname.includes('/market-links/')) {mockMappingState='confirmed';return route.fulfill({status:200,json:{data:{}}})}
       if (endpoint === 'sync-schedules') return route.fulfill({status:200,json:{data:{revision:1,items:[{sport:'football',provider:'api_football',utc_time:'00:00:00',enabled:true},{sport:'nba',provider:'balldontlie',utc_time:'08:00:00',enabled:true}]}}})
@@ -140,6 +140,9 @@ try {
     await page.getByRole('heading', {name:'钱包状态'}).waitFor()
     await page.getByRole('button', {name:'查看只读状态'}).click()
     await page.getByText('余额：未知').waitFor()
+    await page.getByText('地区状态：本次检查允许', {exact:false}).waitFor()
+    await page.getByText('签名私钥与配置的签名地址不一致。', {exact:false}).waitFor()
+    await page.getByText('授权状态：未检查').waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 钱包页横向溢出`)
     await page.getByRole('button', { name: '退出' }).click()
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()

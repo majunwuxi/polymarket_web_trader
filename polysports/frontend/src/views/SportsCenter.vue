@@ -11,6 +11,8 @@ const lastSync=ref<{status:string;error_code:string|null;started_at:string|null;
 const mappingBusy=ref(false)
 const detail=ref<Record<string,any>|null>(null), editor=ref<Team|null>(null), chinese=ref(''), alias=ref(''), selectedRange=ref('upcoming')
 const detailDialog=ref<HTMLDialogElement|null>(null), liveData=ref<any>(null), liveError=ref(''), liveLoading=ref(false), binding=ref<any>(null)
+const matchSingle=ref<any[]>([]),matchCombo=ref<any[]>([]),singleCursor=ref<string|null>(null),comboCursor=ref<string|null>(null)
+const singleError=ref(''),comboError=ref(''),singleLoading=ref(false),comboLoading=ref(false)
 const marketGroups=computed(()=>{const defs=[{type:'moneyline',football:'全场胜平负',nba:'胜负'},{type:'spreads',football:'全场让球',nba:'让分'},{type:'totals',football:'全场总进球大小',nba:'总分大小'}];return defs.map(def=>({...def,label:sport()==='football'?def.football:def.nba,events:(liveData.value?.events||[]).map((event:any)=>({...event,markets:event.markets.filter((market:any)=>market.type===def.type)})).filter((event:any)=>event.markets.length)}))})
 let detailRequest=0
 const sport=()=>String(route.params.sport)
@@ -19,6 +21,7 @@ const dateFormat=(value:string)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia
 const name=(team:Team)=>team.name_zh || team.source_name
 const bindingName=(state:string|null)=>({bound:'赛果已绑定',pending:'赛果匹配中',needs_review:'赛果待确认'} as Record<string,string>)[state || ''] || '赛果未绑定'
 const statusName=(status:string)=>({scheduled:'未开始',live:'进行中',finished:'已完赛',postponed:'已延期',cancelled:'已取消',interrupted:'已中断',unknown:'状态未知'} as Record<string,string>)[status] || '状态未知'
+const orderState=(state:string)=>({submitting:'提交中',pending:'已接受，待核对',partially_filled:'部分成交',filled:'全部成交',rejected:'已拒绝',cancelled:'已撤单',unknown:'结果未知'} as Record<string,string>)[state]||'状态未知'
 async function api(path:string, options:RequestInit={}) {
   const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options})
   const payload=await response.json()
@@ -44,12 +47,27 @@ async function followGame(game:Game) {
     if(detail.value?.id===game.id) await showDetail(game)
   } catch(e) { message.value=e instanceof Error?e.message:'关注失败，请检查服务状态。' }
 }
-function closeDetail(){detailRequest++;detailDialog.value?.close();detail.value=null;liveData.value=null;binding.value=null}
+function closeDetail(){detailRequest++;detailDialog.value?.close();detail.value=null;liveData.value=null;binding.value=null;matchSingle.value=[];matchCombo.value=[]}
+async function loadMatchOrders(kind:'single'|'combo',gameId:string,request:number,append=false){
+  const values=kind==='single'?matchSingle:matchCombo,cursor=kind==='single'?singleCursor:comboCursor,error=kind==='single'?singleError:comboError,busy=kind==='single'?singleLoading:comboLoading
+  busy.value=true;error.value=''
+  try{
+    const query=new URLSearchParams({game_id:gameId,limit:'20'})
+    if(kind==='combo')query.set('state','confirmed')
+    if(append&&cursor.value)query.set('cursor',cursor.value)
+    const result=await api((kind==='single'?'/trade-intents?':'/combo-rfqs?')+query)
+    if(request!==detailRequest)return
+    values.value=append?[...values.value,...result.items]:result.items;cursor.value=result.next_cursor||null
+  }catch{if(request===detailRequest)error.value=kind==='single'?'单场订单加载失败。':'组合订单加载失败。'}
+  finally{if(request===detailRequest)busy.value=false}
+}
 async function showDetail(game:Game) {
   const request=++detailRequest
   detail.value={...game,recent_revisions:[]};liveData.value=null;liveError.value='';liveLoading.value=true;message.value=''
+  matchSingle.value=[];matchCombo.value=[];singleCursor.value=null;comboCursor.value=null;singleError.value='';comboError.value='';singleLoading.value=true;comboLoading.value=true
   await nextTick();if(request!==detailRequest)return
   if(detailDialog.value && !detailDialog.value.open) detailDialog.value.showModal()
+  void loadMatchOrders('single',game.id,request);void loadMatchOrders('combo',game.id,request)
   const [info,live,bindingResult]=await Promise.allSettled([api('/games/'+game.id),api('/games/'+game.id+'/live-markets'),api('/games/'+game.id+'/result-binding')])
   if(request!==detailRequest)return
   if(info.status==='fulfilled') detail.value={...game,...info.value}
@@ -110,6 +128,30 @@ watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRan
           <div class="summary-foot"><span>来源：{{detail.provider}} · 来源 ID：{{detail.external_id}}</span><span>最近同步：{{detail.last_synced_at ? dateFormat(detail.last_synced_at)+' UTC+8' : '未知'}}</span></div>
         </section>
         </div>
+        <section class="welcome-card detail match-orders" aria-label="本场订单明细">
+          <h3>本场订单</h3>
+          <p v-if="singleLoading || comboLoading">正在加载订单…</p>
+          <p v-if="singleError" role="alert">{{singleError}} <button class="text-button" @click="loadMatchOrders('single',detail.id,detailRequest)">重试</button></p>
+          <p v-if="comboError" role="alert">{{comboError}} <button class="text-button" @click="loadMatchOrders('combo',detail.id,detailRequest)">重试</button></p>
+          <p v-if="!singleLoading && !comboLoading && !singleError && !comboError && !matchSingle.length && !matchCombo.length">暂无本场订单。</p>
+          <article v-for="order in matchSingle" :key="order.id" class="market-card">
+            <strong>单场{{order.side==='BUY'?'买入':'卖出'}} · {{orderState(order.state)}}</strong>
+            <p>{{order.market_question}} · {{order.outcome_label}}</p>
+            <p>限价 {{order.limit_price}} · 份额 {{order.size}} · 已成交 {{order.matched_size ?? '未知'}}</p>
+            <p>创建时间：{{dateFormat(order.created_at)}} UTC+8</p>
+            <p>订单编号：{{order.external_order_id || '尚未取得'}}</p>
+          </article>
+          <button v-if="singleCursor" class="text-button" :disabled="singleLoading" @click="loadMatchOrders('single',detail.id,detailRequest,true)">加载更多单场订单</button>
+          <article v-for="combo in matchCombo" :key="combo.id" class="market-card">
+            <strong>组合{{combo.direction==='BUY'?'买入':'卖出'}} · 已确认</strong>
+            <p v-for="leg in combo.legs.filter((item:any)=>item.game_id===detail?.id)" :key="leg.outcome_id">本场选项：{{leg.market_question}} · {{leg.outcome_label}}</p>
+            <p>组合预算或份额：{{combo.quantity}}<span v-if="combo.quote"> · 组合报价：{{combo.quote.price}} · 报价所需：{{combo.quote.total_required}}</span></p>
+            <p>创建时间：{{dateFormat(combo.created_at)}} UTC+8</p>
+            <p>组合 RFQ：{{combo.external_rfq_id || '未知'}}<span v-if="combo.tx_hash"> · 交易哈希：{{combo.tx_hash}}</span></p>
+          </article>
+          <button v-if="comboCursor" class="text-button" :disabled="comboLoading" @click="loadMatchOrders('combo',detail.id,detailRequest,true)">加载更多组合订单</button>
+          <RouterLink v-if="matchSingle.length || matchCombo.length" to="/orders">查看全部交易记录</RouterLink>
+        </section>
         <section v-if="binding" class="welcome-card detail"><h3>外部赛果绑定</h3><p>状态：{{binding.state}} <span v-if="binding.error_code">· {{binding.error_code}}</span></p><p v-for="candidate in binding.candidates" :key="candidate.id">{{candidate.home}} 对 {{candidate.away}} · {{dateFormat(candidate.starts_at)}} UTC+8 · {{candidate.league || 'NBA'}} <button v-if="binding.state==='needs_review'" class="text-button" @click="confirmBinding(candidate.id)">确认绑定</button></p></section>
         <aside v-if="detail.provider==='polymarket'" class="bet-notice"><div><strong>下单说明</strong><p>点击选项可单场下单，或点击“＋组合”加入组合单；订单确认后开始匹配外部赛果。</p></div><span>接受不等于成交</span></aside>
         <section class="market-panel" aria-label="Polymarket 市场信息"><div class="market-panel-heading"><div><p class="eyebrow">POLYMARKET</p><h3>市场信息</h3></div><span v-if="liveData" class="market-time">{{dateFormat(liveData.observed_at)}} UTC+8 更新</span></div>

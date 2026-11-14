@@ -7,6 +7,7 @@
 .detail form label,.detail form input,.detail form select{display:block;margin:10px 0}.detail form select{max-width:100%;padding:9px;border:1px solid #d9e5de;border-radius:7px}
 
 .combo-page select,.combo-page input{max-width:100%;box-sizing:border-box}.combo-page p{overflow-wrap:anywhere}.combo-page label{display:block;margin:12px 0}
+.match-orders p{overflow-wrap:anywhere}.match-orders .market-card strong{font-size:13px}.match-orders .market-card p{margin:6px 0}
 .detail-sticky{position:sticky;top:0;z-index:10;margin:-20px -24px 0;padding:20px 24px 10px;background:#f3f6f4;max-height:60vh;overflow:auto;overscroll-behavior:contain}
 @media(max-width:600px){.detail-sticky{margin:-16px -14px 0;padding:12px 14px 8px}.detail-sticky .dialog-heading{margin-bottom:8px}.detail-sticky .summary-teams{margin:9px 0}}
 

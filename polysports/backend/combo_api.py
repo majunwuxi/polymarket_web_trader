@@ -94,10 +94,11 @@ def create_combo(request: Request,body:ComboBody,idempotency_key:str=Header(...,
 
 
 @router.get('/combo-rfqs')
-def list_combos(request:Request,limit:int=50,cursor:str | None=None,state:Literal['confirmed']|None=None):
+def list_combos(request:Request,limit:int=50,cursor:str | None=None,state:Literal['confirmed']|None=None,game_id:uuid.UUID|None=None):
     if not 1<=limit<=100:return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     query=select(ComboRFQ)
     if state:query=query.where(ComboRFQ.state==state)
+    if game_id:query=query.where(select(ComboLeg.id).where(ComboLeg.rfq_id==ComboRFQ.id,ComboLeg.game_id==game_id).exists())
     try:
         if cursor:
             stamp,ident=cursor_decode(cursor);stamp=datetime.fromisoformat(stamp)

@@ -3,7 +3,8 @@ import uuid
 from datetime import timedelta
 
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import select
+from sqlalchemy import select, text, or_, and_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .models import Game, ResultBindingRequest, Team
@@ -36,13 +37,16 @@ def match_fixture_candidates(sport, starts_at, home_name, away_name, fixtures):
     if sport not in ('football','nba'): raise ValueError('unsupported sport')
     home_names,away_names=_team_names(sport,home_name),_team_names(sport,away_name)
     if not all(home_names) or not all(away_names): return []
-    matches=[]; seen=set()
+    matches=[]; seen={}
     for fixture in fixtures:
         if fixture.sport!=sport or fixture.provider!=('api_football' if sport=='football' else 'balldontlie'): continue
         if abs((fixture.starts_at-starts_at).total_seconds())>7200: continue
         if normal(fixture.home.name) not in home_names or normal(fixture.away.name) not in away_names: continue
-        if fixture.external_id in seen: continue
-        seen.add(fixture.external_id); matches.append(fixture)
+        identity=(fixture.starts_at,normal(fixture.home.name),normal(fixture.away.name))
+        if fixture.external_id in seen:
+            if seen[fixture.external_id]!=identity: raise SourceError('conflicting_fixture')
+            continue
+        seen[fixture.external_id]=identity; matches.append(fixture)
     return sorted(matches,key=lambda item:(item.starts_at,item.external_id))
 
 
@@ -54,11 +58,20 @@ def find_fixture_candidates(client, key, sport, starts_at, home_name, away_name)
     return match_fixture_candidates(sport,starts_at,home_name,away_name,fixtures)
 
 
+def unique_nba_fixture_id(sport, matches):
+    """只允许唯一、明确的 NBA 数字来源编号自动绑定。"""
+    if sport != 'nba' or len(matches) != 1:
+        return None
+    ident=matches[0].external_id
+    return ident if isinstance(ident,str) and ident.isascii() and ident.isdigit() and len(ident)<=255 else None
+
+
 def process_pending_binding(engine, settings, client):
     """领取一个到期请求；行锁确保多个 worker 不会同时处理同一赛事。"""
     with Session(engine) as db, db.begin():
         now=db_now(db)
-        request=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.state=='pending',
+        request=db.scalar(select(ResultBindingRequest).where(or_(ResultBindingRequest.state=='pending',
+            and_(ResultBindingRequest.state=='needs_review',ResultBindingRequest.provider=='balldontlie')),
             ResultBindingRequest.next_attempt_at<=now).order_by(ResultBindingRequest.next_attempt_at)
             .with_for_update(skip_locked=True).limit(1))
         if request is None: return False
@@ -71,7 +84,29 @@ def process_pending_binding(engine, settings, client):
             request.candidates=[{'id':item.external_id,'starts_at':item.starts_at.isoformat(),
                 'home':item.home.name,'away':item.away.name,'league':item.league_name} for item in matches]
             request.last_error_code=None if matches else 'no_matching_fixture'
-            if matches: request.state='needs_review'
+            if matches:
+                request.state='needs_review'
+                fixture_id=unique_nba_fixture_id(game.sport,matches)
+                if fixture_id:
+                    # 约束之外再按来源编号串行化，避免两个赛事并发绑定同一场比赛。
+                    db.execute(text('SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))'),
+                               {'key':'result-binding:'+request.provider+':'+fixture_id})
+                    occupied=db.scalar(select(ResultBindingRequest.id).where(
+                        ResultBindingRequest.provider==request.provider,
+                        ResultBindingRequest.fixture_id==fixture_id,
+                        ResultBindingRequest.id!=request.id))
+                    if occupied:
+                        request.last_error_code='fixture_already_bound'
+                    else:
+                        try:
+                            with db.begin_nested():
+                                request.fixture_id=fixture_id
+                                request.state='bound'
+                                db.flush()
+                        except IntegrityError:
+                            request.fixture_id=None
+                            request.state='needs_review'
+                            request.last_error_code='fixture_already_bound'
         except SourceError as exc:
             request.last_error_code=exc.code
         request.updated_at=now

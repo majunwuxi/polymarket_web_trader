@@ -42,6 +42,7 @@ class GammaEvent:
     title: str | None
     slug: str | None
     markets: tuple[GammaMarket,...]
+    game_id: str | None = None
 
 
 def normal(value: str) -> str:
@@ -116,7 +117,11 @@ def parse_event(raw: Any, sport: str, start: datetime, home_names: list[str], aw
                 if abs((timestamp(game_time)-event_start).total_seconds())>60: raise SourceError('inconsistent_game_time')
             except SourceError: raise SourceError('inconsistent_game_time')
         markets.append(parse_market(market))
-    return GammaEvent(ident,sport,event_start,home['name'],away['name'],raw.get('title') if isinstance(raw.get('title'),str) else None,raw.get('slug') if isinstance(raw.get('slug'),str) else None,tuple(markets)),bool(ordered and not reversed_order)
+    game_id=raw.get('gameId')
+    if isinstance(game_id,bool) or not isinstance(game_id,(str,int)) or not re.fullmatch(r'[0-9]{1,255}',str(game_id)):
+        game_id=None
+    else: game_id=str(game_id)
+    return GammaEvent(ident,sport,event_start,home['name'],away['name'],raw.get('title') if isinstance(raw.get('title'),str) else None,raw.get('slug') if isinstance(raw.get('slug'),str) else None,tuple(markets),game_id),bool(ordered and not reversed_order)
 
 
 def discover(client: httpx.Client, sport: str, start: datetime, home_names: list[str], away_names: list[str], *, page_size: int=100, max_pages: int=100) -> list[tuple[GammaEvent,bool]]:

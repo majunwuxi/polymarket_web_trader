@@ -47,6 +47,25 @@ def test_teams_sport_time_and_reversal_are_not_auto_confirmed():
     assert parse_event(raw,'nba',START,['Mock Home'],['Mock Away']) is None
 
 
+@pytest.mark.parametrize(('value','expected'), [('123','123'),(123,'123'),(True,None),('invalid',None),(None,None)])
+def test_game_id_is_preserved_only_when_valid(value,expected):
+    raw=mock_event(); raw['gameId']=value
+    event,_=parse_event(raw,'nba',START,['Mock Home'],['Mock Away'])
+    assert event.game_id==expected
+
+
+def test_polymarket_candidates_require_same_game_id():
+    from backend.markets import same_source_game
+    raw=mock_event(); raw['gameId']='123'
+    event,_=parse_event(raw,'nba',START,['Mock Home'],['Mock Away'])
+    assert same_source_game('polymarket','123',event)
+    assert not same_source_game('polymarket','124',event)
+    raw.pop('gameId')
+    missing,_=parse_event(raw,'nba',START,['Mock Home'],['Mock Away'])
+    assert not same_source_game('polymarket','123',missing)
+    assert same_source_game('balldontlie','123',missing)
+
+
 def test_keyset_multiple_pages_and_loop_safeguards():
     calls=[]
     def handler(req):

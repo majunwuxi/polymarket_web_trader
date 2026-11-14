@@ -12,6 +12,10 @@ from .sports_sources import SourceError, timestamp
 FRESH_FOR=timedelta(minutes=15)
 
 
+def same_source_game(provider: str, external_id: str, event) -> bool:
+    return provider!='polymarket' or (event.game_id is not None and event.game_id==external_id)
+
+
 def aliases(db: Session, team_id: uuid.UUID) -> list[str]:
     team=db.get(Team,team_id)
     if not team: return []
@@ -32,7 +36,9 @@ def ambiguous_name(db: Session, sport: str, name: str) -> bool:
 
 
 def evidence_for(game, event, market, ordered, home_ambiguous=False, away_ambiguous=False):
-    return {'game_start':game.starts_at.isoformat(),'home_team_id':str(game.home_team_id),'away_team_id':str(game.away_team_id),'event_start':event.starts_at.isoformat(),'event_home':event.home,'event_away':event.away,'ordered':ordered,'market_fingerprint':market.fingerprint,'sport':game.sport,'home_name_ambiguous':home_ambiguous,'away_name_ambiguous':away_ambiguous}
+    evidence={'game_start':game.starts_at.isoformat(),'home_team_id':str(game.home_team_id),'away_team_id':str(game.away_team_id),'event_start':event.starts_at.isoformat(),'event_home':event.home,'event_away':event.away,'ordered':ordered,'market_fingerprint':market.fingerprint,'sport':game.sport,'home_name_ambiguous':home_ambiguous,'away_name_ambiguous':away_ambiguous}
+    if game.provider=='polymarket': evidence['source_game_id']=event.game_id
+    return evidence
 
 
 def valid_link(db: Session, link: MarketLink, *, require_confirmed=True) -> bool:
@@ -92,7 +98,7 @@ def refresh_game(engine,game_id,client: httpx.Client | None=None):
         game=db.get(Game,game_id); refresh=db.get(MarketRefresh,game_id)
         if not game or not refresh or refresh.status!='running': return
         started=refresh.started_at
-        snapshot=(game.sport,game.starts_at,game.home_team_id,game.away_team_id)
+        snapshot=(game.sport,game.starts_at,game.home_team_id,game.away_team_id,game.provider,game.external_id)
         home_names,away_names=aliases(db,game.home_team_id),aliases(db,game.away_team_id)
     owned=client is None; source=client or httpx.Client()
     try:
@@ -102,10 +108,11 @@ def refresh_game(engine,game_id,client: httpx.Client | None=None):
             game=db.scalar(select(Game).where(Game.id==game_id).with_for_update())
             refresh=db.scalar(select(MarketRefresh).where(MarketRefresh.game_id==game_id).with_for_update())
             if not refresh or refresh.status!='running' or refresh.started_at!=started: return
-            if not game or (game.sport,game.starts_at,game.home_team_id,game.away_team_id)!=snapshot or aliases(db,game.home_team_id)!=home_names or aliases(db,game.away_team_id)!=away_names:
+            if not game or (game.sport,game.starts_at,game.home_team_id,game.away_team_id,game.provider,game.external_id)!=snapshot or aliases(db,game.home_team_id)!=home_names or aliases(db,game.away_team_id)!=away_names:
                 raise SourceError('game_changed')
             now=db_now(db); seen=set()
             for source_event,ordered in matches:
+                if not same_source_game(game.provider,game.external_id,source_event): continue
                 event=db.scalar(select(PolyEvent).where(PolyEvent.gamma_event_id==source_event.gamma_id).with_for_update())
                 if not event:
                     event=PolyEvent(id=uuid.uuid4(),gamma_event_id=source_event.gamma_id,sport=source_event.sport,starts_at=source_event.starts_at,home_name=source_event.home,away_name=source_event.away,last_seen_at=now)

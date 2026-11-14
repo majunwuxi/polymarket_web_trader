@@ -23,7 +23,7 @@ def watch_data(watch,job):
 def add_watch(request: Request,game_id:uuid.UUID):
     with Session(request.app.state.engine) as db, db.begin():
         game=db.get(Game,game_id)
-        if game and game.provider=='polymarket': return auth.error(request,409,'BINDING_REQUIRED','足球赛事赛果来源尚未绑定，当前不能关注或下单。')
+        if game and game.provider=='polymarket': return auth.error(request,409,'BINDING_REQUIRED','赛事赛果来源尚未绑定，当前不能关注或下单。')
         watch=watch_game(db,game_id)
         if watch is None: return auth.error(request,404,'NOT_FOUND','赛事不存在')
         db.flush(); job=db.scalar(select(Job).where(Job.watched_game_id==watch.id))
@@ -64,7 +64,7 @@ class ScheduleItem(BaseModel):
     enabled:bool=True
     @model_validator(mode='after')
     def valid(self):
-        if self.utc_time.tzinfo is not None or (self.sport,self.provider) not in (('football','polymarket'),('nba','balldontlie')): raise ValueError('invalid schedule')
+        if self.utc_time.tzinfo is not None or self.provider!='polymarket': raise ValueError('invalid schedule')
         return self
 
 
@@ -108,10 +108,10 @@ class ManualSync(BaseModel):
 
 @router.post('/sync-runs',status_code=202)
 def queue_sync(request: Request,body:ManualSync):
-    provider='polymarket' if body.sport=='football' else 'balldontlie'
+    provider='polymarket'
     with Session(request.app.state.engine) as db, db.begin():
-        db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:name))'),{'name':'manual-sync:'+provider})
-        existing=db.scalar(select(Job).join(SyncRun,Job.sync_run_id==SyncRun.id).where(SyncRun.provider==provider,SyncRun.trigger_type=='manual',Job.status.in_(['pending','leased'])))
+        db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:name))'),{'name':'manual-sync:'+provider+':'+body.sport})
+        existing=db.scalar(select(Job).join(SyncRun,Job.sync_run_id==SyncRun.id).where(SyncRun.provider==provider,SyncRun.sport==body.sport,SyncRun.trigger_type=='manual',Job.status.in_(['pending','leased'])))
         if existing: return ok(request,{'run_id':str(existing.sync_run_id),'job_id':str(existing.id),'status':existing.status})
         now=db_now(db); run=SyncRun(id=uuid.uuid4(),provider=provider,sport=body.sport,trigger_type='manual',scheduled_for=now,status='queued'); db.add(run); db.flush()
         job=Job(id=uuid.uuid4(),kind='sync',dedupe_key='manual:'+str(run.id),sync_run_id=run.id,due_at=now,status='pending'); db.add(job)

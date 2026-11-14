@@ -12,10 +12,10 @@ def main():
     parser.add_argument('sport',choices=('football','nba'))
     args = parser.parse_args()
     settings = get_settings()
-    provider, key = ('polymarket',None) if args.sport == 'football' else ('balldontlie',settings.balldontlie_key)
+    provider, key = 'polymarket',None
     engine = make_engine(settings)
     try:
-        run_id = run_sync(engine, provider, key.get_secret_value() if key else '')
+        run_id = run_sync(engine, provider, key.get_secret_value() if key else '',sport=args.sport)
         with Session(engine) as db:
             run = db.get(SyncRun,run_id)
             print(f'同步运行 {run_id}: {run.status}; 记录数 {run.items_upserted}; 错误 {run.error_code or "无"}')

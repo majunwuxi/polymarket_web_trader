@@ -41,7 +41,8 @@ def test_isolated_postgres_upgrade_downgrade_upgrade(monkeypatch):
             conn.execute(text("INSERT INTO games(id,provider,external_id,sport,home_team_id,away_team_id,starts_at,status,market_available) VALUES (:id,'polymarket','mock-old','football',:home,:away,now(),'scheduled',true)"),{'id':old_game,'home':old_home,'away':old_away})
         command.upgrade(cfg, "head")
         with engine.connect() as conn:
-            assert conn.execute(text("SELECT count(*) FROM sync_schedules WHERE provider='polymarket' AND enabled")).scalar_one()==2
+            assert conn.execute(text("SELECT count(*) FROM sync_schedules WHERE provider='polymarket' AND enabled")).scalar_one()==4
+            assert conn.execute(text("SELECT count(*) FROM sync_schedules WHERE sport='nba' AND provider='balldontlie' AND enabled")).scalar_one()==0
             assert conn.execute(text("SELECT count(*) FROM sync_schedules WHERE provider='api_football' AND enabled")).scalar_one()==0
             assert conn.execute(text('SELECT status FROM jobs WHERE id=:id'),{'id':old_job}).scalar_one()=='cancelled'
             assert conn.execute(text('SELECT result FROM job_runs WHERE id=:id'),{'id':old_attempt}).scalar_one()=='abandoned'

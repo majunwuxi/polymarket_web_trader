@@ -49,3 +49,19 @@ def test_mock_repeated_sync_and_failed_sync_preserve_history(pg):
     with Session(pg) as db:
         game=db.scalar(select(Game).where(Game.provider=='polymarket',Game.external_id=='98765002'))
         assert game is not None and game.market_available is False
+
+
+def test_mock_nba_sync_does_not_override_football_or_duplicate(pg):
+    start=datetime.now(timezone.utc)
+    raw={'id':'88765001','gameId':88765002,'active':True,'closed':False,
+         'startTime':(start+timedelta(hours=1)).isoformat(),'tags':[{'slug':'nba'}],
+         'teams':[{'id':88765003,'name':'Mock Home','ordering':'home','league':'nba'},
+                  {'id':88765004,'name':'Mock Away','ordering':'away','league':'nba'}]}
+    with httpx.Client(transport=httpx.MockTransport(lambda _:httpx.Response(200,json={'events':[raw]}))) as client:
+        first=run_sync(pg,'polymarket','',client=client,now=start,sport='nba')
+        second=run_sync(pg,'polymarket','',client=client,now=start+timedelta(seconds=1),sport='nba')
+    with Session(pg) as db:
+        games=list(db.scalars(select(Game).where(Game.provider=='polymarket',Game.external_id=='88765002')))
+        assert len(games)==1 and games[0].sport=='nba' and games[0].market_available
+        assert games[0].home_score is None and games[0].away_score is None
+        assert db.get(SyncRun,first).status==db.get(SyncRun,second).status=='succeeded'

@@ -65,45 +65,51 @@ def upsert_game(db: Session, source: SourceGame, run_id: uuid.UUID | None, *, re
         reschedule_watch(db,game,old_start)
 
 
-def upsert_polymarket_game(db: Session, source, run_id: uuid.UUID | None) -> None:
+def upsert_polymarket_game(db: Session, source, run_id: uuid.UUID | None, sport: str = 'football') -> None:
     from .sports_sources import SourceTeam
     existing=db.scalar(select(Game).where(Game.provider=='polymarket',Game.external_id==source.game_id))
     # 发现数据仅提供赛程；不能覆盖已有赛果或将市场状态当作赛果。
     status=existing.status if existing else 'scheduled'
-    game=SourceGame('polymarket','football',source.game_id,source.starts_at,status,'market_discovered',
+    game=SourceGame('polymarket',sport,source.game_id,source.starts_at,status,'market_discovered',
                     SourceTeam(source.home.source_id,source.home.name,source.home.logo_url),
                     SourceTeam(source.away.source_id,source.away.name,source.away.logo_url),
-                    source.competition_id,source.competition_name,None,existing.home_score if existing else None,existing.away_score if existing else None)
+                    source.competition_id if sport=='football' else None,source.competition_name if sport=='football' else None,None,existing.home_score if existing else None,existing.away_score if existing else None)
     upsert_game(db,game,run_id)
     stored=db.scalar(select(Game).where(Game.provider=='polymarket',Game.external_id==source.game_id))
     stored.market_available=True
 
 
 def apply_polymarket_scan(db: Session, games, run: SyncRun) -> None:
-    newer=db.scalar(select(SyncRun.id).where(SyncRun.provider=='polymarket',SyncRun.status=='succeeded',
+    newer=db.scalar(select(SyncRun.id).where(SyncRun.provider=='polymarket',SyncRun.sport==run.sport,SyncRun.status=='succeeded',
                                               SyncRun.started_at>run.started_at).limit(1))
     if newer: raise SourceError('superseded_sync')
-    db.execute(update(Game).where(Game.provider=='polymarket',Game.sport=='football',
+    db.execute(update(Game).where(Game.provider=='polymarket',Game.sport==run.sport,
                                   Game.starts_at>=run.window_start,Game.starts_at<run.window_end).values(market_available=False))
-    for game in games: upsert_polymarket_game(db,game,run.id)
+    for game in games: upsert_polymarket_game(db,game,run.id,run.sport)
 
 
-def run_sync(engine, provider: str, key: str, *, client: httpx.Client | None = None, now: datetime | None = None) -> uuid.UUID:
+def run_sync(engine, provider: str, key: str, *, client: httpx.Client | None = None, now: datetime | None = None, sport: str | None = None) -> uuid.UUID:
     if provider not in ('api_football','balldontlie','polymarket'):
         raise ValueError('unknown provider')
+    sport=sport or ('nba' if provider=='balldontlie' else 'football')
+    if sport not in ('football','nba') or (provider=='api_football' and sport!='football') or (provider=='balldontlie' and sport!='nba'): raise ValueError('invalid sport')
     start = now or datetime.now(timezone.utc)
     if start.tzinfo is None or start.utcoffset() is None:
         raise ValueError('now must be timezone-aware')
     start = start.astimezone(timezone.utc)
     run_id = uuid.uuid4()
     with Session(engine) as db, db.begin():
-        db.add(SyncRun(id=run_id,provider=provider,sport='nba' if provider == 'balldontlie' else 'football',trigger_type='manual',scheduled_for=start,started_at=start,status='running',window_start=start,window_end=start+timedelta(hours=36)))
+        db.add(SyncRun(id=run_id,provider=provider,sport=sport,trigger_type='manual',scheduled_for=start,started_at=start,status='running',window_start=start,window_end=start+timedelta(hours=36)))
     owned = client is None
     source_client = client or httpx.Client()
     try:
         if provider == 'polymarket':
-            from .polymarket_football import discover_football
-            games,pages,received=discover_football(source_client,start)
+            if sport=='football':
+                from .polymarket_football import discover_football
+                games,pages,received=discover_football(source_client,start)
+            else:
+                from .polymarket_nba import discover_nba
+                games,pages,received=discover_nba(source_client,start)
         else:
             games, pages, received = fetch_schedule(provider,key,start,source_client)
         if provider == 'balldontlie':

@@ -30,7 +30,7 @@ def fetch_work(engine,job_id,token,settings,client):
         job=db.get(Job,job_id)
         if not job or job.status!='leased' or job.lease_token!=token: raise LeaseLost()
         if job.kind=='sync':
-            run=db.get(SyncRun,job.sync_run_id); provider=run.provider; start=run.window_start
+            run=db.get(SyncRun,job.sync_run_id); provider=run.provider; start=run.window_start; sport=run.sport
         elif job.kind=='combo_reconcile':
             combo_id=job.combo_rfq_id
         elif job.kind=='trade_reconcile':
@@ -45,8 +45,13 @@ def fetch_work(engine,job_id,token,settings,client):
     if job.kind=='trade_reconcile': return fetch_order(engine,trade_id,settings)
     if provider=='polymarket':
         if job.kind=='result_poll': raise SourceError('football_binding_required')
-        from .polymarket_football import discover_football
-        return discover_football(client,start)
+        if sport=='football':
+            from .polymarket_football import discover_football
+            return discover_football(client,start)
+        if sport=='nba':
+            from .polymarket_nba import discover_nba
+            return discover_nba(client,start)
+        raise SourceError('invalid_sport')
     secret=settings.api_football_key if provider=='api_football' else settings.balldontlie_key
     key=secret.get_secret_value() if secret else ''
     if job.kind=='result_poll': return fetch_game(provider,key,external_id,client)

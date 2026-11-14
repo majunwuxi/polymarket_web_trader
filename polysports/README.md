@@ -18,7 +18,7 @@ uv run --locked uvicorn backend.main:app --host 127.0.0.1 --port 8000
 
 初始化命令交互式要求输入两次至少 12 个字符的密码，不通过命令行参数传递密码。系统只允许一个管理员。健康探针为 `http://127.0.0.1:8000/api/v1/health/live`，仅表示进程存活，不代表数据库就绪。
 
-前端在 `frontend/` 执行 `npm run dev`，开发代理将 `/api` 转至本地 8000 端口；生产构建执行 `npm run build`。登录 Cookie 设置了 Secure，访问登录页面须通过可信 HTTPS 反向代理，并且浏览器实际源须与 `POLYSPORTS_PUBLIC_ORIGIN` 完全一致。反向代理应只向应用传递经过可信代理验证的客户端地址，不能信任任意客户端自带的转发头，否则按 IP 限流会失准。正式 Nginx 和 systemd 配置属于后续部署阶段。
+前端在 `frontend/` 执行 `npm run dev`，开发代理将 `/api` 转至本地 8000 端口；生产构建执行 `npm run build`。登录 Cookie 设置了 Secure，访问登录页面须通过可信 HTTPS 反向代理，并且浏览器实际源须与 `POLYSPORTS_PUBLIC_ORIGIN` 完全一致。反向代理应只向应用传递经过可信代理验证的客户端地址，不能信任任意客户端自带的转发头，否则按 IP 限流会失准。正式 Nginx、systemd、凭据和备份恢复步骤见 [DEPLOY.md](../DEPLOY.md)。
 
 ## 赛事数据同步
 
@@ -111,4 +111,4 @@ $env:POLYSPORTS_TEST_DATABASE_URL = 'postgresql+psycopg://测试用户:测试密
 uv run --locked pytest -q
 ```
 
-本阶段测试不证明外部赛事 API 或真实交易可用；独立 VPS 部署将在后续阶段实施。
+自动测试不证明外部赛事 API、真实钱包权限或真实资金交易可用；部署与恢复说明见 [DEPLOY.md](../DEPLOY.md)。

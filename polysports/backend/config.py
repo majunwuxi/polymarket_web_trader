@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import os
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -57,6 +59,13 @@ class Settings(BaseSettings):
     polygon_rpc_url: SecretStr | None = None
     combo_execution_enabled: bool = False
 
+    @classmethod
+    def settings_customise_sources(cls,settings_cls,init_settings,env_settings,dotenv_settings,file_secret_settings):
+        # systemd 凭据模式下禁止从环境变量回退，防止管理员命令误连其他数据库。
+        if os.environ.get('CREDENTIALS_DIRECTORY'):
+            return init_settings,dotenv_settings
+        return init_settings,env_settings,dotenv_settings,file_secret_settings
+
     @model_validator(mode="after")
     def unique_wallets(self):
         addresses=[wallet.wallet_address for wallet in self.wallets]
@@ -93,4 +102,9 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    credential_dir=os.environ.get('CREDENTIALS_DIRECTORY')
+    if credential_dir:
+        credential_file=Path(credential_dir)/'polysports.env'
+        if not credential_file.is_file():raise RuntimeError('systemd 配置凭据缺失')
+        return Settings(_env_file=credential_file)
     return Settings()

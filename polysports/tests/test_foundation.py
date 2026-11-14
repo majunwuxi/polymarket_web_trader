@@ -53,3 +53,21 @@ def test_production_trading_network_is_blocked():
 def test_http_client_cannot_access_production_trading():
     with pytest.raises(RuntimeError, match="禁止外部网络"):
         httpx.get("https://clob.polymarket.com/", trust_env=False, timeout=1)
+
+
+def test_systemd_credential_file_is_used_and_missing_fails_closed(monkeypatch,tmp_path):
+    for name in ('POLYSPORTS_DATABASE_URL','POLYSPORTS_AUTH_SECRET','POLYSPORTS_PUBLIC_ORIGIN','POLYSPORTS_WALLETS'):
+        monkeypatch.delenv(name,raising=False)
+    monkeypatch.setenv('CREDENTIALS_DIRECTORY',str(tmp_path))
+    path=tmp_path/'polysports.env'
+    # 明确标识的模拟值，非真实凭据。
+    path.write_text("POLYSPORTS_DATABASE_URL="+MOCK_DATABASE_URL+"\nPOLYSPORTS_AUTH_SECRET="+MOCK_AUTH_SECRET+"\nPOLYSPORTS_PUBLIC_ORIGIN=https://credential.example.test\nPOLYSPORTS_WALLETS='[]'\n",encoding='utf-8')
+    get_settings.cache_clear()
+    try:
+        monkeypatch.setenv('POLYSPORTS_PUBLIC_ORIGIN','https://untrusted-environment.test')
+        assert get_settings().public_origin=='https://credential.example.test'
+        assert get_settings().wallets==[]
+        path.unlink();get_settings.cache_clear()
+        monkeypatch.setenv('POLYSPORTS_DATABASE_URL',MOCK_DATABASE_URL)
+        with pytest.raises(RuntimeError,match='凭据缺失'):get_settings()
+    finally:get_settings.cache_clear()

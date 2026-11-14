@@ -1,0 +1,31 @@
+[Unit]
+Description=PolySports FastAPI
+Requires=polysports-migrate.service
+After=polysports-migrate.service network-online.target
+
+[Service]
+Type=simple
+User=polysports
+Group=polysports
+WorkingDirectory=/opt/polysports-src/polysports
+LoadCredential=polysports.env:/etc/polysports/polysports.env
+UnsetEnvironment=POLYSPORTS_DATABASE_URL POLYSPORTS_ENVIRONMENT POLYSPORTS_AUTH_SECRET POLYSPORTS_PUBLIC_ORIGIN POLYSPORTS_API_FOOTBALL_KEY POLYSPORTS_BALLDONTLIE_KEY POLYSPORTS_WALLETS POLYSPORTS_WALLET_CREDENTIALS POLYSPORTS_POLYGON_RPC_URL POLYSPORTS_COMBO_EXECUTION_ENABLED
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ExecStart=/opt/polysports-src/polysports/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

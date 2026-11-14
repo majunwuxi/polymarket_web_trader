@@ -1,0 +1,27 @@
+[Unit]
+Description=PolySports database migrations
+Wants=network-online.target
+After=network-online.target postgresql.service
+Before=polysports-api.service polysports-worker.service
+
+[Service]
+Type=oneshot
+User=polysports
+Group=polysports
+WorkingDirectory=/opt/polysports-src/polysports
+LoadCredential=polysports.env:/etc/polysports/polysports.env
+UnsetEnvironment=POLYSPORTS_DATABASE_URL POLYSPORTS_ENVIRONMENT POLYSPORTS_AUTH_SECRET POLYSPORTS_PUBLIC_ORIGIN POLYSPORTS_API_FOOTBALL_KEY POLYSPORTS_BALLDONTLIE_KEY POLYSPORTS_WALLETS POLYSPORTS_WALLET_CREDENTIALS POLYSPORTS_POLYGON_RPC_URL POLYSPORTS_COMBO_EXECUTION_ENABLED
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ExecStart=/opt/polysports-src/polysports/.venv/bin/alembic upgrade head
+RemainAfterExit=yes

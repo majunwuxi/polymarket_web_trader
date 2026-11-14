@@ -101,6 +101,7 @@ watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRan
     <button v-if="next" class="primary more" :disabled="loading" @click="load(true)">加载更多</button>
     <dialog ref="detailDialog" class="game-dialog" aria-labelledby="game-dialog-title" @close="closeDetail">
       <div v-if="detail" class="dialog-content">
+        <div class="detail-sticky">
         <header class="dialog-heading"><div><p class="eyebrow">MATCH CENTRE <span> / </span> UTC+8</p><h2 id="game-dialog-title">赛事详情</h2></div><button class="dialog-close" autofocus aria-label="关闭详情" @click="closeDetail">×</button></header>
         <p v-if="message" role="status" class="form-message">{{message}}</p>
         <section class="match-summary" aria-label="比赛信息">
@@ -108,6 +109,7 @@ watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRan
           <div v-if="detail.home_team && detail.away_team" class="summary-teams"><div class="summary-team"><img v-if="detail.home_team.logo_url" :src="detail.home_team.logo_url" alt=""><span v-else class="summary-logo">主</span><div><small>主队</small><strong>{{name(detail.home_team)}}</strong></div></div><span class="summary-versus">VS</span><div class="summary-team away"><div><small>客队</small><strong>{{name(detail.away_team)}}</strong></div><img v-if="detail.away_team.logo_url" :src="detail.away_team.logo_url" alt=""><span v-else class="summary-logo">客</span></div></div>
           <div class="summary-foot"><span>来源：{{detail.provider}} · 来源 ID：{{detail.external_id}}</span><span>最近同步：{{detail.last_synced_at ? dateFormat(detail.last_synced_at)+' UTC+8' : '未知'}}</span></div>
         </section>
+        </div>
         <section v-if="binding" class="welcome-card detail"><h3>外部赛果绑定</h3><p>状态：{{binding.state}} <span v-if="binding.error_code">· {{binding.error_code}}</span></p><p v-for="candidate in binding.candidates" :key="candidate.id">{{candidate.home}} 对 {{candidate.away}} · {{dateFormat(candidate.starts_at)}} UTC+8 · {{candidate.league || 'NBA'}} <button v-if="binding.state==='needs_review'" class="text-button" @click="confirmBinding(candidate.id)">确认绑定</button></p></section>
         <aside v-if="detail.provider==='polymarket'" class="bet-notice"><div><strong>下单说明</strong><p>点击选项可单场下单，或点击“＋组合”加入组合单；订单确认后开始匹配外部赛果。</p></div><span>接受不等于成交</span></aside>
         <section class="market-panel" aria-label="Polymarket 市场信息"><div class="market-panel-heading"><div><p class="eyebrow">POLYMARKET</p><h3>市场信息</h3></div><span v-if="liveData" class="market-time">{{dateFormat(liveData.observed_at)}} UTC+8 更新</span></div>

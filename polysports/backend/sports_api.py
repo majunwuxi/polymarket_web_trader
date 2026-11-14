@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import auth
-from .models import AuditEvent, Game, GameRevision, League, SyncRun, Team, TeamAlias, WatchedGame, Job
+from .models import AuditEvent, Game, GameRevision, League, SyncRun, Team, TeamAlias, WatchedGame, Job, ResultBindingRequest, TradeIntent
 
 router = APIRouter(prefix='/api/v1')
 
@@ -70,7 +70,13 @@ def games(request: Request, sport: Literal['football','nba'], start: datetime | 
         rows = list(db.scalars(query.order_by(Game.starts_at,Game.id).limit(limit+1)))
         more = len(rows)>limit
         items = rows[:limit]
-        return envelope(request,{'items':[game_data(db,x) for x in items],'next_cursor':cursor_encode([items[-1].starts_at.isoformat(),str(items[-1].id)]) if more else None})
+        ids=[item.id for item in items]
+        bindings=dict(db.execute(select(ResultBindingRequest.game_id,ResultBindingRequest.state).where(ResultBindingRequest.game_id.in_(ids))).all()) if ids else {}
+        filled=set(db.scalars(select(TradeIntent.game_id).where(TradeIntent.game_id.in_(ids),TradeIntent.matched_size>0).distinct())) if ids else set()
+        result=[]
+        for item in items:
+            data=game_data(db,item);data['result_binding_state']=bindings.get(item.id);data['has_matched_order']=item.id in filled;result.append(data)
+        return envelope(request,{'items':result,'next_cursor':cursor_encode([items[-1].starts_at.isoformat(),str(items[-1].id)]) if more else None})
 
 
 @router.get('/games/{game_id}')

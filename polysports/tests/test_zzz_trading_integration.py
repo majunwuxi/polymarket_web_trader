@@ -128,6 +128,25 @@ def test_polymarket_binding_waits_for_accepted_order(env,result_state,monkeypatc
         assert conn.execute(text('SELECT count(*) FROM watched_games WHERE game_id=:id'),{'id':game_id}).scalar_one()==int(result_state=='accepted')
 
 
+def test_game_cards_show_bound_and_actual_matched_amount(env):
+    pg,client,headers,body=env
+    with pg.begin() as conn:
+        game_id=conn.execute(text('SELECT game_id FROM market_links WHERE id=:id'),{'id':body['market_link_id']}).scalar_one()
+        conn.execute(text("UPDATE games SET provider='polymarket',external_id='9876543',market_available=true WHERE id=:id"),{'id':game_id})
+        conn.execute(text("UPDATE market_links SET evidence=evidence || jsonb_build_object('source_game_id','9876543') WHERE id=:id"),{'id':body['market_link_id']})
+    payload=preview(client,headers,body)
+    result=client.post('/api/v1/single-orders',json=payload,headers={**headers,'Idempotency-Key':str(uuid.uuid4())})
+    assert result.status_code==201
+    def card():
+        items=client.get('/api/v1/games',params={'sport':'nba'}).json()['data']['items']
+        return next(item for item in items if item['id']==str(game_id))
+    assert card()['result_binding_state']=='pending' and card()['has_matched_order'] is False
+    with pg.begin() as conn:
+        conn.execute(text("UPDATE result_binding_requests SET state='bound',fixture_id='9876' WHERE game_id=:id"),{'id':game_id})
+        conn.execute(text("UPDATE trade_intents SET matched_size=1 WHERE game_id=:id"),{'id':game_id})
+    assert card()['result_binding_state']=='bound' and card()['has_matched_order'] is True
+
+
 def test_preview_changed_book_and_expired_or_bad_token(env):
     pg,client,headers,body=env
     payload=preview(client,headers,body);MockGateway.hash='mock-new-book'

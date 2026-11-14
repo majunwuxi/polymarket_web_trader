@@ -61,7 +61,11 @@ sleep 3
 
 # 实际 systemd 凭据、备份服务与空库恢复。
 sudo systemctl stop polysports-worker.service
-sudo systemctl start polysports-backup.service
+if ! sudo systemctl start polysports-backup.service; then
+  sudo systemctl status polysports-backup.service --no-pager -l || true
+  sudo journalctl -u polysports-backup.service -n 80 --no-pager || true
+  exit 1
+fi
 backup=$(sudo find /var/backups/polysports -maxdepth 1 -name '*.dump' -type f -print -quit)
 [[ -n "$backup" ]]
 sudo -u postgres createdb --owner=polysports polysports_restore

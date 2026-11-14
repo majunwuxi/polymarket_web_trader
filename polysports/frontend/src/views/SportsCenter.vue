@@ -57,7 +57,10 @@ async function loadMatchOrders(kind:'single'|'combo',gameId:string,request:numbe
     if(append&&cursor.value)query.set('cursor',cursor.value)
     const result=await api((kind==='single'?'/trade-intents?':'/combo-rfqs?')+query)
     if(request!==detailRequest)return
-    values.value=append?[...values.value,...result.items]:result.items;cursor.value=result.next_cursor||null
+    if(!Array.isArray(result.items))throw new Error('invalid response')
+    const rows=kind==='combo'?result.items.filter((item:any)=>item.state==='confirmed' && Array.isArray(item.legs) && item.legs.some((leg:any)=>leg.game_id===gameId)):result.items
+    if(kind==='combo' && rows.length!==result.items.length)error.value='组合记录与当前赛事不一致，已隐藏不匹配的记录；请确认后端已更新并重启。'
+    values.value=append?[...values.value,...rows]:rows;cursor.value=result.next_cursor||null
   }catch{if(request===detailRequest)error.value=kind==='single'?'单场订单加载失败。':'组合订单加载失败。'}
   finally{if(request===detailRequest)busy.value=false}
 }
@@ -144,7 +147,7 @@ watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRan
           <button v-if="singleCursor" class="text-button" :disabled="singleLoading" @click="loadMatchOrders('single',detail.id,detailRequest,true)">加载更多单场订单</button>
           <article v-for="combo in matchCombo" :key="combo.id" class="market-card">
             <strong>组合{{combo.direction==='BUY'?'买入':'卖出'}} · 已确认</strong>
-            <p v-for="leg in combo.legs.filter((item:any)=>item.game_id===detail?.id)" :key="leg.outcome_id">本场选项：{{leg.market_question}} · {{leg.outcome_label}}</p>
+            <p v-for="leg in combo.legs.filter((item:any)=>item.game_id===detail?.id)" :key="leg.outcome_id">本场选项：{{leg.market_question || '市场信息未知'}} · {{leg.outcome_label || '选项信息未知'}}</p>
             <p>组合预算或份额：{{combo.quantity}}<span v-if="combo.quote"> · 组合报价：{{combo.quote.price}} · 报价所需：{{combo.quote.total_required}}</span></p>
             <p>创建时间：{{dateFormat(combo.created_at)}} UTC+8</p>
             <p>组合 RFQ：{{combo.external_rfq_id || '未知'}}<span v-if="combo.tx_hash"> · 交易哈希：{{combo.tx_hash}}</span></p>

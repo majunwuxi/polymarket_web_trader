@@ -18,7 +18,7 @@ it('只显示本场单场订单和组合腿',async()=>{
     if(url.includes('/live-markets'))return Promise.resolve(json({events:[],observed_at:'2026-11-14T00:00:00Z'}))
     if(url.includes('/result-binding'))return Promise.resolve(json(null))
     if(url.includes('/trade-intents?'))return Promise.resolve(json({items:[{id:'one',side:'BUY',state:'partially_filled',market_question:'模拟市场',outcome_label:'模拟主队',limit_price:'0.5',size:'2',matched_size:'1',created_at:'2026-11-14T00:00:00Z'}],next_cursor:null}))
-    if(url.includes('/combo-rfqs?'))return Promise.resolve(json({items:[{id:'combo',direction:'BUY',quantity:'2',created_at:'2026-11-14T00:00:00Z',legs:[{game_id:'mock-game',outcome_id:'a',market_question:'本场胜负',outcome_label:'模拟主队'},{game_id:'other',outcome_id:'b',market_question:'其他比赛',outcome_label:'不应显示'}]}],next_cursor:null}))
+    if(url.includes('/combo-rfqs?'))return Promise.resolve(json({items:[{id:'combo',state:'confirmed',direction:'BUY',quantity:'2',created_at:'2026-11-14T00:00:00Z',legs:[{game_id:'mock-game',outcome_id:'a',market_question:'本场胜负',outcome_label:'模拟主队'},{game_id:'other',outcome_id:'b',market_question:'其他比赛',outcome_label:'不应显示'}]}],next_cursor:null}))
     return Promise.resolve(json(game))
   })
   vi.stubGlobal('fetch',fetchMock)
@@ -49,6 +49,31 @@ it('接口失败不会被显示为暂无订单',async()=>{
   const section=view.get('[aria-label="本场订单明细"]')
   expect(section.text()).toContain('单场订单加载失败')
   expect(section.text()).not.toContain('暂无本场订单')
+  view.unmount()
+})
+
+it('隐藏其他赛事组合并提示缺失的本场选项，后续页继续核验',async()=>{
+  const matched={id:'correct',state:'confirmed',direction:'BUY',quantity:'1',created_at:'2026-11-14T00:00:00Z',legs:[{game_id:'mock-game',outcome_id:'a',market_question:null,outcome_label:null}]}
+  const unrelated={...matched,id:'wrong',legs:[{game_id:'other-game',outcome_id:'b',market_question:'其他场次',outcome_label:'其他选项'}]}
+  vi.stubGlobal('fetch',vi.fn((url:string)=>{
+    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[game],next_cursor:null}))
+    if(url.includes('/sync-runs'))return Promise.resolve(json({items:[]}))
+    if(url.includes('/live-markets'))return Promise.resolve(json({events:[],observed_at:'2026-11-14T00:00:00Z'}))
+    if(url.includes('/result-binding'))return Promise.resolve(json(null))
+    if(url.includes('/trade-intents?'))return Promise.resolve(json({items:[],next_cursor:null}))
+    if(url.includes('/combo-rfqs?'))return Promise.resolve(json(url.includes('cursor=')?{items:[unrelated],next_cursor:null}:{items:[matched,unrelated],next_cursor:'mock-next'}))
+    return Promise.resolve(json(game))
+  }))
+  const view=mount(SportsCenter,{global:{plugins:[router]}});await flushPromises()
+  await view.findAll('button').find(button=>button.text()==='查看详情')!.trigger('click');await flushPromises()
+  const section=view.get('[aria-label="本场订单明细"]')
+  expect(section.text()).toContain('市场信息未知 · 选项信息未知')
+  expect(section.text()).toContain('组合记录与当前赛事不一致')
+  expect(section.text()).not.toContain('其他场次')
+  expect(section.findAll('article')).toHaveLength(1)
+  await section.findAll('button').find(button=>button.text()==='加载更多组合订单')!.trigger('click');await flushPromises()
+  expect(section.text()).toContain('组合记录与当前赛事不一致')
+  expect(section.findAll('article')).toHaveLength(1)
   view.unmount()
 })
 

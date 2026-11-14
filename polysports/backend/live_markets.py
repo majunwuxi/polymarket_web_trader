@@ -11,6 +11,19 @@ import httpx
 from .gamma import normal
 from .sports_sources import SourceError, retry_delay, timestamp
 
+SUPPORTED_MARKET_TYPES=frozenset({'moneyline','spreads','totals'})
+_PARTIAL_MARKET=re.compile(r'\b(?:first|second|1st|2nd|1h|2h|half|quarter|period|q[1-4]|team\s+total)\b',re.I)
+
+
+def supported_full_game_market(raw):
+    if not isinstance(raw,dict): raise SourceError('invalid_market')
+    if raw.get('sportsMarketType') not in SUPPORTED_MARKET_TYPES: return False
+    # 类型是主要依据；文本明确指出半场、单队或局节时保守排除。
+    for key in ('question','groupItemTitle','slug'):
+        value=raw.get(key)
+        if isinstance(value,str) and _PARTIAL_MARKET.search(value.replace('-',' ')): return False
+    return True
+
 
 def _array(value):
     if isinstance(value, str):
@@ -90,8 +103,10 @@ def fetch_live_markets(client: httpx.Client, *, source_id: str | None, sport: st
             if not isinstance(markets,list): raise SourceError('invalid_event_markets')
             slug=raw.get('slug')
             slug=slug if isinstance(slug,str) and re.fullmatch(r'[A-Za-z0-9-]{1,250}',slug) else None
-            events.append({'id':event_id,'title':raw.get('title') if isinstance(raw.get('title'),str) else None,
-                           'slug':slug,'markets':[_market(x) for x in markets]})
+            selected=[_market(x) for x in markets if supported_full_game_market(x)]
+            if selected:
+                events.append({'id':event_id,'title':raw.get('title') if isinstance(raw.get('title'),str) else None,
+                               'slug':slug,'markets':selected})
         if not cursor:
             if source_id is None and len(game_ids)>1: raise SourceError('ambiguous_game')
             return {'events':events,'match_status':'source_identity' if source_id else 'candidate',

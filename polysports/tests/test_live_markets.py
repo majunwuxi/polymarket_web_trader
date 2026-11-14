@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-from backend.live_markets import fetch_live_markets
+from backend.live_markets import fetch_live_markets, supported_full_game_market
 from backend.sports_sources import SourceError
 
 NOW=datetime(2026,1,1,12,tzinfo=timezone.utc)
@@ -63,3 +63,33 @@ def test_mock_full_page_without_cursor_is_error():
     with httpx.Client(transport=httpx.MockTransport(lambda _:httpx.Response(200,json={'events':[event()]}))) as client:
         with pytest.raises(SourceError,match='invalid_pagination'):
             fetch_live_markets(client,source_id='100',sport='football',starts_at=NOW,home='Mock Home',away='Mock Away',page_size=1)
+
+
+@pytest.mark.parametrize('kind',['moneyline','spreads','totals'])
+def test_full_match_types_are_kept(kind):
+    assert supported_full_game_market({'sportsMarketType':kind,'question':'Mock Home vs Mock Away','slug':'mock-match'})
+
+
+@pytest.mark.parametrize('kind',['soccer_halftime_result','first_half_totals','second_half_totals',
+    'soccer_team_totals','soccer_first_half_team_totals','points','assists','rebounds','threes',None,'unknown'])
+def test_other_types_are_excluded(kind):
+    assert not supported_full_game_market({'sportsMarketType':kind,'question':'Mock market'})
+
+
+@pytest.mark.parametrize('label',['First Half O/U 1.5','Second Quarter Spread','Mock Team Total','1H total'])
+def test_partial_game_text_is_excluded_even_with_supported_type(label):
+    assert not supported_full_game_market({'sportsMarketType':'totals','question':label})
+
+
+def test_full_match_filter_preserves_source_events_for_three_categories():
+    first=event();first['markets']=[
+        {'id':'20','sportsMarketType':'moneyline','question':'Mock game','outcomes':['Yes','No']},
+        {'id':'21','sportsMarketType':'points','question':'Mock player points','outcomes':['Yes','No']},
+        {'id':'22','sportsMarketType':'totals','question':'Mock game total','outcomes':['Over','Under']},
+        {'id':'23','sportsMarketType':'first_half_totals','question':'First half total','outcomes':['Over','Under']},
+    ]
+    second=event(ident='2');second['markets']=[{'id':'24','sportsMarketType':'spreads','question':'Spread: Mock Home (-1.5)','outcomes':['Yes','No']}]
+    third=event(ident='3');third['markets']=[{'id':'25','sportsMarketType':'assists','question':'Mock player assists','outcomes':['Yes','No']}]
+    with httpx.Client(transport=httpx.MockTransport(lambda _:httpx.Response(200,json={'events':[first,second,third]}))) as client:
+        data=request(client)
+    assert [(row['id'],[m['type'] for m in row['markets']]) for row in data['events']]==[('1',['moneyline','totals']),('2',['spreads'])]

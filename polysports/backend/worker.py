@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .database import make_engine
-from .models import Game, Job, SyncRun, WatchedGame
+from .models import Game, GameRevision, Job, ResultBindingRequest, SyncRun, WatchedGame
 from .scheduler import claim_next, db_now, ensure_scheduled, finish_attempt, first_delay, heartbeat, interval, locked_valid_job, renew
 from .sports_sources import SourceError, fetch_game, fetch_schedule
 from .sports_sync import upsert_game, apply_polymarket_scan
@@ -39,12 +39,16 @@ def fetch_work(engine,job_id,token,settings,client):
         else:
             watched=db.get(WatchedGame,job.watched_game_id); game=db.get(Game,watched.game_id)
             provider=game.provider; external_id=game.external_id
+            if provider=='polymarket':
+                binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id,ResultBindingRequest.state=='bound'))
+                if not binding or not binding.fixture_id: raise SourceError('binding_required')
+                provider=binding.provider;external_id=binding.fixture_id
     if job.kind=='combo_reconcile':
         from .combo_reconcile import fetch_combo
         return fetch_combo(engine,combo_id,settings)
     if job.kind=='trade_reconcile': return fetch_order(engine,trade_id,settings)
     if provider=='polymarket':
-        if job.kind=='result_poll': raise SourceError('football_binding_required')
+        if job.kind=='result_poll': raise SourceError('binding_required')
         if sport=='football':
             from .polymarket_football import discover_football
             return discover_football(client,start)
@@ -102,9 +106,18 @@ def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_aft
                     finish_attempt(db,job,now,'failed',error); job.status='pending'; job.due_at=now+max(interval(game.sport),timedelta(seconds=retry_after_seconds))
                 else:
                     # 严格防止错误的来源记录关联至被关注赛事。
-                    if payload.provider!=game.provider or payload.external_id!=game.external_id: raise SourceError('fixture_mismatch')
+                    if game.provider=='polymarket':
+                        binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id,ResultBindingRequest.state=='bound'))
+                        if not binding or payload.provider!=binding.provider or payload.external_id!=binding.fixture_id: raise SourceError('fixture_mismatch')
+                        if payload.status=='finished' and (payload.home_score is None or payload.away_score is None): raise SourceError('final_score_missing')
+                    elif payload.provider!=game.provider or payload.external_id!=game.external_id: raise SourceError('fixture_mismatch')
                     old_start=game.starts_at; first=watch.last_checked_at is None
-                    upsert_game(db,payload,None,reschedule=False)
+                    if game.provider=='polymarket':
+                        if (game.starts_at,game.status,game.home_score,game.away_score)!=(payload.starts_at,payload.status,payload.home_score,payload.away_score):
+                            db.add(GameRevision(id=uuid.uuid4(),game_id=game.id,old_starts_at=game.starts_at,new_starts_at=payload.starts_at,old_status=game.status,new_status=payload.status,provider_status=payload.provider_status,home_score=payload.home_score,away_score=payload.away_score,change_reason='verified_result'))
+                        game.starts_at=payload.starts_at;game.status=payload.status;game.provider_status=payload.provider_status
+                        game.home_score=payload.home_score;game.away_score=payload.away_score;game.updated_at=now
+                    else: upsert_game(db,payload,None,reschedule=False)
                     watch.last_checked_at=now; watch.updated_at=now
                     if old_start!=game.starts_at:
                         watch.first_due_at=game.starts_at+first_delay(game.sport)
@@ -162,7 +175,11 @@ def main():
         while not stopping.is_set():
             try:
                 heartbeat(engine,worker_id,'running'); ensure_scheduled(engine)
-                if not process_one(engine,settings,str(worker_id)): stopping.wait(5)
+                worked=process_one(engine,settings,str(worker_id))
+                from .result_binding import process_pending_binding
+                with httpx.Client() as client:
+                    bound=process_pending_binding(engine,settings,client)
+                if not worked and not bound: stopping.wait(5)
             except Exception as exc:
                 log.error('worker_iteration_failed type=%s',type(exc).__name__); stopping.wait(5)
     finally:

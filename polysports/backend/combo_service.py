@@ -50,6 +50,8 @@ def resolve_legs(db, legs):
     for link_id,outcome_id in legs:
         link=db.get(MarketLink,uuid.UUID(link_id)); outcome=db.get(MarketOutcome,uuid.UUID(outcome_id))
         if not link or not outcome or link.market_id!=outcome.market_id or not valid_link(db,link): raise TradingError('mapping_invalid','组合腿赛事映射未确认或已过期')
+        game=db.get(Game,link.game_id)
+        if game and game.provider=='polymarket': raise TradingError('combo_unavailable','Polymarket 赛事组合交易尚未接入订单确认后的赛果绑定')
         market=db.get(PolyMarket,link.market_id)
         result.append((link,market,outcome))
     if len({x[1].id for x in result}) != len(result): raise TradingError('combo_legs_invalid','同一市场不能重复作为组合腿')

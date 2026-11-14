@@ -123,6 +123,9 @@ class Gateway:
             if response.status_code!=200: raise TradingError('market_unavailable','无法实时核对市场')
             raw=response.json()
             if not isinstance(raw,dict) or raw.get('id')!=event.gamma_event_id: raise TradingError('market_unavailable','市场来源身份不一致')
+            expected_game_id=getattr(event,'_expected_source_game_id',None)
+            if expected_game_id is not None and str(raw.get('gameId'))!=expected_game_id:
+                raise TradingError('market_unavailable','市场比赛编号已变更')
             tags={x.get('slug') for x in raw.get('tags',[]) if isinstance(x,dict)}
             if ('nba' if event.sport=='nba' else 'soccer') not in tags: raise TradingError('market_unavailable','市场运动类型不一致')
             teams=raw.get('teams');teams=teams if isinstance(teams,list) else []

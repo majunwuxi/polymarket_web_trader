@@ -194,7 +194,7 @@ def setup_scheduler_game(pg, sport='football'):
     from backend.sports_sync import run_sync
     from test_sports_sources import mock_football, mock_nba
     with pg.begin() as conn:
-        for table in ('job_runs','jobs','watched_games','game_revisions','games','team_aliases','team_source_ids','teams','leagues','sync_runs'):
+        for table in ('job_runs','jobs','watched_games','result_binding_requests','game_revisions','games','team_aliases','team_source_ids','teams','leagues','sync_runs'):
             conn.execute(text(f'DELETE FROM {table}'))
     now=datetime.now(timezone.utc)
     if sport=='football':

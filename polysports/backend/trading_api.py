@@ -96,6 +96,37 @@ def detail(request:Request,intent_id:uuid.UUID):
         return ok(request,{'intent':as_data(intent,db),'rfqs':[],'submissions':[{'state':x.state,'error_code':x.error_code,'started_at':x.started_at.isoformat(),'finished_at':x.finished_at.isoformat() if x.finished_at else None} for x in subs],'state_events':[{'state':x.state,'code':x.code,'created_at':x.created_at.isoformat()} for x in events]})
 
 
+@router.get('/trade-intents/{intent_id}/resolution')
+def resolution(request:Request,intent_id:uuid.UUID):
+    import httpx
+    from .models import Game, MarketOutcome, PolyMarket, ResultBindingRequest, Team
+    from .order_resolution import compare_moneyline_score, read_resolution
+    from .sports_sources import SourceError
+    with Session(request.app.state.engine) as db:
+        intent=db.get(TradeIntent,intent_id)
+        if not intent:return auth.error(request,404,'NOT_FOUND','订单不存在')
+        game=db.get(Game,intent.game_id);link=db.get(MarketLink,intent.market_link_id)
+        market=db.get(PolyMarket,link.market_id);outcome=db.get(MarketOutcome,intent.outcome_id)
+        binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id))
+        verified=bool(binding and binding.state=='bound' and game.status=='finished' and game.home_score is not None and game.away_score is not None)
+        base={'score_verified':verified,'home_score':game.home_score if verified else None,'away_score':game.away_score if verified else None,
+              'matched_size':str(intent.matched_size) if intent.matched_size is not None else None,'side':intent.side}
+        if intent.matched_size is None or intent.matched_size<=0 or not verified:
+            return ok(request,{**base,'state':'pending'})
+        condition,index=market.condition_id,outcome.outcome_index
+        home=db.get(Team,game.home_team_id);away=db.get(Team,game.away_team_id)
+        score_context={'sport':game.sport,'question':market.question,'outcome_label':outcome.label,
+            'home':home.source_name,'away':away.source_name,'home_score':game.home_score,
+            'away_score':game.away_score,'provider_status':game.provider_status}
+    try:
+        with httpx.Client() as client: data=read_resolution(client,condition,index)
+        if data['state']=='resolved':
+            data['score_consistency']=compare_moneyline_score(**score_context,outcome_won=data['outcome_won'])
+        return ok(request,{**base,**data})
+    except SourceError:
+        return auth.error(request,503,'RESOLUTION_UNAVAILABLE','市场结算状态暂不可用')
+
+
 def update_cancel(engine,intent_id,state,code=None,delay=None):
     with Session(engine) as db,db.begin():
         job=db.scalar(select(Job).where(Job.trade_intent_id==intent_id).with_for_update())

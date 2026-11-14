@@ -62,6 +62,9 @@ def apply_reconciliation(db,job,payload,error=None):
                 intent.state='partially_filled'
             elif status in ('live','open','active','delayed'):
                 intent.state='pending'
+            if intent.state in ('pending','partially_filled','filled','cancelled'):
+                from .result_binding import request_binding_for_accepted_order
+                request_binding_for_accepted_order(db,intent.game_id)
             intent.updated_at=now
             if intent.state!=old: db.add(TradeStateEvent(id=uuid.uuid4(),intent_id=intent.id,state=intent.state))
     if error:

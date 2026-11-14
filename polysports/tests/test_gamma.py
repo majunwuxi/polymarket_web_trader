@@ -29,11 +29,28 @@ def test_protocol_identifiers_and_no_precision_loss():
     with pytest.raises(SourceError):parse_market(raw)
 
 
+def test_omitted_ctf_version_and_ambiguous_protocol():
+    raw=mock_market();raw.pop('version');raw.pop('positionIds')
+    ctf=parse_market(raw)
+    assert ctf.version=='v1' and ctf.outcomes[0].asset_id==MOCK_BIG
+    raw['positionIds']=['456','789']
+    assert parse_market(raw).version is None
+    raw['version']='v3'
+    assert parse_market(raw).version is None
+
+
 def test_invalid_and_floating_asset_never_accepted():
     raw=mock_market();raw['clobTokenIds']=json.dumps([1.5,'2'])
     with pytest.raises(SourceError,match='invalid_asset_id'):parse_market(raw)
     raw=mock_market();raw['conditionId']='0xabc'
     with pytest.raises(SourceError,match='invalid_condition_id'):parse_market(raw)
+
+
+def test_mismatched_market_time_is_not_a_candidate():
+    other=mock_market('101');other['gameStartTime']='2026-01-02T12:00:00Z'
+    raw=mock_event();raw['markets'].append(other)
+    event,_=parse_event(raw,'nba',START,['Mock Home'],['Mock Away'])
+    assert [market.gamma_id for market in event.markets]==['100']
 
 
 def test_teams_sport_time_and_reversal_are_not_auto_confirmed():

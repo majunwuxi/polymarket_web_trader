@@ -43,11 +43,11 @@ def evidence_for(game, event, market, ordered, home_ambiguous=False, away_ambigu
 
 def valid_link(db: Session, link: MarketLink, *, require_confirmed=True) -> bool:
     game=db.get(Game,link.game_id); market=db.get(PolyMarket,link.market_id)
-    if game and game.provider=='polymarket': return False  # 下一阶段完成足球来源绑定后开放交易。
     event=db.get(PolyEvent,market.poly_event_id) if market else None
     refresh=db.get(MarketRefresh,link.game_id)
     if not game or not market or not event or not refresh or refresh.status!='succeeded' or not refresh.finished_at: return False
     now=db_now(db); ev=link.evidence
+    if game.provider=='polymarket' and ev.get('source_game_id')!=game.external_id: return False
     if now-refresh.finished_at>FRESH_FOR or now-market.last_verified_at>FRESH_FOR: return False
     if require_confirmed and link.state!='confirmed': return False
     if not require_confirmed and link.state not in ('candidate','stale','confirmed'): return False
@@ -102,7 +102,7 @@ def refresh_game(engine,game_id,client: httpx.Client | None=None):
         home_names,away_names=aliases(db,game.home_team_id),aliases(db,game.away_team_id)
     owned=client is None; source=client or httpx.Client()
     try:
-        matches=discover(source,snapshot[0],snapshot[1],home_names,away_names)
+        matches=discover(source,snapshot[0],snapshot[1],home_names,away_names,**({'source_id':snapshot[5]} if snapshot[4]=='polymarket' else {}))
         with Session(engine) as db, db.begin():
             db.execute(text("SELECT pg_advisory_xact_lock(hashtext('polysports-gamma'))"))
             game=db.scalar(select(Game).where(Game.id==game_id).with_for_update())

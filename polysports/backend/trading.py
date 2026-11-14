@@ -68,12 +68,19 @@ def resolve(db,body):
     return link,market,outcome
 
 
+def event_for_inspection(db,link,market):
+    event=db.get(PolyEvent,market.poly_event_id)
+    if event is not None:
+        event._expected_source_game_id=link.evidence.get('source_game_id')
+    return event
+
+
 def prepare(engine,settings,body,gateway_cls=Gateway):
     data,price,size=normalize(body);wallet=wallet_for(settings,body.wallet_id)
     with Session(engine) as db:
         link,market,outcome=resolve(db,body)
         game_id=link.game_id
-        with gateway_cls(settings,wallet) as gateway: context=gateway.inspect(market,outcome,body.side,price,size,db.get(PolyEvent,market.poly_event_id))
+        with gateway_cls(settings,wallet) as gateway: context=gateway.inspect(market,outcome,body.side,price,size,event_for_inspection(db,link,market))
         if not context.get('hash'): raise TradingError('book_unavailable','订单簿缺少有效版本标识')
         now=db_now(db)
     token=encode_token(settings,{'fingerprint':fingerprint(data),'book_hash':context['hash'],'expires_at':int((now+timedelta(seconds=PREVIEW_SECONDS)).timestamp())})
@@ -104,6 +111,9 @@ def save_result(engine,intent_id,state,code=None,order_id=None,retry_after=None)
         submission=db.scalar(select(TradeSubmission).where(TradeSubmission.intent_id==intent_id).with_for_update())
         submission.state=state;submission.error_code=code;submission.finished_at=now
         db.add(TradeStateEvent(id=uuid.uuid4(),intent_id=intent.id,state=state,code=code))
+        if state=='pending' and order_id:
+            from .result_binding import request_binding_for_accepted_order
+            request_binding_for_accepted_order(db,intent.game_id)
         if job and job.status=='pending':
             if state=='rejected': job.status='done'
             else: job.due_at=now+timedelta(seconds=30)
@@ -120,7 +130,7 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
         if token.get('fingerprint')!=fp or type(token.get('expires_at')) is not int or token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期或订单参数改变')
         link,market,outcome=resolve(db,body)
         with gateway_cls(settings,wallet) as gateway:
-            context=gateway.inspect(market,outcome,body.side,price,size,db.get(PolyEvent,market.poly_event_id))
+            context=gateway.inspect(market,outcome,body.side,price,size,event_for_inspection(db,link,market))
             if not context.get('hash') or context['hash']!=token.get('book_hash'): raise TradingError('preview_stale','盘口变化，请重新预览')
             try:
                 with Session(engine) as tx, tx.begin():
@@ -133,7 +143,9 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
                     now=db_now(tx)
                     if token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期，请重新预览')
                     intent=TradeIntent(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=request_id,request_fingerprint=fp,game_id=verified.game_id,market_link_id=verified.id,outcome_id=body.outcome_id,side=body.side,limit_price=price,requested_size=size,state='submitting')
-                    tx.add(intent);tx.flush();watch_game(tx,intent.game_id)
+                    tx.add(intent);tx.flush()
+                    game=tx.get(Game,intent.game_id)
+                    if game and game.provider!='polymarket': watch_game(tx,intent.game_id)
                     tx.add(TradeSubmission(id=uuid.uuid4(),intent_id=intent.id,state='submitting'))
                     tx.add(TradeStateEvent(id=uuid.uuid4(),intent_id=intent.id,state='submitting'))
                     tx.add(Job(id=uuid.uuid4(),kind='trade_reconcile',dedupe_key='trade:'+str(intent.id),trade_intent_id=intent.id,due_at=now+timedelta(seconds=60),status='pending'))

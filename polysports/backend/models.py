@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, time
 
 from sqlalchemy import Integer, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text, Time, UniqueConstraint, func, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -333,6 +333,25 @@ class TradeIntent(Base):
     cancel_state: Mapped[str | None] = mapped_column(String(24))
     error_code: Mapped[str | None] = mapped_column(String(80))
     retry_after_seconds: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class ResultBindingRequest(Base):
+    """已确认订单对应的外部赛果绑定请求。"""
+    __tablename__ = 'result_binding_requests'
+    __table_args__ = (UniqueConstraint('game_id',name='uq_result_binding_game'),
+                      UniqueConstraint('provider','fixture_id',name='uq_result_binding_fixture'),
+                      CheckConstraint("provider IN ('api_football','balldontlie')",name='ck_result_binding_provider'),
+                      CheckConstraint("state IN ('pending','bound','needs_review')",name='ck_result_binding_state'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    game_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('games.id',ondelete='RESTRICT'),nullable=False)
+    provider: Mapped[str] = mapped_column(String(32),nullable=False)
+    state: Mapped[str] = mapped_column(String(20),nullable=False,server_default='pending')
+    candidates: Mapped[list] = mapped_column(JSONB,nullable=False,server_default=text("'[]'::jsonb"))
+    fixture_id: Mapped[str | None] = mapped_column(String(255))
+    last_error_code: Mapped[str | None] = mapped_column(String(80))
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
 

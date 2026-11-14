@@ -111,6 +111,23 @@ def test_unknown_submission_never_reposts_and_worker_restart(env):
     assert MockGateway.posts==1
 
 
+@pytest.mark.parametrize('result_state',['accepted','unknown','rejected'])
+def test_polymarket_binding_waits_for_accepted_order(env,result_state,monkeypatch):
+    pg,client,headers,body=env
+    with pg.begin() as conn:
+        game_id=conn.execute(text('SELECT game_id FROM market_links WHERE id=:id'),{'id':body['market_link_id']}).scalar_one()
+        conn.execute(text("UPDATE games SET provider='polymarket',external_id='9876543' WHERE id=:id"),{'id':game_id})
+        conn.execute(text("UPDATE market_links SET evidence=evidence || jsonb_build_object('source_game_id','9876543') WHERE id=:id"),{'id':body['market_link_id']})
+    payload=preview(client,headers,body)
+    if result_state=='unknown': MockGateway.post_error=TimeoutError('mock timeout')
+    if result_state=='rejected': monkeypatch.setattr(MockGateway,'post',lambda self,signed:SimpleNamespace(ok=False,code='mock_rejected'))
+    result=client.post('/api/v1/single-orders',json=payload,headers={**headers,'Idempotency-Key':str(uuid.uuid4())})
+    assert result.status_code==(202 if result_state=='unknown' else 201)
+    with pg.connect() as conn:
+        assert conn.execute(text('SELECT count(*) FROM result_binding_requests WHERE game_id=:id'),{'id':game_id}).scalar_one()==int(result_state=='accepted')
+        assert conn.execute(text('SELECT count(*) FROM watched_games WHERE game_id=:id'),{'id':game_id}).scalar_one()==int(result_state=='accepted')
+
+
 def test_preview_changed_book_and_expired_or_bad_token(env):
     pg,client,headers,body=env
     payload=preview(client,headers,body);MockGateway.hash='mock-new-book'
@@ -242,6 +259,11 @@ def test_gateway_rejects_unknown_allowance_and_identity(monkeypatch):
     monkeypatch.setattr(module,'resolve_order_exchange_address',lambda *a,**k:'0x'+'1'*40)
     with pytest.raises(TradingError,match='授权'):gateway.inspect(market,outcome,'BUY',Decimal('.5'),Decimal('5'),event)
     account.allowances={'0x'+'1'*40:100000000}
+    assert gateway.inspect(market,outcome,'BUY',Decimal('.5'),Decimal('5'),event)['allowance_status']=='ready'
+    event._expected_source_game_id='123'
+    event_raw['gameId']='456'
+    with pytest.raises(TradingError,match='编号'):gateway.inspect(market,outcome,'BUY',Decimal('.5'),Decimal('5'),event)
+    event_raw['gameId']='123'
     assert gateway.inspect(market,outcome,'BUY',Decimal('.5'),Decimal('5'),event)['allowance_status']=='ready'
     event_raw['teams'][0]['name']='Different Mock Home'
     with pytest.raises(TradingError,match='变更'):gateway.inspect(market,outcome,'BUY',Decimal('.5'),Decimal('5'),event)

@@ -70,7 +70,13 @@ def parse_market(raw: dict) -> GammaMarket:
     ident=raw.get('id'); condition=raw.get('conditionId')
     if not isinstance(ident,str) or not re.fullmatch(r'[0-9]{1,255}',ident): raise SourceError('invalid_gamma_market_id')
     if not isinstance(condition,str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}',condition): raise SourceError('invalid_condition_id')
-    version=raw.get('version'); version=version if version in ('v1','v2') else None
+    version=raw.get('version')
+    # 官方 SDK 将未标注版本的 CTF 市场视为 token ID；若同时出现 V2
+    # position ID，身份不明确，必须保留未知而不是推测。
+    if version is None and raw.get('clobTokenIds') and raw.get('positionIds') in (None,[], '[]'):
+        version='v1'
+    elif version not in ('v1','v2'):
+        version=None
     accept=raw.get('acceptingOrders'); accept=accept if type(accept) is bool else None
     outcomes=[]
     if version:
@@ -114,8 +120,8 @@ def parse_event(raw: Any, sport: str, start: datetime, home_names: list[str], aw
         game_time=market.get('gameStartTime')
         if game_time:
             try:
-                if abs((timestamp(game_time)-event_start).total_seconds())>60: raise SourceError('inconsistent_game_time')
-            except SourceError: raise SourceError('inconsistent_game_time')
+                if abs((timestamp(game_time)-event_start).total_seconds())>60: continue
+            except SourceError: continue
         markets.append(parse_market(market))
     game_id=raw.get('gameId')
     if isinstance(game_id,bool) or not isinstance(game_id,(str,int)) or not re.fullmatch(r'[0-9]{1,255}',str(game_id)):
@@ -124,10 +130,13 @@ def parse_event(raw: Any, sport: str, start: datetime, home_names: list[str], aw
     return GammaEvent(ident,sport,event_start,home['name'],away['name'],raw.get('title') if isinstance(raw.get('title'),str) else None,raw.get('slug') if isinstance(raw.get('slug'),str) else None,tuple(markets),game_id),bool(ordered and not reversed_order)
 
 
-def discover(client: httpx.Client, sport: str, start: datetime, home_names: list[str], away_names: list[str], *, page_size: int=100, max_pages: int=100) -> list[tuple[GammaEvent,bool]]:
+def discover(client: httpx.Client, sport: str, start: datetime, home_names: list[str], away_names: list[str], *, page_size: int=100, max_pages: int=100, source_id: str | None=None) -> list[tuple[GammaEvent,bool]]:
     if sport not in ('football','nba') or start.tzinfo is None: raise ValueError('invalid game')
     found=[]; seen=set(); cursors=set(); cursor=None
     params={'tag_slug':'nba' if sport=='nba' else 'soccer','closed':'false','limit':page_size,'start_time_min':(start-timedelta(hours=2)).isoformat(),'start_time_max':(start+timedelta(hours=2)).isoformat()}
+    if source_id is not None:
+        if not re.fullmatch(r'[0-9]{1,255}',source_id): raise SourceError('invalid_game_id')
+        params={'game_id':source_id,'closed':'false','limit':page_size}
     for _ in range(max_pages):
         if cursor: params['after_cursor']=cursor
         try:

@@ -18,25 +18,7 @@ sudo systemctl enable --now postgresql
 python3 --version
 ```
 
-前端构建需要 Node.js 24。下例从 Node.js 官方发行目录下载当前 24.x 二进制并核对其官方 SHA256 清单；支持 x86_64 或 aarch64。也可使用组织批准的 Node.js 安装方式。以下临时文件只在新建的临时目录中操作：
-
-```bash
-case "$(uname -m)" in
-  x86_64) node_arch=linux-x64 ;;
-  aarch64) node_arch=linux-arm64 ;;
-  *) echo '不支持的架构，请按 Node.js 官方说明安装'; exit 1 ;;
-esac
-node_tmp=$(mktemp -d)
-cd "$node_tmp"
-curl -fsSLO https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt
-node_archive=$(awk -v arch="$node_arch" '$2 ~ ("^node-v24\\.[0-9]+\\.[0-9]+-" arch "\\.tar\\.xz$") {print $2}' SHASUMS256.txt)
-test -n "$node_archive" && test "$(printf '%s\n' "$node_archive" | wc -l)" -eq 1
-curl -fsSLO "https://nodejs.org/dist/latest-v24.x/$node_archive"
-grep -F " $node_archive" SHASUMS256.txt | sha256sum -c -
-sudo tar -xJf "$node_archive" -C /opt
-export PATH="/opt/${node_archive%.tar.xz}/bin:$PATH"
-node --version && npm --version
-```
+前端构建需要 Node.js 24。克隆项目后，下一节提供一条脚本命令安装并校验 Node.js；支持 Linux x86_64 和 aarch64。也可以使用已安装的兼容版本。
 
 在独立工具环境安装与项目锁文件兼容的 uv；实际 Python 依赖由仓库的 `uv.lock` 锁定。
 
@@ -52,6 +34,9 @@ sudo /opt/polysports-tools/bin/uv --version
 
 ```bash
 sudo git clone https://github.com/majunwuxi/polymarket_web_trader.git /opt/polysports-src
+sudo bash /opt/polysports-src/polysports/deploy/scripts/install-node.sh
+export PATH="/opt/polysports-node/bin:$PATH"
+node --version && npm --version
 sudo groupadd --system polysports
 sudo useradd --system --gid polysports --home-dir /nonexistent \
   --shell /usr/sbin/nologin polysports

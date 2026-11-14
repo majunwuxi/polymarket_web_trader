@@ -21,5 +21,5 @@
 
 ## 3. 部署与验收
 
-- [ ] 3.1 完成 DEPLOY.md、Nginx/systemd 部署脚本、迁移与备份恢复演练。
+- [x] 3.1 完成 DEPLOY.md、Nginx/systemd 部署脚本、迁移与备份恢复演练。
 - [ ] 3.2 运行全部适用测试和严格 OpenSpec 校验，完成后归档变更。

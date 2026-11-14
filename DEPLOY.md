@@ -2,6 +2,8 @@
 
 本文针对专用 Ubuntu 24.04 LTS VPS，使用 Python 3.12、PostgreSQL 16、Nginx、systemd 和 Node.js 24。示例域名 `sports.example.com`、用户名与路径须在执行前核对；不要将本文件中的示例凭据当作真实凭据。以下操作由服务器管理员在目标 VPS 上执行，本文不会自动连接或修改服务器。
 
+隔离验收已在 [Ubuntu 24.04 CI](https://github.com/majunwuxi/polymarket_web_trader/actions/runs/43538150858) 完成：使用明确标识的模拟凭据和临时数据库，验证 110 项后端测试、数据库迁移、systemd 启动与任务重启、实际备份和空库恢复、Nginx HTTPS 与反向代理。CI 使用自签名测试证书和预装依赖；实际 VPS、域名解析及 Let's Encrypt 证书签发仍须在目标环境按本文操作并验收。
+
 PolySports 与原 Flask Dashboard 使用独立进程和数据库。API 仅绑定 `127.0.0.1:8000`，由 Nginx 提供 HTTPS；worker 单独运行。Combo 报价对象保存在 API 进程内存，因此 API **必须为单进程**。不要在该设计下增加多个 API 实例或负载均衡。开启 Combo 时应用另有数据库会话锁，防止第二个 API 进程启动。
 
 ## 1. 前提与系统依赖

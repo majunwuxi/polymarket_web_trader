@@ -16,7 +16,7 @@ def test_mock_repeated_sync_and_failed_sync_preserve_history(pg):
     start = datetime.now(timezone.utc)
     kickoff = (start + timedelta(hours=1)).isoformat()
     event = {'id':'98765001', 'gameId':98765002, 'active':True, 'closed':False,
-             'startTime':kickoff, 'tags':[{'slug':'soccer'}],
+             'startTime':kickoff, 'tags':[{'slug':'soccer','id':'100350'},{'slug':'EPL','id':'306'}], 'series':[{'id':'10188'}],
              'teams':[{'id':98765003,'name':'Mock Home','ordering':'home'},
                       {'id':98765004,'name':'Mock Away','ordering':'away'}],
              'markets':[{'id':'98765005','sportsMarketType':'moneyline',
@@ -30,6 +30,7 @@ def test_mock_repeated_sync_and_failed_sync_preserve_history(pg):
         games=list(db.scalars(select(Game).where(Game.provider=='polymarket',Game.external_id=='98765002')))
         assert len(games)==1 and games[0].market_available is True
         assert games[0].home_score is None and games[0].status=='scheduled'
+        assert games[0].league_id is not None
         assert db.get(SyncRun,first).status==db.get(SyncRun,second).status=='succeeded'
         game_id=str(games[0].id)
     with TestClient(create_app(),base_url=ORIGIN) as client:

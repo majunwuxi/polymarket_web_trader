@@ -9,6 +9,28 @@ import httpx
 
 from .sports_sources import SourceError, retry_delay, timestamp
 
+# Polymarket /sports 足球 primaryTagId；不包含同名其他运动、预选赛之外的杯赛或女足赛事。
+FOOTBALL_COMPETITIONS = {
+    '306':'英超', '102643':'英冠', '1494':'德甲', '102864':'德乙',
+    '100618':'意甲', '780':'西甲', '102070':'法甲', '102871':'法乙',
+    '101735':'荷甲', '105727':'荷乙', '101772':'葡超', '104930':'瑞超',
+    '102651':'挪超', '105243':'芬超', '1234':'欧冠', '101787':'欧罗巴',
+    '102763':'欧协联', '104937':'亚冠精英', '102232':'世界杯',
+    '102544':'世预赛', '102540':'世预赛', '101680':'世预赛',
+    '101280':'世预赛', '100787':'世预赛', '104327':'世预赛',
+    '104342':'世预赛', '104316':'欧洲杯', '100816':'欧国联',
+}
+# 校验具体赛事系列，避免 AFC 等联盟通用标签误认成世预赛。
+COMPETITION_SERIES = {
+    '306':'10188', '102643':'10355', '1494':'10194', '102864':'10670',
+    '100618':'10203', '780':'10193', '102070':'10195', '102871':'10675',
+    '101735':'10286', '105727':'12353', '101772':'10330', '104930':'11637',
+    '102651':'10362', '105243':'11864', '1234':'10204', '101787':'10209',
+    '102763':'10437', '104937':'11644', '102232':'11433', '102544':'10243',
+    '102540':'10240', '101680':'10241', '101280':'10244', '100787':'10246',
+    '104327':'10294', '104342':'11463', '104316':'11430', '100816':'11446',
+}
+# 官方足球体育元数据当前没有可核实的亚洲杯 primaryTagId；不猜测。
 
 @dataclass(frozen=True)
 class FootballTeam:
@@ -25,6 +47,8 @@ class FootballMarketGame:
     away: FootballTeam
     event_ids: tuple[str, ...]
     market_ids: tuple[str, ...]
+    competition_id: str
+    competition_name: str
 
 
 def _id(value: Any) -> str | None:
@@ -45,6 +69,12 @@ def _candidate(raw: Any, start: datetime, end: datetime) -> FootballMarketGame |
     if not isinstance(raw, dict): raise SourceError('invalid_event')
     tags = raw.get('tags')
     if not isinstance(tags, list) or not any(isinstance(x, dict) and x.get('slug') == 'soccer' for x in tags): return None
+    competition_ids = {_id(x.get('id')) for x in tags if isinstance(x, dict)} & FOOTBALL_COMPETITIONS.keys()
+    if len(competition_ids) != 1: return None
+    competition_id = next(iter(competition_ids))
+    series = raw.get('series')
+    if not isinstance(series, list) or COMPETITION_SERIES[competition_id] not in {_id(x.get('id')) for x in series if isinstance(x, dict)}:
+        return None
     if raw.get('active') is not True or raw.get('closed') is not False: return None
     game_id, event_id = _id(raw.get('gameId')), _id(raw.get('id'))
     if not game_id or not event_id: return None
@@ -72,7 +102,8 @@ def _candidate(raw: Any, start: datetime, end: datetime) -> FootballMarketGame |
         market_ids.append(ident)
     if not market_ids: return None
     if len(set(market_ids)) != len(market_ids): raise SourceError('duplicate_market_id')
-    return FootballMarketGame(game_id, starts_at, home, away, (event_id,), tuple(sorted(market_ids)))
+    return FootballMarketGame(game_id, starts_at, home, away, (event_id,), tuple(sorted(market_ids)),
+                              competition_id, FOOTBALL_COMPETITIONS[competition_id])
 
 
 def discover_football(client: httpx.Client, start: datetime, *, page_size: int = 100, max_pages: int = 100) -> tuple[list[FootballMarketGame], int, int]:
@@ -108,12 +139,13 @@ def discover_football(client: httpx.Client, start: datetime, *, page_size: int =
             if candidate is None: continue
             previous = games.get(candidate.game_id)
             if previous:
-                if (previous.starts_at, previous.home, previous.away) != (candidate.starts_at, candidate.home, candidate.away):
+                if (previous.starts_at, previous.home, previous.away, previous.competition_id) != (candidate.starts_at, candidate.home, candidate.away, candidate.competition_id):
                     raise SourceError('conflicting_game')
                 if set(previous.market_ids) & set(candidate.market_ids): raise SourceError('duplicate_market_id')
                 candidate = FootballMarketGame(candidate.game_id, candidate.starts_at, candidate.home, candidate.away,
                                                tuple(sorted(previous.event_ids + candidate.event_ids)),
-                                               tuple(sorted(previous.market_ids + candidate.market_ids)))
+                                               tuple(sorted(previous.market_ids + candidate.market_ids)),
+                                               candidate.competition_id, candidate.competition_name)
             games[candidate.game_id] = candidate
         if not cursor: return sorted(games.values(), key=lambda x: (x.starts_at, x.game_id)), page, received
         if cursor in cursors or not rows: raise SourceError('pagination_loop')

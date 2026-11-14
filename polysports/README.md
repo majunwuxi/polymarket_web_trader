@@ -33,6 +33,8 @@ uv run --locked python -m backend.sync_cli nba
 
 足球与 NBA 的中文名和队徽可使用用户提供的 `sportsmatch` 球队资料快照作为展示参考；只有同运动的完整英文名称唯一匹配时才使用。人工确认的中文名与已有非占位队徽优先，目录不会修改数据库或作为交易身份核验依据。快照版本见 `backend/team_data/README.md`。
 
+足球赛事仅包含指定范围：英超、英冠、德甲、德乙、意甲、西甲、法甲、法乙、荷甲、荷乙、葡超、瑞超、挪超、芬超、欧冠、欧罗巴、欧协联、亚冠精英、世界杯、各洲世预赛、欧洲杯、欧国联和亚洲杯。仅在 Polymarket 足球赛事标签能唯一确认时收录；截至本次核验，公开体育目录中没有可确认的亚洲杯标识，因此亚洲杯尚不能自动识别。未知或冲突标签不猜测，既有历史不删除。
+
 接口依据：[API-Football fixtures](https://www.api-football.com/documentation-v3) 和 [BALLDONTLIE NBA games](https://docs.balldontlie.io/#get-all-games)。
 
 ## 后台任务和关注

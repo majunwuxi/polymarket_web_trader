@@ -73,7 +73,7 @@ def upsert_polymarket_game(db: Session, source, run_id: uuid.UUID | None) -> Non
     game=SourceGame('polymarket','football',source.game_id,source.starts_at,status,'market_discovered',
                     SourceTeam(source.home.source_id,source.home.name,source.home.logo_url),
                     SourceTeam(source.away.source_id,source.away.name,source.away.logo_url),
-                    None,None,None,existing.home_score if existing else None,existing.away_score if existing else None)
+                    source.competition_id,source.competition_name,None,existing.home_score if existing else None,existing.away_score if existing else None)
     upsert_game(db,game,run_id)
     stored=db.scalar(select(Game).where(Game.provider=='polymarket',Game.external_id==source.game_id))
     stored.market_available=True

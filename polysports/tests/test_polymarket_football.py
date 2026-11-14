@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 
-from backend.polymarket_football import discover_football
+from backend.polymarket_football import COMPETITION_SERIES, FOOTBALL_COMPETITIONS, discover_football
 from backend.sports_sources import SourceError
 
 
@@ -14,7 +14,7 @@ START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 def mock_event(event_id='1', game_id=10, market_type='moneyline', when=START + timedelta(hours=1)):
     return {'id': event_id, 'gameId': game_id, 'active': True, 'closed': False,
-            'startTime': when.isoformat(), 'tags': [{'slug': 'soccer'}],
+            'startTime': when.isoformat(), 'tags': [{'slug': 'soccer', 'id':'100350'}, {'slug':'EPL', 'id':'306'}], 'series':[{'id':'10188'}],
             'teams': [{'id': 11, 'name': 'Mock Home', 'ordering': 'home'},
                       {'id': 12, 'name': 'Mock Away', 'ordering': 'away'}],
             'markets': [{'id': '100' + event_id, 'sportsMarketType': market_type,
@@ -38,6 +38,7 @@ def test_mock_discovery_filters_and_merges_pages():
     assert (pages, received, len(games)) == (2, 6, 1)
     assert games[0].game_id == '10' and games[0].event_ids == ('1', '2')
     assert games[0].market_ids == ('1001', '1002') and games[0].home.name == 'Mock Home'
+    assert games[0].competition_id == '306' and games[0].competition_name == '英超'
 
 
 @pytest.mark.parametrize('change', ['missing_teams', 'wrong_market_time', 'closed_market', 'missing_start', 'wrong_tag'])
@@ -80,3 +81,30 @@ def test_mock_later_page_failure_never_returns_partial_results():
 def test_mock_last_page_may_omit_cursor():
     with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={'events': [mock_event()]}))) as client:
         assert len(discover_football(client, START)[0]) == 1
+
+
+@pytest.mark.parametrize('tag_id', ['102448', '102192', '105251', '106368', '104329', '999999'])
+def test_mock_unlisted_competition_is_excluded(tag_id):
+    event=mock_event(); event['tags'][1]['id']=tag_id
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200,json={'events':[event]}))) as client:
+        assert discover_football(client, START)[0] == []
+
+
+def test_mock_ambiguous_competition_is_excluded():
+    event=mock_event(); event['tags'].append({'id':'1494','slug':'bundesliga'})
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200,json={'events':[event]}))) as client:
+        assert discover_football(client, START)[0] == []
+
+
+def test_mock_general_afc_tag_without_world_qualifier_series_is_excluded():
+    event=mock_event(); event['tags'][1]={'id':'101680','slug':'afc'}; event['series']=[{'id':'999999'}]
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200,json={'events':[event]}))) as client:
+        assert discover_football(client, START)[0] == []
+
+
+@pytest.mark.parametrize('tag_id', sorted(FOOTBALL_COMPETITIONS))
+def test_mock_supported_competition_tag_and_series(tag_id):
+    event=mock_event(); event['tags'][1]['id']=tag_id; event['series']=[{'id':COMPETITION_SERIES[tag_id]}]
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200,json={'events':[event]}))) as client:
+        games=discover_football(client, START)[0]
+        assert len(games)==1 and games[0].competition_name==FOOTBALL_COMPETITIONS[tag_id]

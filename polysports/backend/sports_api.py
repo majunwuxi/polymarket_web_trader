@@ -36,7 +36,8 @@ def cursor_decode(value):
 
 
 def team_data(team):
-    return {'id':str(team.id),'sport':team.sport,'source_name':team.source_name,'name_zh':team.name_zh,'translation_status':team.translation_status,'logo_url':team.logo_url}
+    from .team_directory import display_team
+    return display_team(team)
 
 
 def game_data(db, game):

@@ -31,6 +31,8 @@ uv run --locked python -m backend.sync_cli nba
 
 每次调用以实际开始时间为起点，获取并精确过滤未来 36 小时；足球只展示 Polymarket 已开设、可识别为胜平负的比赛，市场关闭后保留历史但不再显示在未来列表。分页失败或来源限流记为失败，不删除既有赛事。新发现的足球比赛暂不能关注或下单：API-Football 绑定与赛果查询尚待下一阶段实现。自动同步需要独立 worker，默认按 UTC 00:00、08:00 同步，可在页面修改；NBA 同步额外请求季前赛。中文名称需管理员核实维护，未知队徽以占位显示。
 
+足球与 NBA 的中文名和队徽可使用用户提供的 `sportsmatch` 球队资料快照作为展示参考；只有同运动的完整英文名称唯一匹配时才使用。人工确认的中文名与已有非占位队徽优先，目录不会修改数据库或作为交易身份核验依据。快照版本见 `backend/team_data/README.md`。
+
 接口依据：[API-Football fixtures](https://www.api-football.com/documentation-v3) 和 [BALLDONTLIE NBA games](https://docs.balldontlie.io/#get-all-games)。
 
 ## 后台任务和关注

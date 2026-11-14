@@ -1,0 +1,367 @@
+[
+  {
+    "league": "nba",
+    "id": "1610612737",
+    "abbreviation": "ATL",
+    "name_en": "Atlanta Hawks",
+    "name_zh": "亚特兰大老鹰",
+    "logo": "https://cdn.nba.com/logos/nba/1610612737/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612738",
+    "abbreviation": "BOS",
+    "name_en": "Boston Celtics",
+    "name_zh": "波士顿凯尔特人",
+    "logo": "https://cdn.nba.com/logos/nba/1610612738/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612751",
+    "abbreviation": "BKN",
+    "name_en": "Brooklyn Nets",
+    "name_zh": "布鲁克林篮网",
+    "logo": "https://cdn.nba.com/logos/nba/1610612751/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612766",
+    "abbreviation": "CHA",
+    "name_en": "Charlotte Hornets",
+    "name_zh": "夏洛特黄蜂",
+    "logo": "https://cdn.nba.com/logos/nba/1610612766/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612741",
+    "abbreviation": "CHI",
+    "name_en": "Chicago Bulls",
+    "name_zh": "芝加哥公牛",
+    "logo": "https://cdn.nba.com/logos/nba/1610612741/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612739",
+    "abbreviation": "CLE",
+    "name_en": "Cleveland Cavaliers",
+    "name_zh": "克利夫兰骑士",
+    "logo": "https://cdn.nba.com/logos/nba/1610612739/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612742",
+    "abbreviation": "DAL",
+    "name_en": "Dallas Mavericks",
+    "name_zh": "达拉斯独行侠",
+    "logo": "https://cdn.nba.com/logos/nba/1610612742/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612743",
+    "abbreviation": "DEN",
+    "name_en": "Denver Nuggets",
+    "name_zh": "丹佛掘金",
+    "logo": "https://cdn.nba.com/logos/nba/1610612743/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612765",
+    "abbreviation": "DET",
+    "name_en": "Detroit Pistons",
+    "name_zh": "底特律活塞",
+    "logo": "https://cdn.nba.com/logos/nba/1610612765/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612744",
+    "abbreviation": "GSW",
+    "name_en": "Golden State Warriors",
+    "name_zh": "金州勇士",
+    "logo": "https://cdn.nba.com/logos/nba/1610612744/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612745",
+    "abbreviation": "HOU",
+    "name_en": "Houston Rockets",
+    "name_zh": "休斯敦火箭",
+    "logo": "https://cdn.nba.com/logos/nba/1610612745/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612754",
+    "abbreviation": "IND",
+    "name_en": "Indiana Pacers",
+    "name_zh": "印第安纳步行者",
+    "logo": "https://cdn.nba.com/logos/nba/1610612754/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612746",
+    "abbreviation": "LAC",
+    "name_en": "Los Angeles Clippers",
+    "aliases": [
+      "LA Clippers",
+      "Clippers",
+      "L.A. Clippers"
+    ],
+    "name_zh": "洛杉矶快船",
+    "logo": "https://cdn.nba.com/logos/nba/1610612746/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612747",
+    "abbreviation": "LAL",
+    "name_en": "Los Angeles Lakers",
+    "name_zh": "洛杉矶湖人",
+    "logo": "https://cdn.nba.com/logos/nba/1610612747/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612763",
+    "abbreviation": "MEM",
+    "name_en": "Memphis Grizzlies",
+    "name_zh": "孟菲斯灰熊",
+    "logo": "https://cdn.nba.com/logos/nba/1610612763/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612748",
+    "abbreviation": "MIA",
+    "name_en": "Miami Heat",
+    "name_zh": "迈阿密热火",
+    "logo": "https://cdn.nba.com/logos/nba/1610612748/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612749",
+    "abbreviation": "MIL",
+    "name_en": "Milwaukee Bucks",
+    "name_zh": "密尔沃基雄鹿",
+    "logo": "https://cdn.nba.com/logos/nba/1610612749/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612750",
+    "abbreviation": "MIN",
+    "name_en": "Minnesota Timberwolves",
+    "name_zh": "明尼苏达森林狼",
+    "logo": "https://cdn.nba.com/logos/nba/1610612750/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612740",
+    "abbreviation": "NOP",
+    "name_en": "New Orleans Pelicans",
+    "name_zh": "新奥尔良鹈鹕",
+    "logo": "https://cdn.nba.com/logos/nba/1610612740/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612752",
+    "abbreviation": "NYK",
+    "name_en": "New York Knicks",
+    "name_zh": "纽约尼克斯",
+    "logo": "https://cdn.nba.com/logos/nba/1610612752/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612760",
+    "abbreviation": "OKC",
+    "name_en": "Oklahoma City Thunder",
+    "name_zh": "俄克拉荷马雷霆",
+    "logo": "https://cdn.nba.com/logos/nba/1610612760/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612753",
+    "abbreviation": "ORL",
+    "name_en": "Orlando Magic",
+    "name_zh": "奥兰多魔术",
+    "logo": "https://cdn.nba.com/logos/nba/1610612753/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612755",
+    "abbreviation": "PHI",
+    "name_en": "Philadelphia 76ers",
+    "name_zh": "费城76人",
+    "logo": "https://cdn.nba.com/logos/nba/1610612755/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612756",
+    "abbreviation": "PHX",
+    "name_en": "Phoenix Suns",
+    "name_zh": "菲尼克斯太阳",
+    "logo": "https://cdn.nba.com/logos/nba/1610612756/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612757",
+    "abbreviation": "POR",
+    "name_en": "Portland Trail Blazers",
+    "name_zh": "波特兰开拓者",
+    "logo": "https://cdn.nba.com/logos/nba/1610612757/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612758",
+    "abbreviation": "SAC",
+    "name_en": "Sacramento Kings",
+    "name_zh": "萨克拉门托国王",
+    "logo": "https://cdn.nba.com/logos/nba/1610612758/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612759",
+    "abbreviation": "SAS",
+    "name_en": "San Antonio Spurs",
+    "name_zh": "圣安东尼奥马刺",
+    "logo": "https://cdn.nba.com/logos/nba/1610612759/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612761",
+    "abbreviation": "TOR",
+    "name_en": "Toronto Raptors",
+    "name_zh": "多伦多猛龙",
+    "logo": "https://cdn.nba.com/logos/nba/1610612761/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612762",
+    "abbreviation": "UTA",
+    "name_en": "Utah Jazz",
+    "name_zh": "犹他爵士",
+    "logo": "https://cdn.nba.com/logos/nba/1610612762/global/L/logo.svg"
+  },
+  {
+    "league": "nba",
+    "id": "1610612764",
+    "abbreviation": "WAS",
+    "name_en": "Washington Wizards",
+    "name_zh": "华盛顿奇才",
+    "logo": "https://cdn.nba.com/logos/nba/1610612764/global/L/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661330",
+    "abbreviation": "ATL",
+    "name_en": "Atlanta Dream",
+    "name_zh": "亚特兰大梦想",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661330/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661329",
+    "abbreviation": "CHI",
+    "name_en": "Chicago Sky",
+    "name_zh": "芝加哥天空",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661329/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661323",
+    "abbreviation": "CON",
+    "name_en": "Connecticut Sun",
+    "name_zh": "康涅狄格太阳",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661323/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661321",
+    "abbreviation": "DAL",
+    "name_en": "Dallas Wings",
+    "name_zh": "达拉斯飞翼",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661321/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661331",
+    "abbreviation": "GSV",
+    "name_en": "Golden State Valkyries",
+    "name_zh": "金州女武神",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661331/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661325",
+    "abbreviation": "IND",
+    "name_en": "Indiana Fever",
+    "name_zh": "印第安纳狂热",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661325/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661319",
+    "abbreviation": "LV",
+    "name_en": "Las Vegas Aces",
+    "name_zh": "拉斯维加斯王牌",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661319/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661320",
+    "abbreviation": "LA",
+    "name_en": "Los Angeles Sparks",
+    "name_zh": "洛杉矶火花",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661320/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661324",
+    "abbreviation": "MIN",
+    "name_en": "Minnesota Lynx",
+    "name_zh": "明尼苏达山猫",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661324/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661313",
+    "abbreviation": "NY",
+    "name_en": "New York Liberty",
+    "name_zh": "纽约自由人",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661313/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661317",
+    "abbreviation": "PHX",
+    "name_en": "Phoenix Mercury",
+    "name_zh": "菲尼克斯水星",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661317/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661327",
+    "abbreviation": "PDX",
+    "name_en": "Portland Fire",
+    "name_zh": "波特兰火焰",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661327/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661328",
+    "abbreviation": "SEA",
+    "name_en": "Seattle Storm",
+    "name_zh": "西雅图风暴",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661328/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661332",
+    "abbreviation": "TOR",
+    "name_en": "Toronto Tempo",
+    "name_zh": "多伦多节奏",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661332/primary/D/logo.svg"
+  },
+  {
+    "league": "wnba",
+    "id": "1611661322",
+    "abbreviation": "WAS",
+    "name_en": "Washington Mystics",
+    "name_zh": "华盛顿神秘人",
+    "logo": "https://cdn.wnba.com/logos/wnba/1611661322/primary/D/logo.svg"
+  }
+]

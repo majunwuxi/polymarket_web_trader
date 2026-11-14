@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-from backend.team_directory import build_index, display_team
+from backend.team_directory import NBA_SHORT_NAMES, build_index, display_team
 
 
 def team(name, sport='football', name_zh=None, logo_url=None, translation_status='missing'):
@@ -34,3 +34,16 @@ def test_unknown_ambiguous_and_cross_sport_never_guess():
     assert display_team(team('Minnesota Lynx',sport='nba'))['name_zh'] is None
     index=build_index('football',[{'name_en':'Mock Club','name_zh':'模拟甲'}, {'name_en':'  MOCK  CLUB ','name_zh':'模拟乙'}])
     assert index['mock club'] is None
+
+
+def test_polymarket_nba_short_names_have_chinese_and_keep_source_icon():
+    assert len(NBA_SHORT_NAMES)==30
+    for short,full in NBA_SHORT_NAMES.items():
+        record=team(short,sport='nba',logo_url='https://example.test/source-icon.png')
+        result=display_team(record)
+        assert result['name_zh']==display_team(team(full,sport='nba'))['name_zh']
+        assert result['name_zh']
+        assert result['source_name']==short
+        assert result['logo_url']=='https://example.test/source-icon.png'
+    assert display_team(team('Pelicans',sport='football'))['name_zh'] is None
+    assert display_team(team('Pelican',sport='nba'))['name_zh'] is None

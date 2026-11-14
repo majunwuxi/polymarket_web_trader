@@ -6,6 +6,20 @@ import json
 from pathlib import Path
 import unicodedata
 
+# Polymarket NBA 比赛使用球队简称；仅映射到用户提供目录中的明确全名。
+NBA_SHORT_NAMES = {
+    'Hawks':'Atlanta Hawks', 'Celtics':'Boston Celtics', 'Nets':'Brooklyn Nets',
+    'Hornets':'Charlotte Hornets', 'Bulls':'Chicago Bulls', 'Cavaliers':'Cleveland Cavaliers',
+    'Mavericks':'Dallas Mavericks', 'Nuggets':'Denver Nuggets', 'Pistons':'Detroit Pistons',
+    'Warriors':'Golden State Warriors', 'Rockets':'Houston Rockets', 'Pacers':'Indiana Pacers',
+    'Clippers':'Los Angeles Clippers', 'Lakers':'Los Angeles Lakers', 'Grizzlies':'Memphis Grizzlies',
+    'Heat':'Miami Heat', 'Bucks':'Milwaukee Bucks', 'Timberwolves':'Minnesota Timberwolves',
+    'Pelicans':'New Orleans Pelicans', 'Knicks':'New York Knicks', 'Thunder':'Oklahoma City Thunder',
+    'Magic':'Orlando Magic', '76ers':'Philadelphia 76ers', 'Suns':'Phoenix Suns',
+    'Trail Blazers':'Portland Trail Blazers', 'Kings':'Sacramento Kings', 'Spurs':'San Antonio Spurs',
+    'Raptors':'Toronto Raptors', 'Jazz':'Utah Jazz', 'Wizards':'Washington Wizards',
+}
+
 
 def _normal(value: str) -> str:
     return ' '.join(unicodedata.normalize('NFKC', value).casefold().split())
@@ -32,7 +46,11 @@ def _directories():
     root = Path(__file__).parent / 'team_data'
     football = json.loads((root / 'football.json').read_text(encoding='utf-8'))
     basketball = json.loads((root / 'basketball.json').read_text(encoding='utf-8'))
-    return {'football': build_index('football', football.values()), 'nba': build_index('nba', basketball)}
+    nba=build_index('nba', basketball)
+    for short, full in NBA_SHORT_NAMES.items():
+        key,full_key=_normal(short),_normal(full)
+        if key not in nba and nba.get(full_key): nba[key]=nba[full_key]
+    return {'football': build_index('football', football.values()), 'nba': nba}
 
 
 def display_team(team) -> dict:

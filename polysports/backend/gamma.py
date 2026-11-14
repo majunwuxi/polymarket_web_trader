@@ -131,9 +131,10 @@ def discover(client: httpx.Client, sport: str, start: datetime, home_names: list
             body=response.json()
         except httpx.TimeoutException as exc: raise SourceError('timeout') from exc
         except (httpx.RequestError,ValueError) as exc: raise SourceError('network_or_invalid_json') from exc
-        if not isinstance(body,dict) or 'next_cursor' not in body: raise SourceError('invalid_pagination')
+        if not isinstance(body,dict): raise SourceError('invalid_pagination')
         rows=body.get('events'); next_cursor=body.get('next_cursor')
         if not isinstance(rows,list) or len(rows)>page_size or (next_cursor is not None and not isinstance(next_cursor,str)): raise SourceError('invalid_pagination')
+        if len(rows)==page_size and not next_cursor: raise SourceError('invalid_pagination')
         for raw in rows:
             if not isinstance(raw,dict) or not isinstance(raw.get('id'),str): raise SourceError('invalid_event')
             if raw['id'] in seen: raise SourceError('pagination_duplicate')

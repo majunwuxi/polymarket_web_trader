@@ -39,7 +39,11 @@
 ## ADDED Requirements
 
 ### Requirement: 按需绑定足球赛果来源
-系统 SHALL 在管理员需要交易时提供 API-Football 候选匹配及明确确认；来源不可用或身份不明确 MUST 保持未绑定，不得编造赛果或完赛状态。
+系统 SHALL 在 Polymarket 明确接受足球订单并确认订单身份后启动 API-Football 候选匹配及明确确认；来源不可用或身份不明确 MUST 保持未绑定，不得编造赛果或完赛状态。绑定后按已确认的外部赛事标识核实最终比赛结果。
+
+#### Scenario: 订单结果未知
+- **WHEN** 订单提交超时或结果无法确认
+- **THEN** 系统先进行只读对账，不启动赛事绑定，也不声称订单成功
 
 #### Scenario: 来源权限不足
 - **WHEN** API-Football 套餐无法返回当前赛事

@@ -52,7 +52,9 @@ def test_keyset_multiple_pages_and_loop_safeguards():
     def handler(req):
         calls.append(req)
         if len(calls)==1: return httpx.Response(200,json={'events':[mock_event('10')],'next_cursor':'mock-next'})
-        event=mock_event('11',mock_market('101'));return httpx.Response(200,json={'events':[event],'next_cursor':None})
+        if len(calls)==2:
+            event=mock_event('11',mock_market('101'));return httpx.Response(200,json={'events':[event],'next_cursor':'mock-last'})
+        return httpx.Response(200,json={'events':[]})
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         events=discover(client,'nba',START,['Mock Home'],['Mock Away'],page_size=1)
     assert len(events)==2 and calls[1].url.params['after_cursor']=='mock-next'
@@ -78,7 +80,12 @@ def test_wallet_config_rejects_private_keys():
         WalletConfig(label='mock',wallet_address='0x'+'1'*40,signer_address='0x'+'2'*40,wallet_type='EOA',private_key='mock-never-real')
 
 
-def test_missing_keyset_cursor_is_not_complete_success():
+def test_short_final_page_without_cursor_is_complete():
     with httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={'events':[]}))) as client:
+        assert discover(client,'nba',START,['Mock Home'],['Mock Away']) == []
+
+
+def test_full_page_without_cursor_is_not_complete_success():
+    with httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={'events':[mock_event()]}))) as client:
         with pytest.raises(SourceError,match='invalid_pagination'):
-            discover(client,'nba',START,['Mock Home'],['Mock Away'])
+            discover(client,'nba',START,['Mock Home'],['Mock Away'],page_size=1)

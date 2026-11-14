@@ -3,7 +3,7 @@ from types import SimpleNamespace as S
 from uuid import uuid4
 
 import pytest
-from backend.combo_catalog import resolve_positions
+from backend.combo_catalog import resolve_positions, resolve_market_details, fetch_positions
 from backend.trading_gateway import TradingError
 
 
@@ -46,3 +46,42 @@ def test_duplicate_outcome_is_rejected():
     market,outcome,entry=fixtures()
     with pytest.raises(TradingError):
         resolve_positions([market,market],[outcome,outcome],[page(entry)])
+
+
+def detail(entry):
+    return S(id=entry.id,condition_id=entry.condition_id,outcomes=entry.outcomes,
+             state=S(combo_status='enabled',active=True,closed=False))
+
+
+def test_direct_market_detail_uses_combo_position_and_checks_status():
+    market,outcome,entry=fixtures();source=detail(entry)
+    assert resolve_market_details([market],[outcome],[source])=={outcome.id:'123456'}
+    for changes in ({'combo_status':'disabled'}, {'combo_status':None}, {'active':False}, {'closed':None}):
+        source=detail(entry)
+        for key,value in changes.items():setattr(source.state,key,value)
+        with pytest.raises(TradingError,match='组合'):resolve_market_details([market],[outcome],[source])
+
+
+def test_direct_detail_rejects_wrong_identity_labels_and_missing_positions():
+    market,outcome,entry=fixtures();source=detail(entry)
+    source.id='999'
+    with pytest.raises(TradingError,match='身份'):resolve_market_details([market],[outcome],[source])
+    source.id=market.gamma_market_id;source.condition_id='0x'+'b'*64
+    with pytest.raises(TradingError,match='身份'):resolve_market_details([market],[outcome],[source])
+    source.condition_id=market.condition_id;source.outcomes.yes.label='其他球队'
+    with pytest.raises(TradingError,match='选项'):resolve_market_details([market],[outcome],[source])
+    source.outcomes.yes.label=outcome.label;source.outcomes.no.position_id=None
+    with pytest.raises(TradingError,match='标识'):resolve_market_details([market],[outcome],[source])
+
+
+def test_fetch_positions_queries_market_directly_without_paginating(monkeypatch):
+    from backend import combo_catalog
+    market,outcome,entry=fixtures();calls=[]
+    class MockClient:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def get_market(self,*,id):calls.append(id);return detail(entry)
+        def list_combo_markets(self,**kwargs):raise AssertionError('不应扫描完整目录')
+    monkeypatch.setattr(combo_catalog,'PublicClient',MockClient)
+    assert fetch_positions([market],[outcome])=={outcome.id:'123456'}
+    assert calls==['123']

@@ -2,18 +2,11 @@
 from __future__ import annotations
 
 import re
-import threading
-import time
 from collections import defaultdict
 
 from polymarket import PublicClient
 
 from .trading_gateway import TradingError
-
-_catalog_lock = threading.Lock()
-_catalog_snapshot = None
-_catalog_observed = 0.0
-
 
 def resolve_positions(markets, outcomes, pages):
     """以 condition ID、市场 ID 与选项索引和标签关联目录，不使用 CLOB 标识。"""
@@ -50,20 +43,38 @@ def resolve_positions(markets, outcomes, pages):
     return result
 
 
+def resolve_market_details(markets, outcomes, details):
+    """验证官方逐市场详情，使用该详情中的 Combo position ID。"""
+    if len(markets)!=len(outcomes) or len(markets)!=len(details) or len({outcome.id for outcome in outcomes})!=len(outcomes):
+        raise TradingError('combo_legs_duplicate','组合腿重复或不完整')
+    result={}
+    for market,outcome,detail in zip(markets,outcomes,details,strict=True):
+        if str(detail.id)!=str(market.gamma_market_id) or str(detail.condition_id).lower()!=market.condition_id.lower():
+            raise TradingError('combo_market_mismatch','组合市场身份不一致')
+        if detail.state.combo_status!='enabled' or detail.state.active is not True or detail.state.closed is not False:
+            raise TradingError('combo_market_unavailable','该市场未明确启用组合或已关闭')
+        if outcome.outcome_index not in (0,1):
+            raise TradingError('combo_outcome_unsupported','组合市场只支持已核对的二元选项')
+        choices=(detail.outcomes.yes,detail.outcomes.no)
+        ids=[str(choice.position_id) for choice in choices]
+        if any(not re.fullmatch(r'(0|[1-9][0-9]{0,77})',x) or int(x)>=2**256 for x in ids) or len(set(ids))!=2:
+            raise TradingError('combo_position_invalid','组合腿标识不完整或无效')
+        selected=choices[outcome.outcome_index]
+        if not isinstance(selected.label,str) or selected.label.strip()!=outcome.label.strip():
+            raise TradingError('combo_outcome_mismatch','组合选项与赛事市场不一致')
+        result[outcome.id]=ids[outcome.outcome_index]
+    if len(set(result.values()))!=len(result): raise TradingError('combo_legs_duplicate','组合腿重复')
+    return result
+
+
 def fetch_positions(markets, outcomes):
-    global _catalog_snapshot, _catalog_observed
     try:
-        with _catalog_lock:
-            now=time.monotonic()
-            if _catalog_snapshot is None or now-_catalog_observed>5:
-                pages=[]
-                with PublicClient() as client:
-                    for index,page in enumerate(client.list_combo_markets(page_size=100)):
-                        if index>=100 or page.limit_reached:raise TradingError('combo_catalog_incomplete','组合市场目录不完整')
-                        pages.append(page)
-                _catalog_snapshot=tuple(pages)
-                _catalog_observed=time.monotonic()
-            return resolve_positions(markets,outcomes,_catalog_snapshot)
+        with PublicClient() as client:
+            details_by_id={}
+            for market in markets:
+                if market.gamma_market_id not in details_by_id:
+                    details_by_id[market.gamma_market_id]=client.get_market(id=market.gamma_market_id)
+            return resolve_market_details(markets,outcomes,[details_by_id[market.gamma_market_id] for market in markets])
     except TradingError:
         raise
     except Exception as exc:

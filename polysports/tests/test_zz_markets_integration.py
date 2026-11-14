@@ -56,6 +56,29 @@ def test_live_market_endpoint_is_authenticated_and_handles_upstream_failure(pg,m
         assert failure.status_code==503 and 'http_503' not in failure.text
 
 
+def test_direct_selection_checks_identity_and_never_submits_order(pg,monkeypatch):
+    from backend import market_api
+    game_id,event=prepare(pg)
+    event['gameId']='9876543'
+    with pg.begin() as conn:
+        conn.execute(text("UPDATE games SET provider='polymarket',external_id='9876543' WHERE id=:id"),{'id':game_id})
+    def mock_refresh(engine,ident):
+        with httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={'events':[event]}))) as source:
+            refresh_game(engine,ident,source)
+    monkeypatch.setattr(market_api,'refresh_game',mock_refresh)
+    client,headers=logged_client()
+    try:
+        body={'event_id':event['id'],'market_id':event['markets'][0]['id'],'outcome_index':0,'outcome_label':'Yes'}
+        with pg.connect() as conn: before=conn.execute(text('SELECT count(*) FROM trade_intents')).scalar_one()
+        result=client.post(f'/api/v1/games/{game_id}/prepare-selection',json=body,headers=headers)
+        assert result.status_code==200,result.text
+        assert result.json()['data']['market_link_id'] and result.json()['data']['outcome_id']
+        assert client.post(f'/api/v1/games/{game_id}/prepare-selection',json={**body,'outcome_label':'No'},headers=headers).status_code==409
+        assert client.post(f'/api/v1/games/{game_id}/prepare-selection',json={**body,'event_id':'999999'},headers=headers).status_code==409
+        with pg.connect() as conn: assert conn.execute(text('SELECT count(*) FROM trade_intents')).scalar_one()==before
+    finally: client.__exit__(None,None,None)
+
+
 def test_mapping_confirmation_expiry_failed_refresh_and_audit(pg):
     game_id,event=prepare(pg);refresh_mock(pg,game_id,event)
     client,headers=logged_client()

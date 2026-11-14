@@ -122,7 +122,11 @@ def parse_event(raw: Any, sport: str, start: datetime, home_names: list[str], aw
             try:
                 if abs((timestamp(game_time)-event_start).total_seconds())>60: continue
             except SourceError: continue
-        markets.append(parse_market(market))
+        try:
+            markets.append(parse_market(market))
+        except SourceError:
+            # 不让同一事件中不完整的其他市场妨碍身份完整的选项。
+            continue
     game_id=raw.get('gameId')
     if isinstance(game_id,bool) or not isinstance(game_id,(str,int)) or not re.fullmatch(r'[0-9]{1,255}',str(game_id)):
         game_id=None

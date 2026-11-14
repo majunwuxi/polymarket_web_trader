@@ -1,6 +1,7 @@
 from __future__ import annotations
 import uuid
 from fastapi import APIRouter, BackgroundTasks, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -94,6 +95,43 @@ def confirm(request:Request,link_id:uuid.UUID):
         with Session(request.app.state.engine) as db, db.begin():
             db.add(AuditEvent(id=uuid.uuid4(),actor_id=request.state.admin_session['admin_id'],action='market_link_conflict',entity_type='market_link',entity_id=link_id,details={'reason':'concurrent_confirmation'}))
         return auth.error(request,409,'MAPPING_CONFLICT','该市场已关联其他赛事')
+
+
+class DirectSelection(BaseModel):
+    event_id:str=Field(min_length=1,max_length=255,pattern=r'^[0-9]+$')
+    market_id:str=Field(min_length=1,max_length=255,pattern=r'^[0-9]+$')
+    outcome_index:int=Field(ge=0,le=31,strict=True)
+    outcome_label:str=Field(min_length=1,max_length=300)
+
+
+@router.post('/games/{game_id}/prepare-selection')
+def prepare_selection(request:Request,game_id:uuid.UUID,body:DirectSelection):
+    """从展示选项重新获取市场证据；本接口不发送订单。"""
+    engine=request.app.state.engine
+    with Session(engine) as db:
+        game=db.get(Game,game_id)
+        if not game: return auth.error(request,404,'NOT_FOUND','赛事不存在')
+        if game.provider!='polymarket': return auth.error(request,409,'SOURCE_UNSUPPORTED','该赛事不能直接选择市场')
+    state=begin_refresh(engine,game_id)
+    if state!='started': return auth.error(request,409,'MARKET_REFRESH_BUSY','市场正在刷新，请稍后重试')
+    refresh_game(engine,game_id)
+    with Session(engine) as db:
+        refresh=db.get(MarketRefresh,game_id)
+        if not refresh or refresh.status!='succeeded': return auth.error(request,503,'MARKET_REFRESH_FAILED','市场核验失败，请刷新后重试')
+        row=db.execute(select(MarketLink,MarketOutcome).join(PolyMarket,MarketLink.market_id==PolyMarket.id)
+            .join(PolyEvent,PolyMarket.poly_event_id==PolyEvent.id)
+            .join(MarketOutcome,MarketOutcome.market_id==PolyMarket.id)
+            .where(MarketLink.game_id==game_id,PolyEvent.gamma_event_id==body.event_id,
+                   PolyMarket.gamma_market_id==body.market_id,MarketOutcome.outcome_index==body.outcome_index)).one_or_none()
+        if not row: return auth.error(request,409,'SELECTION_CHANGED','市场或选项已变化，请刷新后重试')
+        link,outcome=row
+        market=db.get(PolyMarket,link.market_id)
+        if outcome.label!=body.outcome_label or market.accepting_orders is not True or market.protocol_version not in ('v1','v2'):
+            return auth.error(request,409,'SELECTION_CHANGED','市场或选项不可用，请刷新后重试')
+        link_id,outcome_id=link.id,outcome.id
+    result=confirm(request,link_id)
+    if not isinstance(result,dict): return result
+    return ok(request,{'market_link_id':str(link_id),'outcome_id':str(outcome_id)})
 
 
 @router.post('/market-links/{link_id}/reject')

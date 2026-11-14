@@ -53,6 +53,13 @@ def test_mismatched_market_time_is_not_a_candidate():
     assert [market.gamma_id for market in event.markets]==['100']
 
 
+def test_unrelated_incomplete_market_does_not_hide_valid_market():
+    broken=mock_market('101');broken['conditionId']='invalid'
+    raw=mock_event();raw['markets'].append(broken)
+    event,_=parse_event(raw,'nba',START,['Mock Home'],['Mock Away'])
+    assert [market.gamma_id for market in event.markets]==['100']
+
+
 def test_teams_sport_time_and_reversal_are_not_auto_confirmed():
     event,ordered=parse_event(mock_event(),'nba',START,['Mock Home'],['Mock Away'])
     assert ordered and event.home=='Mock Home'

@@ -1,6 +1,6 @@
 # PolySports 开发计划与验收
 
-本文是第五阶段的计划文档，以 [ARCHITECTURE.md](ARCHITECTURE.md)、[DATABASE.md](DATABASE.md)、[API.md](API.md)、[UI.md](UI.md) 和 OpenSpec `build-polysports` 为依据。**截至本文编写时，PolySports 源代码、数据库迁移、前端和部署脚本尚未实现；既有 Dashboard 的 25 项测试不代表新系统已经通过测试。**
+本文保留第五阶段制定的计划，以 [ARCHITECTURE.md](ARCHITECTURE.md)、[DATABASE.md](DATABASE.md)、[API.md](API.md)、[UI.md](UI.md) 和 OpenSpec `build-polysports` 为依据。计划中的 6A–6H 与部署材料已实现；实际测试结果及尚待真实环境核验的项目见 [ACCEPTANCE.md](ACCEPTANCE.md)。下文标注“计划”或“尚未创建”的描述保留制定计划时的历史语境。
 
 ## 1. 工作方式与阶段门
 

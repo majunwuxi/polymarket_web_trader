@@ -1,6 +1,6 @@
-# PolySports（6H 历史与导出阶段）
+# PolySports
 
-本目录是独立的 PolySports 项目，提供管理员认证、足球和 NBA 赛程同步、赛事中心、球队译名维护、关注、独立后台调度、Polymarket 市场映射、只读钱包状态、单场限价订单及 Combo RFQ 组合交易。界面不显示虚构业务数据。不需要启动仓库原有 Flask Dashboard。
+本目录是独立的 PolySports 项目，提供管理员认证、足球和 NBA 赛程同步、赛事中心、球队译名维护、关注、独立后台调度、Polymarket 市场映射、只读钱包状态、单场限价订单及 Combo RFQ 组合交易。界面不显示虚构业务数据。不需要启动仓库原有 Flask Dashboard。测试记录和真实环境验证边界见 [ACCEPTANCE.md](../ACCEPTANCE.md)。
 
 ## 环境与配置
 

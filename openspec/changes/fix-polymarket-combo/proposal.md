@@ -8,6 +8,7 @@
 - 当官方目录需要大量分页时，以官方市场详情中明确启用的组合状态及 position ID 按市场核验，避免全目录扫描阻断。
 - 按官方 Combo RFQ 流程询价、确认和只读对账，明确权限不足和报价失败。
 - 组合交易确认后为相关 Polymarket 比赛启动外部赛果绑定，结果未知不得认定成交。
+- 支持个人账户使用官方 Requester Gateway 和 CLOB 凭证，不强制要求 Builder 凭证。
 
 ## Capabilities
 
@@ -17,4 +18,4 @@
 - `sports-trading`: 支持 Polymarket 来源赛事安全选择组合腿及确认后绑定。
 
 ## Impact
-涉及赛事详情、组合状态机、外部赛果绑定和测试；需要已配置的官方 Builder 凭证及支持组合的市场。
+涉及赛事详情、组合状态机、外部赛果绑定和测试；个人 Requester 与 Builder Gateway 采用不同凭证及传输协议。

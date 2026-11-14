@@ -12,7 +12,7 @@ def test_builder_credentials_are_all_or_none_and_redacted():
         WalletSecrets(private_key='mock',builder_api_key='mock-key')
     secret=WalletSecrets(private_key='mock',builder_api_key='mock-key',builder_api_secret='mock-secret',builder_api_passphrase='mock-passphrase')
     assert 'mock-secret' not in repr(secret)
-    gateway=ComboGateway(None,SimpleNamespace(wallet_type='DEPOSIT_WALLET'))
+    gateway=ComboGateway(None,SimpleNamespace(wallet_type='DEPOSIT_WALLET'),mode='builder')
     assert gateway.sdk_api_key(secret).key == 'mock-key'
 
 
@@ -22,8 +22,9 @@ def test_builder_requires_smart_wallet_and_credentials():
         ComboGateway(None,SimpleNamespace(wallet_type='EOA')).sdk_api_key(secret)
     assert error.value.code=='combo_wallet_unsupported'
     with pytest.raises(TradingError) as error:
-        ComboGateway(None,SimpleNamespace(wallet_type='DEPOSIT_WALLET')).sdk_api_key(secret)
+        ComboGateway(None,SimpleNamespace(wallet_type='DEPOSIT_WALLET'),mode='builder').sdk_api_key(secret)
     assert error.value.code=='builder_credentials_missing'
+    assert ComboGateway(None,SimpleNamespace(wallet_type='DEPOSIT_WALLET')).sdk_api_key(secret) is None
 
 
 def test_combo_funding_uses_required_amount_and_exchange_allowance(monkeypatch):

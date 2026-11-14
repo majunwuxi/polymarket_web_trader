@@ -82,7 +82,7 @@ def request_quote(engine,settings,body,key,gateway_cls=ComboGateway,catalog=fetc
                     for game_id in sorted({x[0].game_id for x in legs},key=str):tx.scalar(select(Game).where(Game.id==game_id).with_for_update())
                     for link_id,_ in data['legs']:tx.scalar(select(MarketLink).where(MarketLink.id==uuid.UUID(link_id)).with_for_update())
                     current=resolve_legs(tx,data['legs']); now=db_now(tx)
-                    row=ComboRFQ(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=key,fingerprint=fp,direction=body.direction,quantity=amount,state='requesting')
+                    row=ComboRFQ(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=key,fingerprint=fp,direction=body.direction,quantity=amount,state='requesting',gateway_mode='requester')
                     tx.add(row);tx.flush()
                     for link,market,outcome in current:tx.add(ComboLeg(id=uuid.uuid4(),rfq_id=row.id,game_id=link.game_id,market_link_id=link.id,outcome_id=outcome.id,position_id=positions[outcome.id]))
                     tx.add(ComboEvent(id=uuid.uuid4(),rfq_id=row.id,state='requesting'))

@@ -9,6 +9,10 @@
 ## Decisions
 选择选项后先通过既有市场身份接口，再检查组合目录，成功才加入本机组合单；提交询价及接受报价前仍重新核验。保留 Builder Gateway 和显式启用开关。接受报价后仅在官方状态确认成功时持久化启动赛事结果绑定；未知、拒绝、执行中不声称成交，不自动重发。旧来源赛事继续沿用既有关注行为。
 
+个人账户不应被强制要求 Builder 凭证。官方 Requester Gateway 使用 CLOB L2 认证、独立请求路径及零 Builder attribution；当前固定版本 SDK 的高级组合方法只支持 Builder Gateway，需实现并测试个人 Requester 传输、签名、响应解析、仅一次接受和原 RFQ 对账，不能只移除凭证检查。
+
+历史 RFQ 属于 Builder 网关。迁移时标记历史记录的网关类型，新请求明确标记为 Requester；恢复任务按照记录的类型查询，不能跨网关误判。
+
 组合市场目录数据可能超过既有页数上限，逐页遍历会使所有选择失败。改为通过官方 SDK 按市场 ID 获取单条 Gamma 市场详情，要求 `comboStatus` 为 `enabled` 且市场有效，并逐项核对 condition ID、市场 ID、选项标签及 position ID。不能获得完整明确证据时拒绝，不使用 CLOB token 替代 position ID。
 
 ## Risks / Trade-offs

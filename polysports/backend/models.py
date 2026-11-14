@@ -401,6 +401,7 @@ class ComboRFQ(Base):
     quantity: Mapped[__import__('decimal').Decimal] = mapped_column(__import__('sqlalchemy').Numeric(38,18),nullable=False)
     state: Mapped[str] = mapped_column(String(24),nullable=False)
     external_rfq_id: Mapped[str | None] = mapped_column(String(255))
+    gateway_mode: Mapped[str] = mapped_column(String(16),nullable=False,server_default='builder')
     quote_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     quote_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     quote_price: Mapped[__import__('decimal').Decimal | None] = mapped_column(__import__('sqlalchemy').Numeric(38,18))

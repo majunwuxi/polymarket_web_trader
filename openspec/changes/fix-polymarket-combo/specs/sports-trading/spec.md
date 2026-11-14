@@ -19,6 +19,17 @@
 
 ## ADDED Requirements
 
+### Requirement: 个人组合询价无需 Builder 凭证
+系统 SHALL 为个人账户支持官方 Requester Gateway 的组合询价、报价确认及只读对账，使用账户 CLOB 凭证且不强制 Builder 凭证；MUST 保留钱包身份校验、金额校验、请求状态持久化和单次发送保护。
+
+#### Scenario: 个人账户无 Builder 凭证
+- **WHEN** 个人账户及 CLOB 凭证完整而 Builder 凭证缺失
+- **THEN** 系统使用官方 Requester 流程，不因缺少 Builder 凭证而拒绝
+
+#### Scenario: 请求结果未知
+- **WHEN** 个人询价或接受请求发出后结果不确定
+- **THEN** 系统保持未知状态，不自动重发或声称成交
+
 ### Requirement: Polymarket 赛事组合选项及赛果绑定
 系统 SHALL 允许用户从赛事市场选择经官方 Combo 市场信息确认的选项加入组合，询价和接受报价须保留现有资金、身份、权限、单次发送和幂等保护。Polymarket 组合订单得到上游确认后 SHALL 为关联赛事启动持久化赛果绑定；接受结果未知或执行中 MUST 不声称成交或重发。
 

@@ -5,13 +5,32 @@ from .trading_gateway import Gateway, TradingError
 
 
 class ComboGateway(Gateway):
+    def __init__(self, settings, wallet, mode='requester'):
+        super().__init__(settings, wallet)
+        if mode not in ('requester', 'builder'):
+            raise TradingError('combo_gateway_invalid', '组合网关类型无效')
+        self.mode = mode
+
     def sdk_api_key(self, credential):
         if self.wallet.wallet_type != 'DEPOSIT_WALLET':
-            raise TradingError('combo_wallet_unsupported', 'Builder Combo 需要已部署的 Deposit Wallet')
+            raise TradingError('combo_wallet_unsupported', '组合交易需要已部署的 Deposit Wallet')
+        if self.mode == 'requester':
+            return None
         fields = (credential.builder_api_key, credential.builder_api_secret, credential.builder_api_passphrase)
         if any(value is None or not value.get_secret_value() for value in fields):
             raise TradingError('builder_credentials_missing', '未配置完整的 Builder 凭证')
         return BuilderApiKey(*(value.get_secret_value() for value in fields))
+
+    def __enter__(self):
+        super().__enter__()
+        if self.mode == 'requester':
+            from .combo_requester import RequesterClient
+            try:
+                self.client = RequesterClient(self.client)
+            except Exception:
+                self.client.close()
+                raise
+        return self
 
     def ensure_funding(self, quote, direction):
         """只读验证实际转移所需余额及 Exchange V3 授权。"""

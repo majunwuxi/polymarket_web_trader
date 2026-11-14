@@ -17,7 +17,9 @@ def fetch_combo(engine,ident,settings,gateway_cls=ComboGateway):
         if not row.external_rfq_id or row.state in ('requesting','quoted'):return None
         wallet=wallet_for(settings,row.wallet_id)
         if wallet.wallet_address!=row.wallet_address:raise TradingError('wallet_mismatch','钱包已变化')
-        external=row.external_rfq_id
+        external=row.external_rfq_id; mode=row.gateway_mode
+    if gateway_cls is ComboGateway:
+        with gateway_cls(settings,wallet,mode=mode) as gateway:return gateway.client.fetch_rfq_status(rfq_id=external)
     with gateway_cls(settings,wallet) as gateway:return gateway.client.fetch_rfq_status(rfq_id=external)
 
 

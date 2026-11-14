@@ -86,11 +86,11 @@ POLYSPORTS_POLYGON_RPC_URL=<仅在本机安全配置>
 
 ## 组合交易
 
-组合交易默认关闭。使用前须取得官方批准的 Builder 凭证，并在钱包 `credential_ref` 对应的 `POLYSPORTS_WALLET_CREDENTIALS` 项中同时配置 `builder_api_key`、`builder_api_secret`、`builder_api_passphrase`。钱包必须为已部署的 Deposit Wallet，并配置 Polygon 主网 RPC；在服务器上完成相应余额和 Exchange V3 授权后，通过受限环境变量设置 `POLYSPORTS_COMBO_EXECUTION_ENABLED=true`。不要提交任何真实凭证。FastAPI 必须单进程运行；启用组合功能时应用使用数据库会话锁拒绝第二个 API 进程。后台对账仍由独立 worker 执行。
+组合交易默认关闭。个人账户使用官方 Requester Gateway 和 CLOB 凭证，不需要 Builder 凭证。钱包必须为已部署的 Deposit Wallet，并配置 Polygon 主网 RPC；在服务器上完成相应余额和 Exchange V3 授权后，通过受限环境变量设置 `POLYSPORTS_COMBO_EXECUTION_ENABLED=true`。不要提交任何真实凭证。FastAPI 必须单进程运行；启用组合功能时应用使用数据库会话锁拒绝第二个 API 进程。后台对账仍由独立 worker 执行。历史 Builder 请求继续使用原网关对账。
 
 在赛事中心确认映射并将不同市场的结果加入组合；系统从官方 Combo 市场目录核对每条腿，至少两腿。先请求真实报价，核对全部赛事、钱包、价格、金额和实际上游截止时间，再主动接受。系统按报价重新核验余额、授权、凭证及映射；不会自动部署钱包、授权或重发接受请求。报价对象仅驻留 API 进程内存，不写入数据库或浏览器；重启后未接受的报价不可再接受，应等待过期后重新询价。执行中不代表成交，只有上游返回确认或成交状态才标为已确认。创建或接受结果未知时不要另换请求键重试；系统保留未知状态并对已知 RFQ ID 只读对账。
 
-组合功能的自动化测试使用模拟上游，不发送真实订单；Builder 权限、账户及真实资金端到端交易尚未验证。官方文档：[Combos for Builders](https://docs.polymarket.com/trading/combos/builders)。
+组合功能的自动化测试使用模拟上游，不发送真实订单；个人账户及真实资金端到端交易尚未验证。官方文档：[Combo Requesters](https://docs.polymarket.com/trading/combos/requesters)。
 
 ## 历史、统计和导出
 

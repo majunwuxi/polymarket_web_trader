@@ -43,6 +43,9 @@ class _OneAcceptanceTransport:
 
 def accept_once(client, quote):
     """使用固定版本 SDK 签名，但禁止其内部异常重发。调用者负责先持久化意图。"""
+    from .combo_requester import RequesterClient
+    if isinstance(client, RequesterClient):
+        return client.accept_once(quote)
     rfq_id = quote.rfq_id
     combo_rfq._require_rfq_id(rfq_id)
     # SDK 的路径编码逻辑是协议的一部分，避免把 RFQ ID 直接拼接到 URL。

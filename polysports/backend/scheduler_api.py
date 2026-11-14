@@ -22,6 +22,8 @@ def watch_data(watch,job):
 @router.post('/games/{game_id}/watch')
 def add_watch(request: Request,game_id:uuid.UUID):
     with Session(request.app.state.engine) as db, db.begin():
+        game=db.get(Game,game_id)
+        if game and game.provider=='polymarket': return auth.error(request,409,'BINDING_REQUIRED','足球赛事赛果来源尚未绑定，当前不能关注或下单。')
         watch=watch_game(db,game_id)
         if watch is None: return auth.error(request,404,'NOT_FOUND','赛事不存在')
         db.flush(); job=db.scalar(select(Job).where(Job.watched_game_id==watch.id))
@@ -57,12 +59,12 @@ def schedules(request: Request):
 
 class ScheduleItem(BaseModel):
     sport:Literal['football','nba']
-    provider:Literal['api_football','balldontlie']
+    provider:Literal['polymarket','balldontlie']
     utc_time:time
     enabled:bool=True
     @model_validator(mode='after')
     def valid(self):
-        if self.utc_time.tzinfo is not None or (self.sport,self.provider) not in (('football','api_football'),('nba','balldontlie')): raise ValueError('invalid schedule')
+        if self.utc_time.tzinfo is not None or (self.sport,self.provider) not in (('football','polymarket'),('nba','balldontlie')): raise ValueError('invalid schedule')
         return self
 
 
@@ -106,7 +108,7 @@ class ManualSync(BaseModel):
 
 @router.post('/sync-runs',status_code=202)
 def queue_sync(request: Request,body:ManualSync):
-    provider='api_football' if body.sport=='football' else 'balldontlie'
+    provider='polymarket' if body.sport=='football' else 'balldontlie'
     with Session(request.app.state.engine) as db, db.begin():
         db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:name))'),{'name':'manual-sync:'+provider})
         existing=db.scalar(select(Job).join(SyncRun,Job.sync_run_id==SyncRun.id).where(SyncRun.provider==provider,SyncRun.trigger_type=='manual',Job.status.in_(['pending','leased'])))

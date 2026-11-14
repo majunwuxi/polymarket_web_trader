@@ -168,8 +168,8 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
-| `GET /sync-schedules` | 无 | `200`：`{ "items": [{"id":"uuid","provider":"api_football","sport":"football","utc_time":"00:00:00","enabled":true}], "revision":1 }` | 示例为模拟；另有 NBA 及 UTC 08:00 默认项 |
-| `PUT /sync-schedules` | `{ "revision":1, "items":[{"provider":"api_football","sport":"football","utc_time":"00:00:00","enabled":true}, ...] }` | `200`：完整新配置及新 revision | 原子替换非秘密计划配置；每项唯一，要求足球/NBA 各至少一个启用时间；版本不匹配 `409`。仅调整未来未领取任务，不提前执行 |
+| `GET /sync-schedules` | 无 | `200`：`{ "items": [{"id":"uuid","provider":"polymarket","sport":"football","utc_time":"00:00:00","enabled":true}], "revision":1 }` | 示例为模拟；另有 NBA 及 UTC 08:00 默认项 |
+| `PUT /sync-schedules` | `{ "revision":1, "items":[{"provider":"polymarket","sport":"football","utc_time":"00:00:00","enabled":true}, ...] }` | `200`：完整新配置及新 revision | 原子替换非秘密计划配置；每项唯一，要求足球/NBA 各至少一个启用时间；版本不匹配 `409`。仅调整未来未领取任务，不提前执行 |
 | `POST /sync-runs` | `{ "sport":"football" }` | `202`：`{ "run_id":"uuid", "job_id":"uuid", "status":"queued" }` | 手动调度未来 36 小时来源同步；并发冲突返回已有运行或 `409`；不凭空生成数据 |
 | `GET /sync-runs` | 可选 `sport`, `status`, `from`, `to`, `limit`, `cursor` | `200` 分页 `SyncRun` | 按 `started_at DESC,id DESC`，未开始项排最后；日期范围按 `scheduled_for` 筛选，保留失败信息 |
 | `GET /sync-runs/{run_id}` | UUID | `200`：`SyncRun` | 失败详情为脱敏摘要，绝不包含 API key |

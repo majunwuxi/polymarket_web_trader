@@ -37,6 +37,7 @@ def evidence_for(game, event, market, ordered, home_ambiguous=False, away_ambigu
 
 def valid_link(db: Session, link: MarketLink, *, require_confirmed=True) -> bool:
     game=db.get(Game,link.game_id); market=db.get(PolyMarket,link.market_id)
+    if game and game.provider=='polymarket': return False  # 下一阶段完成足球来源绑定后开放交易。
     event=db.get(PolyEvent,market.poly_event_id) if market else None
     refresh=db.get(MarketRefresh,link.game_id)
     if not game or not market or not event or not refresh or refresh.status!='succeeded' or not refresh.finished_at: return False

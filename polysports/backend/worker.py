@@ -15,7 +15,7 @@ from .database import make_engine
 from .models import Game, Job, SyncRun, WatchedGame
 from .scheduler import claim_next, db_now, ensure_scheduled, finish_attempt, first_delay, heartbeat, interval, locked_valid_job, renew
 from .sports_sources import SourceError, fetch_game, fetch_schedule
-from .sports_sync import upsert_game
+from .sports_sync import upsert_game, apply_polymarket_scan
 from .trading_gateway import TradingError
 
 log=logging.getLogger('polysports.worker')
@@ -43,6 +43,10 @@ def fetch_work(engine,job_id,token,settings,client):
         from .combo_reconcile import fetch_combo
         return fetch_combo(engine,combo_id,settings)
     if job.kind=='trade_reconcile': return fetch_order(engine,trade_id,settings)
+    if provider=='polymarket':
+        if job.kind=='result_poll': raise SourceError('football_binding_required')
+        from .polymarket_football import discover_football
+        return discover_football(client,start)
     secret=settings.api_football_key if provider=='api_football' else settings.balldontlie_key
     key=secret.get_secret_value() if secret else ''
     if job.kind=='result_poll': return fetch_game(provider,key,external_id,client)
@@ -73,7 +77,9 @@ def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_aft
                 else:
                     games,pages,received=payload
                     db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:provider))'),{'provider':run.provider})
-                    for game in games: upsert_game(db,game,run.id)
+                    if run.provider=='polymarket': apply_polymarket_scan(db,games,run)
+                    else:
+                        for game in games: upsert_game(db,game,run.id)
                     run.status='succeeded'; run.pages_fetched=pages; run.items_received=received; run.items_upserted=len(games); run.finished_at=now; run.error_code=run.error_summary=None
                     finish_attempt(db,job,now,'succeeded'); job.status='done'
             elif job.kind=='combo_reconcile':

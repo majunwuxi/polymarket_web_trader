@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { session, logout, clearSession, ApiError } from '../auth'
-type Schedule = {sport:'football'|'nba';provider:'api_football'|'balldontlie';utc_time:string;enabled:boolean}
+type Schedule = {sport:'football'|'nba';provider:'polymarket'|'balldontlie';utc_time:string;enabled:boolean}
 type Job = {id:string;kind:string;status:string;due_at:string;attempt_count:number;last_error_code:string|null}
 type Worker = {id:string;state:string;last_seen_at:string}
 const router=useRouter(), menuOpen=ref(false), revision=ref(0), items=ref<Schedule[]>([]), jobs=ref<Job[]>([]), workers=ref<Worker[]>([]), message=ref(''), busy=ref(false), selected=ref<Job|null>(null), attempts=ref<any[]>([]),system=ref<any>(null),syncRuns=ref<any[]>([]),audit=ref<any[]>([])
@@ -10,7 +10,7 @@ const utc8=(v:string)=>{const [h,m]=v.split(':').map(Number);return String((h+8)
 const format=(v:string)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v))
 async function api(path:string, options:RequestInit={}) { const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options}); const body=await response.json(); if(!response.ok) throw new Error(body?.error?.message || '服务暂不可用'); return body.data }
 async function load(){try {const [plan,task,status,info,runs,events]=await Promise.all([api('/sync-schedules'),api('/jobs'),api('/worker-status'),api('/system/status'),api('/sync-runs'),api('/audit-events')]);system.value=info;syncRuns.value=runs.items||[];audit.value=events.items||[];revision.value=plan.revision;items.value=plan.items.map((x:Schedule)=>({...x,utc_time:x.utc_time.slice(0,5)}));jobs.value=task.items;workers.value=status.workers}catch{message.value='加载失败，请检查服务状态。'}}
-function add(sport:'football'|'nba'){items.value.push({sport,provider:sport==='football'?'api_football':'balldontlie',utc_time:'12:00',enabled:true})}
+function add(sport:'football'|'nba'){items.value.push({sport,provider:sport==='football'?'polymarket':'balldontlie',utc_time:'12:00',enabled:true})}
 async function save(){busy.value=true;message.value='';try{await api('/sync-schedules',{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({revision:revision.value,items:items.value})});await load();message.value='同步计划已保存。'}catch(e){message.value=e instanceof Error?e.message:'保存失败。'}finally{busy.value=false}}
 async function enqueue(sport:'football'|'nba'){try{await api('/sync-runs',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({sport})});message.value='已提交同步任务，请确认 worker 正在运行。';await load()}catch{message.value='提交同步任务失败。'}}
 async function showRuns(job:Job){try{selected.value=job;attempts.value=(await api('/jobs/'+job.id+'/runs')).items}catch{message.value='任务记录加载失败。'}}

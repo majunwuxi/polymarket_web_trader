@@ -47,10 +47,12 @@ def game_data(db, game):
 @router.get('/games')
 def games(request: Request, sport: Literal['football','nba'], start: datetime | None = Query(None,alias='from'), end: datetime | None = Query(None,alias='to'), status: str | None = None, watched: bool | None = None, limit: int = Query(30,ge=1,le=100), cursor: str | None = None):
     now = datetime.now(timezone.utc)
+    upcoming = start is None
     start, end = start or now, end or (now + timedelta(hours=36))
     if start.tzinfo is None or end.tzinfo is None or end <= start:
         return auth.error(request,422,'VALIDATION_ERROR','时间范围必须包含时区且结束时间晚于开始时间')
     query = select(Game).where(Game.sport==sport,Game.starts_at>=start,Game.starts_at<end)
+    if sport=='football' and upcoming: query=query.where(Game.provider=='polymarket',Game.market_available.is_(True))
     if status: query = query.where(Game.status==status)
     if watched is not None:
         has_watch=select(WatchedGame.id).where(WatchedGame.game_id==Game.id).exists()

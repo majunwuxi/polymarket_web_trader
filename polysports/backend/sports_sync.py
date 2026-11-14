@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from .models import Game, GameRevision, League, SyncRun, Team, TeamSourceId
@@ -65,8 +65,31 @@ def upsert_game(db: Session, source: SourceGame, run_id: uuid.UUID | None, *, re
         reschedule_watch(db,game,old_start)
 
 
+def upsert_polymarket_game(db: Session, source, run_id: uuid.UUID | None) -> None:
+    from .sports_sources import SourceTeam
+    existing=db.scalar(select(Game).where(Game.provider=='polymarket',Game.external_id==source.game_id))
+    # 发现数据仅提供赛程；不能覆盖已有赛果或将市场状态当作赛果。
+    status=existing.status if existing else 'scheduled'
+    game=SourceGame('polymarket','football',source.game_id,source.starts_at,status,'market_discovered',
+                    SourceTeam(source.home.source_id,source.home.name,source.home.logo_url),
+                    SourceTeam(source.away.source_id,source.away.name,source.away.logo_url),
+                    None,None,None,existing.home_score if existing else None,existing.away_score if existing else None)
+    upsert_game(db,game,run_id)
+    stored=db.scalar(select(Game).where(Game.provider=='polymarket',Game.external_id==source.game_id))
+    stored.market_available=True
+
+
+def apply_polymarket_scan(db: Session, games, run: SyncRun) -> None:
+    newer=db.scalar(select(SyncRun.id).where(SyncRun.provider=='polymarket',SyncRun.status=='succeeded',
+                                              SyncRun.started_at>run.started_at).limit(1))
+    if newer: raise SourceError('superseded_sync')
+    db.execute(update(Game).where(Game.provider=='polymarket',Game.sport=='football',
+                                  Game.starts_at>=run.window_start,Game.starts_at<run.window_end).values(market_available=False))
+    for game in games: upsert_polymarket_game(db,game,run.id)
+
+
 def run_sync(engine, provider: str, key: str, *, client: httpx.Client | None = None, now: datetime | None = None) -> uuid.UUID:
-    if provider not in ('api_football','balldontlie'):
+    if provider not in ('api_football','balldontlie','polymarket'):
         raise ValueError('unknown provider')
     start = now or datetime.now(timezone.utc)
     if start.tzinfo is None or start.utcoffset() is None:
@@ -74,11 +97,15 @@ def run_sync(engine, provider: str, key: str, *, client: httpx.Client | None = N
     start = start.astimezone(timezone.utc)
     run_id = uuid.uuid4()
     with Session(engine) as db, db.begin():
-        db.add(SyncRun(id=run_id,provider=provider,sport='football' if provider == 'api_football' else 'nba',trigger_type='manual',scheduled_for=start,started_at=start,status='running',window_start=start,window_end=start+timedelta(hours=36)))
+        db.add(SyncRun(id=run_id,provider=provider,sport='nba' if provider == 'balldontlie' else 'football',trigger_type='manual',scheduled_for=start,started_at=start,status='running',window_start=start,window_end=start+timedelta(hours=36)))
     owned = client is None
     source_client = client or httpx.Client()
     try:
-        games, pages, received = fetch_schedule(provider,key,start,source_client)
+        if provider == 'polymarket':
+            from .polymarket_football import discover_football
+            games,pages,received=discover_football(source_client,start)
+        else:
+            games, pages, received = fetch_schedule(provider,key,start,source_client)
         if provider == 'balldontlie':
             # 官方默认排除季前赛，单独请求并合并；任一请求失败均不能标记成功。
             preseason, extra_pages, extra_received = fetch_schedule(provider,key,start,source_client,season_type='preseason')
@@ -91,9 +118,10 @@ def run_sync(engine, provider: str, key: str, *, client: httpx.Client | None = N
         # 各来源的写入串行化，唯一键仍由 PostgreSQL 约束；请求阶段不持锁。
         with Session(engine) as db, db.begin():
             db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:provider))'), {'provider':provider})
-            for game in games:
-                upsert_game(db,game,run_id)
             run = db.get(SyncRun, run_id)
+            if provider == 'polymarket': apply_polymarket_scan(db,games,run)
+            else:
+                for game in games: upsert_game(db,game,run_id)
             run.status, run.pages_fetched, run.items_received, run.items_upserted = 'succeeded', pages, received, len(games)
             run.finished_at = datetime.now(timezone.utc)
     except Exception as exc:

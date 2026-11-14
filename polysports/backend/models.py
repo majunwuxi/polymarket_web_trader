@@ -138,6 +138,7 @@ class Game(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     provider_status: Mapped[str | None] = mapped_column(String(100))
+    market_available: Mapped[bool | None] = mapped_column(Boolean)
     home_score: Mapped[int | None] = mapped_column(Integer)
     away_score: Mapped[int | None] = mapped_column(Integer)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

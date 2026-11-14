@@ -12,7 +12,7 @@ def main():
     parser.add_argument('sport',choices=('football','nba'))
     args = parser.parse_args()
     settings = get_settings()
-    provider, key = ('api_football',settings.api_football_key) if args.sport == 'football' else ('balldontlie',settings.balldontlie_key)
+    provider, key = ('polymarket',None) if args.sport == 'football' else ('balldontlie',settings.balldontlie_key)
     engine = make_engine(settings)
     try:
         run_id = run_sync(engine, provider, key.get_secret_value() if key else '')

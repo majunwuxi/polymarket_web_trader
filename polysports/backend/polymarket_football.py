@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from .sports_sources import SourceError, timestamp
+from .sports_sources import SourceError, retry_delay, timestamp
 
 
 @dataclass(frozen=True)
@@ -89,7 +89,7 @@ def discover_football(client: httpx.Client, start: datetime, *, page_size: int =
     for page in range(1, max_pages + 1):
         try:
             response = client.get('https://gamma-api.polymarket.com/events/keyset', params=params, timeout=20.0, follow_redirects=False)
-            if response.status_code != 200: raise SourceError('http_' + str(response.status_code))
+            if response.status_code != 200: raise SourceError('http_' + str(response.status_code), retry_delay(response))
             body = response.json()
         except httpx.TimeoutException as exc: raise SourceError('timeout') from exc
         except (httpx.RequestError, ValueError) as exc: raise SourceError('network_or_invalid_json') from exc

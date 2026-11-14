@@ -285,7 +285,7 @@ def test_scheduler_reschedules_unchecked_event_and_api_revision(pg):
         csrf=client.get('/api/v1/auth/session').json()['data']['csrf_token']; headers={'origin':ORIGIN,'x-csrf-token':csrf}
         first=client.get('/api/v1/sync-schedules').json()['data']
         assert len(first['items'])==4
-        body={'revision':first['revision'],'items':[{'provider':'api_football','sport':'football','utc_time':'01:00:00','enabled':True},{'provider':'balldontlie','sport':'nba','utc_time':'09:00:00','enabled':True}]}
+        body={'revision':first['revision'],'items':[{'provider':'polymarket','sport':'football','utc_time':'01:00:00','enabled':True},{'provider':'balldontlie','sport':'nba','utc_time':'09:00:00','enabled':True}]}
         assert client.put('/api/v1/sync-schedules',json=body,headers=headers).status_code==200
         assert client.put('/api/v1/sync-schedules',json=body,headers=headers).status_code==409
         assert client.post('/api/v1/games/'+str(game_id)+'/watch',json={},headers=headers).json()['data']['id']==str(watch_id)
@@ -332,7 +332,7 @@ def test_scheduled_jobs_survive_restart_and_future_schedule_changes(pg):
         assert log_in(client).status_code==200
         csrf=client.get('/api/v1/auth/session').json()['data']['csrf_token']; headers={'origin':ORIGIN,'x-csrf-token':csrf}
         plan=client.get('/api/v1/sync-schedules').json()['data']
-        body={'revision':plan['revision'],'items':[{'provider':'api_football','sport':'football','utc_time':'03:01:00','enabled':True},{'provider':'balldontlie','sport':'nba','utc_time':'03:02:00','enabled':True}]}
+        body={'revision':plan['revision'],'items':[{'provider':'polymarket','sport':'football','utc_time':'03:01:00','enabled':True},{'provider':'balldontlie','sport':'nba','utc_time':'03:02:00','enabled':True}]}
         assert client.put('/api/v1/sync-schedules',json=body,headers=headers).status_code==200
         with pg.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM jobs WHERE kind='sync' AND status='cancelled'")).scalar_one()==before
@@ -378,7 +378,7 @@ def test_worker_sync_job_uses_fenced_run_and_failure_retry(pg,monkeypatch):
     import httpx
     from backend.worker import process_one
     from backend.config import get_settings
-    from test_sports_sources import mock_football
+    from test_polymarket_football import mock_event
     from datetime import datetime, timedelta, timezone
     setup_scheduler_game(pg)
     monkeypatch.setenv('POLYSPORTS_API_FOOTBALL_KEY','mock-only-key'); get_settings.cache_clear(); settings=get_settings()
@@ -393,8 +393,8 @@ def test_worker_sync_job_uses_fenced_run_and_failure_retry(pg,monkeypatch):
         assert status=='pending' and due>now+timedelta(seconds=1795)
         assert conn.execute(text('SELECT status FROM sync_runs WHERE id=:id'),{'id':data['run_id']}).scalar_one()=='failed'
     with pg.begin() as conn: conn.execute(text("UPDATE jobs SET due_at=clock_timestamp()-interval '1 second' WHERE id=:id"),{'id':data['job_id']})
-    game=mock_football(when=(datetime.now(timezone.utc)+timedelta(hours=2)).isoformat())
-    with httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={'errors':[],'paging':{'current':1,'total':1},'response':[game]}))) as source:
+    game=mock_event(when=datetime.now(timezone.utc)+timedelta(hours=2))
+    with httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={'events':[game]}))) as source:
         assert process_one(pg,settings,'mock-worker',source)
     with pg.connect() as conn:
         assert conn.execute(text('SELECT status FROM jobs WHERE id=:id'),{'id':data['job_id']}).scalar_one()=='done'

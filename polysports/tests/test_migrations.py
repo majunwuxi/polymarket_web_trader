@@ -28,7 +28,19 @@ def test_isolated_postgres_upgrade_downgrade_upgrade(monkeypatch):
         # 避免对已有数据做破坏性迁移；调用者必须创建全新隔离数据库。
         if inspect(engine).get_table_names():
             pytest.fail("迁移测试数据库必须为空")
+        command.upgrade(cfg, "64099dce6480")
+        old_run,old_job,old_attempt,token=uuid.uuid4(),uuid.uuid4(),uuid.uuid4(),uuid.uuid4()
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO sync_runs(id,provider,sport,trigger_type,scheduled_for,started_at,window_start,window_end,status) VALUES (:id,'api_football','football','manual',now(),now(),now(),now()+interval '36 hours','running')"),{'id':old_run})
+            conn.execute(text("INSERT INTO jobs(id,kind,dedupe_key,sync_run_id,due_at,status,lease_owner,lease_until,lease_token,attempt_count) VALUES (:id,'sync','mock-old-sync',:run,now(),'leased','mock-worker',now()+interval '2 minutes',:token,1)"),{'id':old_job,'run':old_run,'token':token})
+            conn.execute(text("INSERT INTO job_runs(id,job_id,attempt_no,lease_token,started_at,result) VALUES (:id,:job,1,:token,now(),'running')"),{'id':old_attempt,'job':old_job,'token':token})
         command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM sync_schedules WHERE provider='polymarket' AND enabled")).scalar_one()==2
+            assert conn.execute(text("SELECT count(*) FROM sync_schedules WHERE provider='api_football' AND enabled")).scalar_one()==0
+            assert conn.execute(text('SELECT status FROM jobs WHERE id=:id'),{'id':old_job}).scalar_one()=='cancelled'
+            assert conn.execute(text('SELECT result FROM job_runs WHERE id=:id'),{'id':old_attempt}).scalar_one()=='abandoned'
+            assert conn.execute(text('SELECT error_code FROM sync_runs WHERE id=:id'),{'id':old_run}).scalar_one()=='source_changed'
         assert {"admin_users", "admin_sessions", "alembic_version"} <= set(inspect(engine).get_table_names())
         with engine.begin() as conn:
             conn.execute(text("INSERT INTO admin_users (id, username, password_hash) VALUES (:id, :name, :pw)"), {"id": uuid.uuid4(), "name": "mock_admin", "pw": "mock_hash"})

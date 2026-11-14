@@ -22,14 +22,14 @@ uv run --locked uvicorn backend.main:app --host 127.0.0.1 --port 8000
 
 ## 赛事数据同步
 
-在 `.env` 中设置 `POLYSPORTS_API_FOOTBALL_KEY` 和 `POLYSPORTS_BALLDONTLIE_KEY`，密钥只从本机环境加载，不写入数据库或 Git。根据供应商账户套餐与数据覆盖范围配置。迁移完成后，可手动同步：
+足球赛程使用 Polymarket 公开胜平负市场；NBA 使用 BallDontLie，在 `.env` 中设置 `POLYSPORTS_BALLDONTLIE_KEY`。API-Football 将在后续阶段用于按需绑定足球赛果。密钥只从本机环境加载，不写入数据库或 Git。迁移完成后，可手动同步：
 
 ```bash
 uv run --locked python -m backend.sync_cli football
 uv run --locked python -m backend.sync_cli nba
 ```
 
-每次调用以实际开始时间为起点，获取并精确过滤未来 36 小时；分页失败、来源限流、无权限或数据字段异常会明确记为失败，不将已有赛事删除或伪造结果。来源状态和同步时间可在赛事中心查看；中文名称由管理员核实维护，缺失队徽以占位显示。赛事和修改历史持续保留。也可在系统管理页面提交同步任务。自动同步需要启动独立 worker，默认按 UTC 00:00、08:00 分别同步两项运动，可在页面修改。NBA 同步会额外请求默认不包含的季前赛；NBA 来源可能不提供队徽，界面会标记待补充。真实接口联调依赖用户提供有效 API key 和套餐，本阶段自动测试均使用模拟数据。
+每次调用以实际开始时间为起点，获取并精确过滤未来 36 小时；足球只展示 Polymarket 已开设、可识别为胜平负的比赛，市场关闭后保留历史但不再显示在未来列表。分页失败或来源限流记为失败，不删除既有赛事。新发现的足球比赛暂不能关注或下单：API-Football 绑定与赛果查询尚待下一阶段实现。自动同步需要独立 worker，默认按 UTC 00:00、08:00 同步，可在页面修改；NBA 同步额外请求季前赛。中文名称需管理员核实维护，未知队徽以占位显示。
 
 接口依据：[API-Football fixtures](https://www.api-football.com/documentation-v3) 和 [BALLDONTLIE NBA games](https://docs.balldontlie.io/#get-all-games)。
 
@@ -43,7 +43,7 @@ uv run --locked python -m backend.worker
 
 worker 通过 PostgreSQL 生成和领取持久任务，允许多个实例并发运行；进程退出或机器重启后重新启动 worker 即可恢复到期任务。任务只会在数据库时间达到截止时间后被领取，过期租约的旧结果不会写入。系统管理页面提供计划修改、worker 心跳、任务和尝试记录；实际 VPS 的 systemd 服务配置在部署阶段提供。
 
-在赛事中心选择“关注赛事”后，足球首次赛果查询为开赛后 120 分钟，未完赛每 10 分钟查询；NBA 首次为开赛后 159 分钟，未完赛每 3 分钟查询。来源确认完赛后停止常规查询。延期、来源失败和限流将保留关注与任务记录；若来源提供 `Retry-After`，任务不会早于其指定时间重试。单场提交意图与关注任务在同一数据库事务中创建。
+对于已支持赛果来源的既有赛事，足球首次查询为开赛后 120 分钟，未完赛每 10 分钟查询；NBA 首次为开赛后 159 分钟，未完赛每 3 分钟查询。新发现的 Polymarket 足球赛事需要后续完成 API-Football 绑定后才能启用关注与赛果查询。来源确认完赛后停止常规查询；来源失败和限流保留任务记录。
 
 ## Polymarket 市场与钱包
 

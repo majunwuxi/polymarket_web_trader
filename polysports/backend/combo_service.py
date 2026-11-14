@@ -50,8 +50,6 @@ def resolve_legs(db, legs):
     for link_id,outcome_id in legs:
         link=db.get(MarketLink,uuid.UUID(link_id)); outcome=db.get(MarketOutcome,uuid.UUID(outcome_id))
         if not link or not outcome or link.market_id!=outcome.market_id or not valid_link(db,link): raise TradingError('mapping_invalid','组合腿赛事映射未确认或已过期')
-        game=db.get(Game,link.game_id)
-        if game and game.provider=='polymarket': raise TradingError('combo_unavailable','Polymarket 赛事组合交易尚未接入订单确认后的赛果绑定')
         market=db.get(PolyMarket,link.market_id)
         result.append((link,market,outcome))
     if len({x[1].id for x in result}) != len(result): raise TradingError('combo_legs_invalid','同一市场不能重复作为组合腿')
@@ -173,7 +171,9 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
             for game_id in sorted({x.game_id for x in legs},key=str):tx.scalar(select(Game).where(Game.id==game_id).with_for_update())
             for leg in sorted(legs,key=lambda x:str(x.market_link_id)):tx.scalar(select(MarketLink).where(MarketLink.id==leg.market_link_id).with_for_update())
             resolve_legs(tx,[(str(x.market_link_id),str(x.outcome_id)) for x in legs])
-            for game_id in sorted({x.game_id for x in legs},key=str):watch_game(tx,game_id)
+            for game_id in sorted({x.game_id for x in legs},key=str):
+                game=tx.get(Game,game_id)
+                if game and game.provider!='polymarket':watch_game(tx,game_id)
             external_id=row.external_rfq_id
             row.accept_started_at=now;record(tx,row,'accepting')
             if job.status=='pending':job.due_at=now+timedelta(seconds=90)

@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import auth
-from .models import AuditEvent, Game, GameRevision, League, SyncRun, Team, TeamAlias, WatchedGame, Job, ResultBindingRequest, TradeIntent
+from .models import AuditEvent, Game, GameRevision, League, SyncRun, Team, TeamAlias, WatchedGame, Job, ResultBindingRequest, TradeIntent, ComboLeg, ComboRFQ
 
 router = APIRouter(prefix='/api/v1')
 
@@ -73,6 +73,8 @@ def games(request: Request, sport: Literal['football','nba'], start: datetime | 
         ids=[item.id for item in items]
         bindings=dict(db.execute(select(ResultBindingRequest.game_id,ResultBindingRequest.state).where(ResultBindingRequest.game_id.in_(ids))).all()) if ids else {}
         filled=set(db.scalars(select(TradeIntent.game_id).where(TradeIntent.game_id.in_(ids),TradeIntent.matched_size>0).distinct())) if ids else set()
+        if ids:
+            filled.update(db.scalars(select(ComboLeg.game_id).join(ComboRFQ,ComboRFQ.id==ComboLeg.rfq_id).where(ComboLeg.game_id.in_(ids),ComboRFQ.state=='confirmed').distinct()))
         result=[]
         for item in items:
             data=game_data(db,item);data['result_binding_state']=bindings.get(item.id);data['has_matched_order']=item.id in filled;result.append(data)

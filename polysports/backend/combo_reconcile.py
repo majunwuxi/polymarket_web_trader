@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .combo_gateway import ComboGateway
 from .combo_service import record
-from .models import ComboRFQ
+from .models import ComboRFQ, ComboLeg
 from .scheduler import db_now, finish_attempt
 from .trading import wallet_for
 from .trading_gateway import TradingError
@@ -35,7 +35,11 @@ def apply_combo(db,job,payload,error=None):
             if not target:error='rfq_status_unknown'
             elif row.state not in ('confirmed','failed','expired','rejected'):
                 if target!=row.state:record(db,row,target)
-                if target=='confirmed' and payload.tx_hash:row.tx_hash=str(payload.tx_hash)
+                if target=='confirmed':
+                    if getattr(payload,'tx_hash',None):row.tx_hash=str(payload.tx_hash)
+                    from .result_binding import request_binding_for_accepted_order
+                    game_ids=set(db.scalars(select(ComboLeg.game_id).where(ComboLeg.rfq_id==row.id)))
+                    for game_id in sorted(game_ids,key=str): request_binding_for_accepted_order(db,game_id)
     if error:
         finish_attempt(db,job,now,'failed',error);job.status='pending';job.due_at=now+timedelta(minutes=2)
     elif row.state in ('confirmed','failed','expired','rejected'):

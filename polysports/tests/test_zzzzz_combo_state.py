@@ -121,6 +121,32 @@ def test_worker_recovers_known_rfq_without_resending(sample,monkeypatch):
     assert FakeGateway.calls==1
 
 
+def test_polymarket_combo_binds_only_after_confirmed(sample,monkeypatch):
+    from backend.models import ResultBindingRequest
+    from backend.scheduler import claim_next
+    from backend.worker import apply_work
+    engine,client,headers,body=sample;settings=client.app.state.settings
+    monkeypatch.setattr(combo_service,'credential_fingerprint',lambda settings,wallet:b'mock-credential-fingerprint')
+    with engine.begin() as conn:
+        game_id=conn.execute(text('SELECT game_id FROM market_links WHERE id=:id'),{'id':body.legs[0].market_link_id}).scalar_one()
+        conn.execute(text("UPDATE games SET provider='polymarket',external_id='1234567' WHERE id=:id"),{'id':game_id})
+        conn.execute(text("UPDATE market_links SET evidence=evidence || jsonb_build_object('source_game_id','1234567') WHERE game_id=:id"),{'id':game_id})
+    ident,_=combo_service.request_quote(engine,settings,body,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
+    with Session(engine) as db: qid=db.get(ComboRFQ,ident).quote_id
+    monkeypatch.setattr(combo_service,'accept_once',lambda *args:S(status='executing',rfq_id='mock-rfq'))
+    combo_service.accept_quote(engine,settings,ident,qid,gateway_cls=FakeGateway,catalog=catalog)
+    with Session(engine) as db:
+        assert db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game_id)) is None
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE jobs SET due_at=clock_timestamp()-interval '1 day' WHERE combo_rfq_id=:id"),{'id':ident})
+    job,token=claim_next(engine,'mock-worker')
+    assert apply_work(engine,job,token,S(rfq_id='mock-rfq',status='CONFIRMED',tx_hash='mock-tx'))
+    with Session(engine) as db:
+        assert db.get(ComboRFQ,ident).state=='confirmed'
+        request=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game_id))
+        assert request and request.state=='pending' and request.provider=='balldontlie'
+
+
 def test_no_quote_is_terminal_and_retry_permitted(sample,monkeypatch):
     engine,client,headers,body=sample;settings=client.app.state.settings
     monkeypatch.setattr(combo_service,'credential_fingerprint',lambda settings,wallet:b'mock-credential-fingerprint')

@@ -73,7 +73,7 @@ def combo_data(db,row):
 
 
 def failure(request,exc):
-    status=404 if exc.code=='not_found' else 409 if exc.code in ('mapping_invalid','idempotency_conflict','duplicate_unresolved','quote_expired','quote_unavailable','combo_quote_expired') else 422 if exc.code in ('invalid_amount','combo_legs_invalid') else 503
+    status=404 if exc.code=='not_found' else 409 if exc.code in ('mapping_invalid','idempotency_conflict','duplicate_unresolved','quote_expired','quote_unavailable','combo_quote_expired') else 422 if exc.code in ('invalid_amount','combo_legs_invalid') else 403 if exc.code=='geoblock_blocked' else 503
     return auth.error(request,status,exc.code.upper(),exc.message)
 
 

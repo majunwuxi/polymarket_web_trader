@@ -95,7 +95,7 @@
 | `POST /teams/{team_id}/aliases` | `{ "alias": "...", "language": "zh-CN", "verified": true }` | `201` 别名对象 | 唯一约束冲突返回 `409`，保留歧义候选 |
 | `GET /watches` | 可选 `sport`, `state`, `limit`, `cursor` | `200` 分页 `Watch` | 按下一次到期时间、ID 排序；无下次任务的排最后 |
 | `POST /games/{game_id}/watch` | `{}` | `200`：`Watch` | 幂等建立或返回已有关注；依据当前有效开赛时间计算首次截止时间；不重复建立任务 |
-| `GET /games/{game_id}/markets` | 无 | `200`：`{ "items": [{ "link": MarketLink, "market": Market }], "refreshed_at": ... }` | 只读已有数据；未确认或歧义候选仍展示但不可交易，未知或过期需明确标注 |
+| `GET /games/{game_id}/markets` | 无 | `200`：`{ "items": [{ "link": MarketLink, "market": Market }], "refresh": {"status":"..."} }` | 只读已有数据；未确认或歧义候选仍展示但不可交易，未知或过期需明确标注 |
 | `POST /games/{game_id}/markets/refresh` | `{}` | `202`：`{ "game_id":"uuid", "status":"refreshing" }` | 经 CSRF 校验后执行候选更新；上游失败显式标记，不将旧候选冒充新数据 |
 | `POST /market-links/{link_id}/confirm` | `{}` | `200`：确认后的 `MarketLink` | 检查来源身份、运动类型和冲突；写审计；已确认同一映射幂等 |
 | `POST /market-links/{link_id}/reject` | `{}` | `200`：拒绝后的 `MarketLink` | 已被交易引用或状态不允许时返回 `409`；不能删除交易历史 |
@@ -137,7 +137,7 @@
 | --- | --- | --- | --- |
 | `POST /single-orders` | 上述请求 | 首次 `201`：已记录且上游明确接受或拒绝的 `{ "intent": TradeIntent, "submission": Submission }`；仍在处理或结果不明为 `202`；同键重复且结果明确为 `200` | 接受、拒绝与成交严格区分；`201` 不表示成交；有效拒绝 `state=rejected` 并包含脱敏错误。下游暂时不可用但能证明未发送时可返回相应 4xx/5xx |
 | `GET /trade-intents/by-key/{idempotency_key}` | 查询参数 `wallet_id` 必填 | `200`：`TradeIntent`，不存在 `404` | 请求超时后用于查找同一个意图；只有在可证明从未创建意图时才能决定下一步 |
-| `GET /trade-intents` | 可选 `kind`, `state`, `wallet_id`, `game_id`, `from`, `to`, `limit`, `cursor` | `200` 分页 `TradeIntent` | 按 `created_at DESC,id DESC`；无隐式真实交易重试 |
+| `GET /trade-intents` | 可选 `kind=single`, `state`, `wallet_id`, `game_id`, `from`, `to`, `limit`, `cursor` | `200` 分页单场 `TradeIntent` | 按 `created_at DESC,id DESC`；组合记录见 `/combo-rfqs` 或 `/history/trades`；无隐式真实交易重试 |
 | `GET /trade-intents/{intent_id}` | UUID | `200`：`{ "intent": TradeIntent, "submissions": [...], "rfqs": [...], "state_events": [...] }` | 成交仅以真实交易/订单记录为准，未知保持 null |
 | `POST /single-orders/{intent_id}/cancel` | `{}` | `200`：撤单已确认；`202`：结果未知 | 只对已知订单提交撤单；检查 `canceled` 和 `not_canceled`；超时后对账，不误报成功，不影响已成交份额 |
 | `POST /trade-intents/{intent_id}/reconcile` | `{}` | `202`：`{ "intent_id":"...", "job_id":"..." }` | 幂等调度只读对账，不重新发送下单或重新接受报价 |
@@ -171,25 +171,25 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 | `GET /sync-schedules` | 无 | `200`：`{ "items": [{"id":"uuid","provider":"api_football","sport":"football","utc_time":"00:00:00","enabled":true}], "revision":1 }` | 示例为模拟；另有 NBA 及 UTC 08:00 默认项 |
 | `PUT /sync-schedules` | `{ "revision":1, "items":[{"provider":"api_football","sport":"football","utc_time":"00:00:00","enabled":true}, ...] }` | `200`：完整新配置及新 revision | 原子替换非秘密计划配置；每项唯一，要求足球/NBA 各至少一个启用时间；版本不匹配 `409`。仅调整未来未领取任务，不提前执行 |
 | `POST /sync-runs` | `{ "sport":"football" }` | `202`：`{ "run_id":"uuid", "job_id":"uuid", "status":"queued" }` | 手动调度未来 36 小时来源同步；并发冲突返回已有运行或 `409`；不凭空生成数据 |
-| `GET /sync-runs` | 可选 `sport`, `status`, `from`, `to`, `limit`, `cursor` | `200` 分页 `SyncRun` | 按 `started_at DESC,id DESC`，保留部分失败信息 |
+| `GET /sync-runs` | 可选 `sport`, `status`, `from`, `to`, `limit`, `cursor` | `200` 分页 `SyncRun` | 按 `started_at DESC,id DESC`，未开始项排最后；日期范围按 `scheduled_for` 筛选，保留失败信息 |
 | `GET /sync-runs/{run_id}` | UUID | `200`：`SyncRun` | 失败详情为脱敏摘要，绝不包含 API key |
 | `GET /jobs` | 可选 `kind`, `status`, `game_id`, `limit`, `cursor` | `200` 分页 `Job` | 按 `due_at,id`，只读，不暴露租约令牌 |
 | `GET /jobs/{job_id}/runs` | `limit`, `cursor` | `200` 分页尝试摘要：`attempt_no`, `started_at`, `finished_at`, `result`, `error_code` | 任务重启与失败可观察；不提供提前执行未到期任务的接口 |
 
-定时同步默认 UTC 00:00、08:00，两个来源分别执行；请求按分页完整性标记 `succeeded`、`partial` 或 `failed`。调度 API 的 `revision` 使用 `settings` 中的非秘密版本值，计划行保存在 `sync_schedules`；更新两者的事务必须原子一致。
+定时同步默认 UTC 00:00、08:00，两个来源分别执行；请求按分页完整性标记 `succeeded`、`partial` 或 `failed`。调度 API 的 `revision` 使用 `schedule_revisions` 中的非秘密版本值，计划行保存在 `sync_schedules`；更新两者的事务必须原子一致。
 
 ## 8. 历史、导出和运行状态
 
 | 方法与路径 | 请求 | 成功响应 | 规则 |
 | --- | --- | --- | --- |
 | `GET /history/games` | `sport`, `from`, `to`, `status`, `limit`, `cursor` | `200` 分页历史 `Game` | 按 `starts_at DESC,id DESC`，包含历史状态和来源时间 |
-| `GET /history/trades` | `wallet_id`, `kind`, `state`, `from`, `to`, `limit`, `cursor` | `200` 分页交易及真实成交摘要 | 按 `created_at DESC,id DESC`；未成交、未知不得计入已实现盈亏 |
-| `GET /statistics` | `sport`, `from`, `to`, `wallet_id` | `200`：`{ "games_total":0, "finished_total":0, "trade_count":0, "confirmed_fill_count":0, "realized_pnl":null, "currency":"pUSD", "as_of":"..." }` | 示例字段说明，不代表真实数据；只在有可验证数据与明确口径时计算收益，否则 null。聚合与过滤口径必须随实现文档固定 |
+| `GET /history/trades` | `sport`, `wallet_id`, `kind`, `state`, `from`, `to`, `limit`, `cursor` | `200` 分页交易及真实成交摘要 | 按 `created_at DESC,id DESC`；未成交、未知不得计入已实现盈亏 |
+| `GET /statistics` | `sport`, `from`, `to`, `wallet_id`, `kind`, `state`, `status` | `200`：`{ "games_total":0, "finished_total":0, "trade_count":0, "confirmed_fill_count":0, "realized_pnl":null, "currency":"pUSD", "as_of":"..." }` | 示例不代表真实数据；赛事按开赛时间筛选，交易按创建时间筛选；单场只统计已保存的 CONFIRMED 成交记录，组合确认另计，收益证据不足为 null。钱包和交易类型筛选仅影响交易统计 |
 | `GET /exports/games.csv` | 与历史赛事相同筛选（无分页） | `200 text/csv; charset=utf-8` | 导出全量过滤结果而非当前页面；大数据需流式处理 |
 | `GET /exports/games.xlsx` | 同上 | `200 application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | 表头及时间时区清晰；Excel 需要限制单表行数 |
 | `GET /exports/trades.csv` | 与历史交易相同筛选（无分页） | `200 text/csv; charset=utf-8` | 区分意图、成交及未知状态；防电子表格公式注入 |
 | `GET /exports/trades.xlsx` | 同上 | `200 application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | 同 CSV 口径；禁止包含秘密 |
-| `GET /system/status` | 无 | `200`：数据库、worker 心跳、各数据源最近同步、下次计划及可用性摘要 | 每项含 `status`、`checked_at` 或 `last_seen_at`；未知为 `unknown`；只暴露脱敏错误，不用伪造值 |
+| `GET /system/status` | 无 | `200`：数据库、worker 心跳、各数据源最近同步、下次计划及非秘密配置摘要 | 数据源状态取已保存的同步记录，不表示实时探测；未知为 `unknown`；只暴露脱敏错误 |
 | `GET /audit-events` | `action`, `entity_type`, `from`, `to`, `limit`, `cursor` | `200` 分页审计事件 | 按 `created_at DESC,id DESC`；只返回白名单化详情 |
 
 导出端点需会话；响应包含安全文件名的 `Content-Disposition: attachment`，禁用缓存；固定 UTC+8 展示时间并在表头/文件说明标记，保留必要来源和状态字段。CSV/Excel 中以 `=`, `+`, `-`, `@` 等电子表格公式前缀开头的**文本字段**须按安全规则转义，不改变定点数值字段的数值语义。
@@ -214,4 +214,4 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 - Combo 无报价、真实报价截止、对象丢失、重复接受、Last Look 拒绝、执行中、结果未知与 RFQ 对账；不得把单场批量下单当作 Combo。
 - 425、post-only、第三方故障和授权缺失；日志、状态、统计、CSV/XLSX 口径和公式防护。
 
-6F 已实现单场订单预览、提交、撤单、历史、只读对账、候选订单人工关联与成交证据查询；具体接口和配置见 [PolySports 运行说明](polysports/README.md) 与运行中的 OpenAPI。6G 增加组合询价、接受、状态和事件接口；组合交易默认关闭，模拟测试不能证明真实资金交易已通过。官方参考：[单场下单](https://docs.polymarket.com/trading/place-orders)、[Combo Builder](https://docs.polymarket.com/trading/combos/builders)、[撮合重启](https://docs.polymarket.com/trading/matching-engine)。
+6F 已实现单场订单预览、提交、撤单、历史、只读对账、候选订单人工关联与成交证据查询；具体接口和配置见 [PolySports 运行说明](polysports/README.md) 与运行中的 OpenAPI。6G 增加组合询价、接受、状态和事件接口；6H 增加历史、统计、导出和系统状态接口。组合交易默认关闭，模拟测试不能证明真实资金交易已通过。官方参考：[单场下单](https://docs.polymarket.com/trading/place-orders)、[Combo Builder](https://docs.polymarket.com/trading/combos/builders)、[撮合重启](https://docs.polymarket.com/trading/matching-engine)。

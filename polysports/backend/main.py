@@ -7,11 +7,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from sqlalchemy import text
 
 from .config import get_settings
 from .database import make_engine
-from . import auth, sports_api, scheduler_api, market_api, trading_api, combo_api
+from . import auth, sports_api, scheduler_api, market_api, trading_api, combo_api, history_api
 
 logger = logging.getLogger("polysports")
 
@@ -76,12 +77,32 @@ def create_app() -> FastAPI:
     async def validation_error(request: Request, exc: RequestValidationError):
         return auth.error(request, 422, "VALIDATION_ERROR", "请求参数不符合要求")
 
+    def openapi_schema():
+        if app.openapi_schema is not None:return app.openapi_schema
+        schema=get_openapi(title=app.title,version=app.version,routes=app.routes)
+        schema.setdefault('components',{}).setdefault('securitySchemes',{})['AdminSession']={'type':'apiKey','in':'cookie','name':auth.SESSION_COOKIE,'description':'管理员会话；所有修改请求还须携带同源 Origin 与会话绑定 CSRF 令牌。'}
+        public={'/api/v1/health/live','/api/v1/auth/csrf','/api/v1/auth/login'}
+        for path,methods in schema.get('paths',{}).items():
+            if not path.startswith('/api/v1/'):continue
+            for method,operation in methods.items():
+                if method not in ('get','post','put','patch','delete'):continue
+                if path not in public:
+                    operation['security']=[{'AdminSession':[]}]
+                    operation.setdefault('responses',{}).setdefault('401',{'description':'未认证'})
+                if method in ('post','put','patch','delete'):
+                    operation.setdefault('parameters',[]).extend([{'name':'Origin','in':'header','required':True,'schema':{'type':'string'}},{'name':'X-CSRF-Token','in':'header','required':True,'schema':{'type':'string'}}])
+                    operation.setdefault('responses',{}).setdefault('403',{'description':'同源或 CSRF 校验失败'})
+        app.openapi_schema=schema
+        return schema
+    app.openapi=openapi_schema
+
     app.include_router(auth.router)
     app.include_router(sports_api.router)
     app.include_router(scheduler_api.router)
     app.include_router(market_api.router)
     app.include_router(trading_api.router)
     app.include_router(combo_api.router)
+    app.include_router(history_api.router)
 
     @app.get("/api/v1/health/live")
     def health(request: Request):

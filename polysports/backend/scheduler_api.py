@@ -1,14 +1,15 @@
 from __future__ import annotations
 import uuid
-from datetime import time
+from datetime import datetime,time,timezone
 from typing import Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.orm import Session
 from . import auth
 from .models import AuditEvent, Game, Job, JobRun, ScheduleRevision, SyncRun, SyncSchedule, WatchedGame, WorkerHeartbeat
 from .scheduler import db_now, watch_game
+from .sports_api import cursor_decode,cursor_encode
 
 router=APIRouter(prefix='/api/v1')
 
@@ -28,10 +29,22 @@ def add_watch(request: Request,game_id:uuid.UUID):
 
 
 @router.get('/watches')
-def watches(request: Request,limit:int=Query(100,ge=1,le=100)):
+def watches(request: Request,sport:Literal['football','nba']|None=None,state:Literal['active','completed','paused']|None=None,limit:int=Query(50,ge=1,le=100),cursor:str|None=None):
+    end_of_time=datetime(9999,1,1,tzinfo=timezone.utc)
+    due=select(func.min(Job.due_at)).where(Job.watched_game_id==WatchedGame.id,Job.kind=='result_poll',Job.status.in_(['pending','leased'])).correlate(WatchedGame).scalar_subquery()
+    sort_due=func.coalesce(due,end_of_time)
+    query=select(WatchedGame,sort_due.label('sort_due')).join(Game,Game.id==WatchedGame.game_id)
+    if sport:query=query.where(Game.sport==sport)
+    if state:query=query.where(WatchedGame.state==state)
+    try:
+        if cursor:
+            stamp,ident=cursor_decode(cursor);stamp=datetime.fromisoformat(stamp)
+            if stamp.tzinfo is None:raise ValueError()
+            query=query.where(tuple_(sort_due,WatchedGame.id)>tuple_(stamp,uuid.UUID(ident)))
+    except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
-        items=list(db.scalars(select(WatchedGame).order_by(WatchedGame.watched_at.desc()).limit(limit)))
-        return ok(request,{'items':[watch_data(w,db.scalar(select(Job).where(Job.watched_game_id==w.id))) for w in items]})
+        rows=list(db.execute(query.order_by(sort_due,WatchedGame.id).limit(limit+1)));items=rows[:limit]
+        return ok(request,{'items':[watch_data(row[0],db.scalar(select(Job).where(Job.watched_game_id==row[0].id,Job.kind=='result_poll'))) for row in items],'next_cursor':cursor_encode([items[-1].sort_due.isoformat(),str(items[-1][0].id)]) if len(rows)>limit else None})
 
 
 @router.get('/sync-schedules')
@@ -104,21 +117,35 @@ def queue_sync(request: Request,body:ManualSync):
 
 
 @router.get('/jobs')
-def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','combo_reconcile'] | None=None,status:Literal['pending','leased','done','cancelled','failed'] | None=None,limit:int=Query(100,ge=1,le=100)):
+def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','combo_reconcile'] | None=None,status:Literal['pending','leased','done','cancelled','failed'] | None=None,game_id:uuid.UUID|None=None,limit:int=Query(100,ge=1,le=100),cursor:str|None=None):
     query=select(Job)
     if kind: query=query.where(Job.kind==kind)
     if status: query=query.where(Job.status==status)
+    if game_id:query=query.join(WatchedGame,WatchedGame.id==Job.watched_game_id).where(WatchedGame.game_id==game_id)
+    try:
+        if cursor:
+            stamp,ident=cursor_decode(cursor);stamp=datetime.fromisoformat(stamp)
+            if stamp.tzinfo is None:raise ValueError()
+            query=query.where(tuple_(Job.due_at,Job.id)>tuple_(stamp,uuid.UUID(ident)))
+    except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
-        rows=db.scalars(query.order_by(Job.due_at,Job.id).limit(limit))
-        return ok(request,{'items':[{'id':str(x.id),'kind':x.kind,'status':x.status,'due_at':x.due_at.isoformat(),'attempt_count':x.attempt_count,'last_error_code':x.last_error_code,'watched_game_id':str(x.watched_game_id) if x.watched_game_id else None} for x in rows]})
+        rows=list(db.scalars(query.order_by(Job.due_at,Job.id).limit(limit+1)));items=rows[:limit]
+        return ok(request,{'items':[{'id':str(x.id),'kind':x.kind,'status':x.status,'due_at':x.due_at.isoformat(),'attempt_count':x.attempt_count,'last_error_code':x.last_error_code,'watched_game_id':str(x.watched_game_id) if x.watched_game_id else None} for x in items],'next_cursor':cursor_encode([items[-1].due_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
 
 
 @router.get('/jobs/{job_id}/runs')
-def job_runs(request:Request,job_id:uuid.UUID,limit:int=Query(30,ge=1,le=100)):
+def job_runs(request:Request,job_id:uuid.UUID,limit:int=Query(30,ge=1,le=100),cursor:str|None=None):
+    query=select(JobRun).where(JobRun.job_id==job_id)
+    try:
+        if cursor:
+            attempt,ident=cursor_decode(cursor);attempt=int(attempt);ident=uuid.UUID(ident)
+            if attempt<1:raise ValueError()
+            query=query.where(tuple_(JobRun.attempt_no,JobRun.id)<tuple_(attempt,ident))
+    except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
         if not db.get(Job,job_id): return auth.error(request,404,'NOT_FOUND','任务不存在')
-        rows=db.scalars(select(JobRun).where(JobRun.job_id==job_id).order_by(JobRun.attempt_no.desc()).limit(limit))
-        return ok(request,{'items':[{'attempt_no':x.attempt_no,'started_at':x.started_at.isoformat(),'finished_at':x.finished_at.isoformat() if x.finished_at else None,'result':x.result,'error_code':x.error_code} for x in rows]})
+        rows=list(db.scalars(query.order_by(JobRun.attempt_no.desc(),JobRun.id.desc()).limit(limit+1)));items=rows[:limit]
+        return ok(request,{'items':[{'attempt_no':x.attempt_no,'started_at':x.started_at.isoformat(),'finished_at':x.finished_at.isoformat() if x.finished_at else None,'result':x.result,'error_code':x.error_code} for x in items],'next_cursor':cursor_encode([str(items[-1].attempt_no),str(items[-1].id)]) if len(rows)>limit else None})
 
 
 @router.get('/worker-status')

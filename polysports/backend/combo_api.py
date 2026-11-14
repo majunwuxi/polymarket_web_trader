@@ -77,7 +77,7 @@ def failure(request,exc):
     return auth.error(request,status,exc.code.upper(),exc.message)
 
 
-@router.post('/combo-rfqs')
+@router.post('/combo-rfqs',responses={201:{'description':'已记录询价'},202:{'description':'询价中或结果未知'}})
 def create_combo(request: Request,body:ComboBody,idempotency_key:str=Header(...,alias='Idempotency-Key')):
     if not COMBO_EXECUTION_READY or not request.app.state.settings.combo_execution_enabled:return auth.error(request,503,'COMBO_DISABLED','组合交易尚未启用')
     try:
@@ -122,7 +122,7 @@ def get_combo(request:Request,ident:uuid.UUID):
         return {'data':combo_data(db,row),'request_id':request.state.request_id}
 
 
-@router.post('/combo-rfqs/{ident}/accept')
+@router.post('/combo-rfqs/{ident}/accept',responses={202:{'description':'执行中或结果未知'}})
 def accept_combo(request:Request,ident:uuid.UUID,body:AcceptBody):
     if not COMBO_EXECUTION_READY or not request.app.state.settings.combo_execution_enabled:return auth.error(request,503,'COMBO_DISABLED','组合交易尚未启用')
     try:

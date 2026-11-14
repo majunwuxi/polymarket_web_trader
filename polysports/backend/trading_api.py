@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime,timedelta
 from typing import Literal
-from fastapi import APIRouter,Header,Request
+from fastapi import APIRouter,Header,Query,Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel,Field,StrictStr
 from sqlalchemy import select,tuple_
@@ -42,7 +42,7 @@ def preview(request:Request,body:OrderBody):
     except TradingError as exc:return error(request,exc)
 
 
-@router.post('/single-orders')
+@router.post('/single-orders',responses={201:{'description':'已记录'},202:{'description':'处理中或结果未知'}})
 def submit(request:Request,body:SubmitBody,idempotency_key:str=Header(...,alias='Idempotency-Key')):
     try:
         try: key=uuid.UUID(idempotency_key)
@@ -66,12 +66,15 @@ def by_key(request:Request,request_id:uuid.UUID,wallet_id:uuid.UUID):
 
 
 @router.get('/trade-intents')
-def list_intents(request:Request,limit:int=50,wallet_id:uuid.UUID | None=None,game_id:uuid.UUID | None=None,state:str | None=None,kind:Literal['single'] | None=None,cursor:str | None=None):
+def list_intents(request:Request,limit:int=50,wallet_id:uuid.UUID | None=None,game_id:uuid.UUID | None=None,state:str | None=None,kind:Literal['single'] | None=None,cursor:str | None=None,start:datetime | None=Query(None,alias='from'),end:datetime | None=Query(None,alias='to')):
+    if (start and start.tzinfo is None) or (end and end.tzinfo is None) or (start and end and end<=start):return auth.error(request,422,'VALIDATION_ERROR','时间范围无效')
     if limit<1 or limit>100:return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     query=select(TradeIntent)
     if wallet_id:query=query.where(TradeIntent.wallet_id==wallet_id)
     if game_id:query=query.where(TradeIntent.game_id==game_id)
     if state:query=query.where(TradeIntent.state==state)
+    if start:query=query.where(TradeIntent.created_at>=start)
+    if end:query=query.where(TradeIntent.created_at<end)
     try:
         if cursor:
             date,ident=cursor_decode(cursor);date=datetime.fromisoformat(date)
@@ -106,7 +109,7 @@ def update_cancel(engine,intent_id,state,code=None,delay=None):
             job.status='pending';job.due_at=now+timedelta(seconds=30)
 
 
-@router.post('/single-orders/{intent_id}/cancel')
+@router.post('/single-orders/{intent_id}/cancel',responses={202:{'description':'撤单结果未知'}})
 def cancel(request:Request,intent_id:uuid.UUID):
     engine=request.app.state.engine
     with Session(engine) as db,db.begin():

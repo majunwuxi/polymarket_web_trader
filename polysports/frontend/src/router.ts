@@ -7,6 +7,7 @@ import Wallets from './views/Wallets.vue'
 import Orders from './views/Orders.vue'
 import OrderEntry from './views/OrderEntry.vue'
 import Combos from './views/Combos.vue'
+import History from './views/History.vue'
 import { restoreSession } from './auth'
 
 export const router = createRouter({
@@ -18,6 +19,7 @@ export const router = createRouter({
     { path: '/system', component: SystemPage, meta: { requiresAuth: true } },
     { path: '/wallets', component: Wallets, meta: { requiresAuth: true } },
     { path: '/combos', component: Combos, meta: { requiresAuth: true } },
+    { path: '/history', component: History, meta: { requiresAuth: true } },
     { path: '/orders', component: Orders, meta: { requiresAuth: true } },
     { path: '/orders/new/:link/:outcome', component: OrderEntry, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },

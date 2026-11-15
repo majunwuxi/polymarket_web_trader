@@ -87,7 +87,7 @@ sudo systemd-run --quiet --pty --collect --uid=polysports --gid=polysports \
   /opt/polysports-src/polysports/.venv/bin/python -m backend.init_admin --username admin
 sudo systemctl enable --now polysports-api.service polysports-worker.service
 sudo systemctl status polysports-api.service polysports-worker.service --no-pager
-curl --fail http://127.0.0.1:8000/api/v1/health/live
+curl --retry 15 --retry-delay 1 --retry-connrefused --retry-all-errors --connect-timeout 2 --fail http://127.0.0.1:8000/api/v1/health/live
 ```
 
 初始化只允许创建一个管理员，已有管理员不会被覆盖。存活探针不代表数据库、外部数据源或交易权限就绪；登录后应在系统管理页面查看数据库、worker、同步日志及配置状态。更新凭据后需重启 API 和 worker，systemd 才会重新读取凭据副本。
@@ -196,12 +196,14 @@ sudo systemctl status polysports-migrate.service --no-pager   # Active 时间必
 sudo -u postgres psql -d polysports -c 'SELECT version_num FROM alembic_version;'   # 应与仓库迁移 head 一致
 sudo -u postgres psql -d polysports -c "SELECT to_regclass('public.combo_fills');"  # 含新增表时必须非 NULL
 sudo systemctl restart polysports-api.service polysports-worker.service
-curl --fail http://127.0.0.1:8000/api/v1/health/live
+curl --retry 15 --retry-delay 1 --retry-connrefused --retry-all-errors --connect-timeout 2 --fail http://127.0.0.1:8000/api/v1/health/live
 sudo journalctl -u polysports-api.service -u polysports-worker.service --since '10 min ago' --no-pager
 ```
 
 后端 `.py` 改动必须重启 `polysports-api.service` 与 `polysports-worker.service` 才会生效；仅 `git pull` 不会重载已加载的模块。若该版本包含新增表（例如 `combo_fills`），迁移未成功就启动 API，列表接口会直接报 `relation "combo_fills" does not exist`；此时先修复迁移，不要靠重启 API 重试。Nginx 的 `index.html` 应设为不缓存（见 `deploy/nginx/polysports.conf` 的 `location = /index.html`）；更新该配置后需重新安装并执行 `sudo nginx -t && sudo systemctl reload nginx`。浏览器仍显示旧界面时，先用无痕窗口或强制刷新（Ctrl+Shift+R）确认；带 hash 的 JS 可长期缓存，入口 `index.html` 不可缓存。
 
 **升级时 `systemctl start` 不会重跑迁移**：`polysports-migrate.service` 为 `Type=oneshot` + `RemainAfterExit=yes`，首次成功后长期保持 `active (exited)`；此时 `systemctl start` 被 systemd 视为已启动而直接返回，`ExecStart` 不会再次执行。典型症状是 `systemctl status` 的 Active 时间仍是几小时前、日志停在上一版 `Running upgrade ...`、`SELECT version_num FROM alembic_version` 不前进，随后 `SELECT count(*) FROM combo_fills` 报 `relation "combo_fills" does not exist`，API 的列表接口 500。含新迁移的升级必须用 `systemctl restart polysports-migrate.service`（或先 `stop` 再 `start`），并逐项核对：status 的 Active 时间是本次、日志出现 `Running upgrade ... -> <目标 revision>`、数据库 `version_num` 等于仓库 `alembic heads`、新表存在。首次安装时服务处于 inactive，`start` 才有效（见第 3 节）。未确认迁移成功前不要启动 API，也不要靠反复重启 API 来绕过缺表错误。
+
+**健康检查不要用裸 `curl`**：`polysports-api.service` 是 `Type=simple`，systemd 打印 `Started` 只表示进程已 exec，真正监听要等 uvicorn 完成模块导入与 startup（实测约 5 秒以上，迁移后首次启动可能更久）。此时裸 `curl --fail` 会得到 `curl: (7) Failed to connect`，容易被误判为部署失败。用带 `--retry-connrefused` 的重试，或先确认 `journalctl -u polysports-api.service` 出现 `Application startup complete` 与 `Uvicorn running on http://127.0.0.1:8000`；只有状态为 `failed`/`auto-restart` 且反复出现 `Scheduled restart job` 才是真正的启动失败，需按日志里的 traceback 排查。
 
 参考：[systemd 凭据](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)、[Nginx 反向代理](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)、[PostgreSQL pg_restore](https://www.postgresql.org/docs/current/app-pgrestore.html)、[Certbot Webroot](https://eff-certbot.readthedocs.io/en/stable/using.html#webroot)。

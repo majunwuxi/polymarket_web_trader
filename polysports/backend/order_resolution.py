@@ -7,6 +7,10 @@
 赛果判断覆盖系统实际接受的三类全场市场：胜负（moneyline）、大小分/总进球
 （totals）、以及选项明确写出让分数的让分盘（spreads）。半场、局节、单队、
 球员和盘口口径不明确的市场一律不推断，返回 None 与具体原因。
+
+市场结算读取官方 data-api `/v2/resolutions`：payouts 为 micro-USDC/份
+（1 pUSD = 1_000_000），兼容旧式 0/1；只有终态 status 加可用的二元赔付才确认。
+赛事终态（比赛结束）与市场终态（链上结算）是两个独立状态，不可互相替代。
 """
 import re
 import unicodedata
@@ -174,7 +178,51 @@ judge_moneyline_score=judge_score
 compare_moneyline_score=compare_score
 
 
+# data-api /v2/resolutions 的 payouts 单位为 micro-USDC/份：1 pUSD = 1_000_000。
+# 旧版/部分来源仍可能返回 0/1，两种单位都接受；未知单位一律不猜。
+_PAYOUT_SCALES=(Decimal(1),Decimal(1000000))
+_TERMINAL_STATES=frozenset({'resolved','finalized','settled'})
+_STAGE_TEXT={
+    'initialized':'结算流程已初始化，尚未提议结果',
+    'posed':'已发起预言机提问，等待提议结果',
+    'proposed':'已提议结果，处于无争议期，尚未最终结算',
+    'challenged':'提议结果被挑战，等待复核',
+    'reproposed':'已重新提议结果，等待无争议期',
+    'disputed':'结果存在争议，等待仲裁',
+    'active':'市场仍在交易，尚未发起最终结算',
+    'arbitration':'结果处于仲裁中',
+}
+
+
+def _binary_payout_won(payouts,outcome_index):
+    """把官方二元终态赔付归一化为「所选选项是否获胜」；无法严格识别返回 None。"""
+    if not isinstance(payouts,(list,tuple)) or len(payouts)!=2: return None
+    values=[]
+    for raw in payouts:
+        if isinstance(raw,bool): return None
+        if type(raw) is int: value=Decimal(raw)
+        elif isinstance(raw,str) and re.fullmatch(r'\d{1,12}',raw): value=Decimal(raw)
+        elif type(raw) is float and raw.is_integer() and abs(raw)<10**12: value=Decimal(str(raw))
+        else: return None
+        if not value.is_finite() or value<0: return None
+        values.append(value)
+    # 恰好一个选项全额获胜、另一个为 0；split（50/50）、分数赔付与 0/0 都不猜。
+    winners=[i for i,value in enumerate(values) if value>0]
+    if len(winners)!=1 or values[winners[0]] not in _PAYOUT_SCALES: return None
+    return winners[0]==outcome_index
+
+
+def _pending_resolution(status,text):
+    return {'state':'pending','market_status':status,'market_status_text':text}
+
+
 def read_resolution(client, condition_id, outcome_index):
+    """只读查询 Polymarket data-api 终态结算；非终态也返回具体阶段，不再笼统标为「未终态」。
+
+    官方响应示例：status="resolved"、payouts=[1000000,0]、resolved_at=RFC3339。
+    condition/event 选择器可能返回多行（V2 生命周期 → UMA 生命周期 → CTF 终态），
+    因此按「终态且赔付可用」选行，并要求同一查询内不能出现互相矛盾的终态结果。
+    """
     if not isinstance(condition_id,str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}',condition_id):
         raise SourceError('invalid_condition_id')
     if type(outcome_index) is not int or outcome_index not in (0,1): raise SourceError('invalid_outcome_index')
@@ -186,14 +234,28 @@ def read_resolution(client, condition_id, outcome_index):
     except (httpx.RequestError,ValueError) as exc: raise SourceError('network_or_invalid_json') from exc
     if not isinstance(body,dict) or not isinstance(body.get('data'),list): raise SourceError('invalid_response')
     rows=body['data']
-    if not rows: return {'state':'pending'}
-    if len(rows)!=1 or not isinstance(rows[0],dict) or str(rows[0].get('condition_id','')).lower()!=condition_id.lower():
-        raise SourceError('resolution_identity_mismatch')
-    row=rows[0];payouts=row.get('payouts')
-    # 非终态、分数赔付或特殊结算不得猜测结果。
-    if str(row.get('status','')).lower() not in ('resolved','finalized','settled') or not row.get('resolved_at') or not isinstance(payouts,list) or len(payouts)!=2 or any(type(x) is not int for x in payouts) or payouts not in ([0,1],[1,0]):
-        return {'state':'pending'}
-    return {'state':'resolved','outcome_won':payouts[outcome_index]==1,'resolved_at':row['resolved_at']}
+    if not rows:
+        return _pending_resolution('not_found','结算数据暂未收录该市场条件（该盘口尚未发起结算，或条件编号与记录不同）')
+    matched=[row for row in rows if isinstance(row,dict) and str(row.get('condition_id','')).lower()==condition_id.lower()]
+    if not matched: raise SourceError('resolution_identity_mismatch')
+    terminal=[]
+    for row in matched:
+        status=str(row.get('status','')).lower()
+        if status not in _TERMINAL_STATES: continue
+        won=_binary_payout_won(row.get('payouts'),outcome_index)
+        if won is not None: terminal.append((row,status,won))
+    if terminal:
+        if len({won for _,_,won in terminal})>1: raise SourceError('resolution_conflict')
+        row,status,won=terminal[0]
+        return {'state':'resolved','outcome_won':won,'resolved_at':row.get('resolved_at'),
+                'market_status':status,'market_status_text':'已最终结算',
+                'payouts':row.get('payouts'),'reporter':row.get('reporter')}
+    statuses=[str(row.get('status','')).lower() for row in matched]
+    already_terminal=next((status for status in statuses if status in _TERMINAL_STATES),None)
+    if already_terminal:
+        return _pending_resolution(already_terminal,'已标记结算，但未返回可用的二元赔付明细，暂不确认金额')
+    stage=next((status for status in statuses if status),'unknown')
+    return _pending_resolution(stage,_STAGE_TEXT.get(stage,'结算流程尚未完成'))
 
 
 def settlement_amounts(*,side,matched_size,fills,market_outcome_won,result_outcome_won):
@@ -243,7 +305,7 @@ def settlement_amounts(*,side,matched_size,fills,market_outcome_won,result_outco
             result['notice']+='该市场规则无法从比分自动判断或赛果未确认，以市场终态结算为准，建议人工核实。'
         elif result_won is not None:
             result['agreement']='result_only'
-            result['reason']='市场尚未进入终态；按赛果推算的金额仅为预计值，待 Polymarket 结算确认'
+            result['reason']='Polymarket 尚未返回终态结算；按赛果推算的金额仅为预计值，待市场结算确认'
             result['notice']+='按赛果推算的金额不是已确认结算。'
         else:
             result['reason']='赛果规则无法自动判断且市场尚未终态，暂不能确认结算金额'

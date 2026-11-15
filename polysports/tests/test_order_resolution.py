@@ -20,11 +20,48 @@ def test_resolution_needs_terminal_binary_payout_and_identity():
     assert read({'data':[row]})['outcome_won'] is True
     assert read({'data':[row]},1)['outcome_won'] is False
     assert read({'data':[]})['state']=='pending'
-    assert read({'data':[{**row,'resolved_at':None}]})['state']=='pending'
+    assert '结算数据暂未收录' in read({'data':[]})['market_status_text']
+    # resolved_at 仅用于展示；结算判据是终态 status + 可用的二元赔付。
+    assert read({'data':[{**row,'resolved_at':None}]})['state']=='resolved'
     assert read({'data':[{**row,'status':'proposed'}]})['state']=='pending'
     assert read({'data':[{**row,'payouts':[1,1]}]})['state']=='pending'
     with pytest.raises(SourceError,match='resolution_identity_mismatch'):
         read({'data':[{**row,'condition_id':'0x'+'b'*64}]})
+
+
+def test_official_micro_usdc_payouts_are_accepted():
+    """官方 /v2/resolutions 的 payouts 为 micro-USDC/份（1 pUSD = 1_000_000），不是 0/1。"""
+    row={'condition_id':CONDITION,'status':'resolved','resolved_at':'2026-11-15T02:00:00Z',
+         'payouts':[1000000,0],'reporter':'UMA_OO'}
+    first=read({'data':[row]})
+    assert first['state']=='resolved' and first['outcome_won'] is True
+    assert first['market_status']=='resolved' and first['resolved_at']=='2026-11-15T02:00:00Z'
+    assert first['payouts']==[1000000,0] and first['reporter']=='UMA_OO'
+    assert read({'data':[row]},1)['outcome_won'] is False
+    assert read({'data':[{**row,'payouts':[0,1000000]}]},1)['outcome_won'] is True
+    assert read({'data':[{**row,'payouts':['0','1000000']}]},0)['outcome_won'] is False
+    assert read({'data':[{**row,'status':'settled'}]})['state']=='resolved'
+
+
+def test_resolution_rows_report_stage_and_refuse_unusable_payouts():
+    resolved={'condition_id':CONDITION,'status':'resolved','resolved_at':'2026-11-15T02:00:00Z','payouts':[1000000,0]}
+    proposed={'condition_id':CONDITION,'status':'proposed','resolved_at':None,'payouts':None}
+    # condition 选择器可能返回多行（V2 生命周期 → UMA 生命周期 → CTF 终态）。
+    assert read({'data':[proposed,resolved]})['state']=='resolved'
+    stage=read({'data':[proposed]})
+    assert stage['state']=='pending' and stage['market_status']=='proposed'
+    assert '已提议结果' in stage['market_status_text']
+    no_payout=read({'data':[{**resolved,'payouts':None}]})
+    assert no_payout['state']=='pending' and '赔付明细' in no_payout['market_status_text']
+    for payouts in ([1,1],[500000,500000],[0,0],[2,0],[1.5,0],[None,1]):
+        assert read({'data':[{**resolved,'payouts':payouts}]})['state']=='pending'
+
+
+def test_conflicting_terminal_rows_are_not_silently_picked():
+    a={'condition_id':CONDITION,'status':'resolved','payouts':[1000000,0]}
+    b={'condition_id':CONDITION,'status':'resolved','payouts':[0,1000000]}
+    with pytest.raises(SourceError,match='resolution_conflict'):
+        read({'data':[a,b]})
 
 
 def test_score_comparison_refuses_ambiguous_market_and_flags_conflict():

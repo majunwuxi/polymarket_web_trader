@@ -119,7 +119,10 @@ def resolution(request:Request,intent_id:uuid.UUID):
         market=db.get(PolyMarket,link.market_id);outcome=db.get(MarketOutcome,intent.outcome_id)
         binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id))
         verified=bool(binding and binding.state=='bound' and game.status=='finished' and game.home_score is not None and game.away_score is not None)
-        base={'score_verified':verified,'home_score':game.home_score if verified else None,'away_score':game.away_score if verified else None,
+        # 赛事终态（比赛是否结束）与市场终态（Polymarket 是否结算）是两个独立状态，都返回给前端。
+        base={'score_verified':verified,'game_finished':game.status=='finished','game_status':game.status,
+              'provider_status':game.provider_status,'binding_state':binding.state if binding else None,
+              'home_score':game.home_score if verified else None,'away_score':game.away_score if verified else None,
               'matched_size':str(intent.matched_size) if intent.matched_size is not None else None,'side':intent.side}
         side,matched=intent.side,intent.matched_size
         fills=[{'size':x.size,'price':x.price,'status':x.status} for x in db.scalars(select(TradeFill).where(TradeFill.intent_id==intent_id))]

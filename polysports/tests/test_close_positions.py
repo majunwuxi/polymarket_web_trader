@@ -7,23 +7,27 @@ from types import SimpleNamespace as S
 import pytest
 
 from backend import close_positions as module
-from backend.models import TradeIntent, MarketLink, MarketOutcome, PolyMarket, ComboRFQ
+from backend.models import TradeIntent, MarketLink, MarketOutcome, PolyMarket, ComboRFQ, Game
 from backend.trading_gateway import TradingError
 from backend.trading import normalize, verify_close_origin
 
 
-def context(monkeypatch, *, side='BUY', matched=Decimal('3'), balance=2_000_000, book_asset='123'):
+def context(monkeypatch, *, side='BUY', matched=Decimal('3'), balance=2_000_000, book_asset='123', result_verified=False):
     intent=S(id='mock-intent',side=side,matched_size=matched,wallet_id='mock-wallet',wallet_address='0xmock',market_link_id='link',outcome_id='outcome',game_id='game')
     link=S(market_id='market',game_id='game')
     outcome=S(market_id='market',asset_kind='position',asset_id='123')
-    market=S(id='market',condition_id='0xcondition')
-    objects={TradeIntent:intent,MarketLink:link,MarketOutcome:outcome,PolyMarket:market}
+    market=S(id='market',condition_id='0xcondition',accepting_orders=True)
+    game=S(id='game',status='finished' if result_verified else 'scheduled',
+           home_score=100 if result_verified else None,away_score=90 if result_verified else None)
+    objects={TradeIntent:intent,MarketLink:link,MarketOutcome:outcome,PolyMarket:market,Game:game}
     class Db:
         def __init__(self,*args):self.calls=0
         def __enter__(self):return self
         def __exit__(self,*args):pass
         def get(self,model,ident):return objects[model]
         def scalar(self,query):
+            if 'result_binding_requests' in str(query).lower():
+                return S(state='bound') if result_verified else None
             self.calls+=1
             return None if self.calls==1 else Decimal(0)
     class Gateway:
@@ -63,8 +67,9 @@ def test_close_resolve_ignores_stale_mapping_but_keeps_market_identity(monkeypat
     link=S(id='link',market_id='market',game_id='game',evidence={})
     outcome=S(market_id='market',asset_kind='ctf_token')
     market=S(accepting_orders=True,protocol_version='v1',poly_event_id='event')
-    objects={trading.MarketLink:link,trading.MarketOutcome:outcome,trading.PolyMarket:market}
-    db=S(get=lambda model,ident:objects[model])
+    objects={trading.MarketLink:link,trading.MarketOutcome:outcome,trading.PolyMarket:market,
+             trading.Game:S(id='game',status='scheduled',home_score=None,away_score=None)}
+    db=S(get=lambda model,ident:objects[model],scalar=lambda query:None)
     body=S(market_link_id='link',outcome_id='outcome')
     monkeypatch.setattr(trading,'valid_link',lambda *args:False)
     assert trading.resolve(db,body,True)[0] is link
@@ -99,6 +104,28 @@ def test_no_verified_buy_fill_means_no_close_context(monkeypatch,side,matched):
 def test_mismatched_book_is_rejected(monkeypatch):
     with pytest.raises(TradingError,match='身份不一致'):
         context(monkeypatch,book_asset='other')()
+
+
+def test_confirmed_game_result_blocks_close_context(monkeypatch):
+    """赛果已绑定核实后，只读平仓上下文也必须拒绝，而不只是前端禁用按钮。"""
+    with pytest.raises(TradingError,match='不能平仓'):
+        context(monkeypatch,result_verified=True)()
+
+
+def test_close_resolve_blocks_confirmed_game_result(monkeypatch):
+    """绕过 close-context 直接预览/提交 FOK 平仓时同样被拦截。"""
+    from backend import trading
+    link=S(id='link',market_id='market',game_id='game',evidence={})
+    market=S(accepting_orders=True,protocol_version='v1',poly_event_id='event')
+    outcome=S(market_id='market',asset_kind='ctf_token')
+    game=S(id='game',status='finished',home_score=100,away_score=90)
+    objects={trading.MarketLink:link,trading.MarketOutcome:outcome,trading.PolyMarket:market,trading.Game:game}
+    db=S(get=lambda model,ident:objects[model],scalar=lambda query:S(state='bound'))
+    body=S(market_link_id='link',outcome_id='outcome')
+    with pytest.raises(TradingError,match='不能平仓'):trading.resolve(db,body,True)
+    # 开仓路径不受平仓准入影响，仍按赛事映射新鲜度判断。
+    monkeypatch.setattr(trading,'valid_link',lambda *args:True)
+    assert trading.resolve(db,body,False)[0] is link
 
 
 def test_fok_close_origin_requires_matching_buy_and_bounded_size():

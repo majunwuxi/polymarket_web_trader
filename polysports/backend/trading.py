@@ -5,10 +5,12 @@ from decimal import Decimal, localcontext
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from .close_policy import assert_close_allowed, close_decision, game_result_state
 from .config import Settings
 from .market_api import wallet_id
 from .markets import valid_link
 from .models import Game,Job,MarketLink,MarketOutcome,PolyEvent,PolyMarket,Team,TradeIntent,TradeStateEvent,TradeSubmission
+from .order_resolution import judge_score_detail
 from .scheduler import db_now,watch_game
 from .trading_gateway import Gateway,TradingError,finite_decimal,restriction
 
@@ -87,7 +89,11 @@ def resolve(db,body,closing=False):
     market=db.get(PolyMarket,link.market_id)
     if not market or market.accepting_orders is not True or market.protocol_version not in ('v1','v2') or outcome.asset_kind!=('position' if market.protocol_version=='v2' else 'ctf_token'):
         raise TradingError('market_unavailable','市场不可接单或协议未核实')
-    if not closing and not valid_link(db,link): raise TradingError('mapping_invalid','赛事映射未确认或已过期')
+    if closing:
+        # 已结算或赛果已确认的持仓不能平仓；界面按钮之外再做一次硬校验。
+        assert_close_allowed(db,db.get(Game,link.game_id),market)
+    elif not valid_link(db,link):
+        raise TradingError('mapping_invalid','赛事映射未确认或已过期')
     return link,market,outcome
 
 
@@ -132,7 +138,15 @@ def as_data(intent,db=None):
     if db:
         game=db.get(Game,intent.game_id);link=db.get(MarketLink,intent.market_link_id);market=db.get(PolyMarket,link.market_id);outcome=db.get(MarketOutcome,intent.outcome_id)
         home=db.get(Team,game.home_team_id);away=db.get(Team,game.away_team_id)
-        value.update({'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label})
+        finished,verified=game_result_state(db,game)
+        blocked,reason=close_decision(score_verified=verified,accepting_orders=market.accepting_orders)
+        won,basis=judge_score_detail(sport=game.sport,question=market.question,outcome_label=outcome.label,
+            home=getattr(home,'source_name',None),away=getattr(away,'source_name',None),
+            home_score=game.home_score if verified else None,away_score=game.away_score if verified else None,
+            provider_status=game.provider_status) if verified else (None,'外部赛果尚未绑定核实或比分未确认')
+        value.update({'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label,
+                      'game_finished':finished,'score_verified':verified,'result_won':won,'result_basis':basis,
+                      'close_blocked':blocked,'close_block_reason':reason})
     return value
 
 

@@ -124,7 +124,9 @@
 | `POST /single-orders/preview` | 平仓时带 `order_type:"FOK"`、`parent_trade_id`，`side:"SELL"`，`limit_price` 与 `size` 取自 `close-context` | 与 5.1 相同 | 平仓跳过赛事映射的 15 分钟确认与 Gamma 赛事实时核对，仍校验市场/资产身份、盘口规则、余额、授权、原订单未平仓份额及是否已有未解决的平仓请求 |
 | `POST /single-orders` | 同上并附 `preview_token` 与 `Idempotency-Key` | 与 5.2 相同 | 以 FOK 提交，全部成交或不成交；提交结果未知时不得重发 |
 
-平仓页面不提供方向、限价、金额或份额输入，价格与份额全部由服务端从真实盘口和持仓计算，用户只确认一次；预览有效期 30 秒。组合平仓不走本接口，使用 `POST /combo-rfqs` 的 SELL 报价流程：带 `parent_combo_id` 时，请求报价与接受报价都不要求赛事映射在 15 分钟内确认，仅核验组合腿的市场与资产身份、原组合成交份额、官方 Combo 目录 `position_id`、卖出报价资产、余额与授权。
+平仓页面不提供方向、限价、金额或份额输入，价格与份额全部由服务端从真实盘口和持仓计算，用户只确认一次；预览有效期 30 秒。
+
+**平仓准入（5.1.1a）**：比赛结果已确认或市场已进入结算/停止接单时，不得再发起平仓。判据统一由 `backend/close_policy.py` 给出：`score_verified`（`games.status='finished'` + 已绑定 `bound` 的赛果 + 比分非空）或 `poly_markets.accepting_orders is False` 任一成立即禁止；`accepting_orders` 为 `None`（未知）不推断为已结算。列表接口 `GET /trade-intents` 与 `GET /combo-rfqs` 返回只读字段 `close_blocked` / `close_block_reason` 供界面禁用按钮，组合按「任一腿赛果已确认或任一腿停单」判定。前端禁用之外，`GET /trade-intents/{id}/close-context`、`POST /single-orders/preview` / `/single-orders` 的 FOK 平仓、以及 `POST /combo-rfqs` / `accept` 的带 `parent_combo_id` 平仓都会再做一次硬校验，拒绝时返回 `409 POSITION_SETTLED`，防止绕过界面直接调用接口。组合各腿的终态由 `/resolution` 实时查询，列表接口不访问上游。组合平仓不走本接口，使用 `POST /combo-rfqs` 的 SELL 报价流程：带 `parent_combo_id` 时，请求报价与接受报价都不要求赛事映射在 15 分钟内确认，仅核验组合腿的市场与资产身份、原组合成交份额、官方 Combo 目录 `position_id`、卖出报价资产、余额与授权。
 
 ### 5.1.2 赛果与结算金额核对（单场）
 
@@ -160,7 +162,7 @@
 | --- | --- | --- | --- |
 | `POST /single-orders` | 上述请求 | 首次 `201`：已记录且上游明确接受或拒绝的 `{ "intent": TradeIntent, "submission": Submission }`；仍在处理或结果不明为 `202`；同键重复且结果明确为 `200` | 接受、拒绝与成交严格区分；`201` 不表示成交；有效拒绝 `state=rejected` 并包含脱敏错误。下游暂时不可用但能证明未发送时可返回相应 4xx/5xx |
 | `GET /trade-intents/by-key/{idempotency_key}` | 查询参数 `wallet_id` 必填 | `200`：`TradeIntent`，不存在 `404` | 请求超时后用于查找同一个意图；只有在可证明从未创建意图时才能决定下一步 |
-| `GET /trade-intents` | 可选 `kind=single`, `state`, `wallet_id`, `game_id`, `from`, `to`, `limit`, `cursor` | `200` 分页单场 `TradeIntent` | 按 `created_at DESC,id DESC`；组合记录见 `/combo-rfqs` 或 `/history/trades`；无隐式真实交易重试 |
+| `GET /trade-intents` | 可选 `kind=single`, `state`, `wallet_id`, `game_id`, `from`, `to`, `limit`, `cursor` | `200` 分页单场 `TradeIntent` | 按 `created_at DESC,id DESC`；每条附带纯本地只读的 `game_finished` / `score_verified` / `result_won` / `result_basis`，以及平仓准入 `close_blocked` / `close_block_reason`；组合记录见 `/combo-rfqs` 或 `/history/trades`；无隐式真实交易重试 |
 | `GET /trade-intents/{intent_id}` | UUID | `200`：`{ "intent": TradeIntent, "submissions": [...], "rfqs": [...], "state_events": [...] }` | 成交仅以真实交易/订单记录为准，未知保持 null |
 | `POST /single-orders/{intent_id}/cancel` | `{}` | `200`：撤单已确认；`202`：结果未知 | 只对已知订单提交撤单；检查 `canceled` 和 `not_canceled`；超时后对账，不误报成功，不影响已成交份额 |
 | `POST /trade-intents/{intent_id}/reconcile` | `{}` | `202`：`{ "intent_id":"...", "job_id":"..." }` | 幂等调度只读对账，不重新发送下单或重新接受报价 |
@@ -174,7 +176,7 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
 | `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 首次 `201`：已得到报价或明确无报价的 `ComboRFQ` ；`202`：仍在请求或结果未知；同键重复且结果明确为 `200` | 创建 Combo 草稿与 RFQ 记录，不触发接受或资金成交；至少两腿、不能重复 outcome；BUY 开仓要求所有映射已确认且真实 Combo 能力已核实，带 `parent_combo_id` 的 SELL 平仓不要求映射确认，改为核验原组合成交记录、原组合腿与官方 Combo 目录持仓标识；`quantity` 最多六位小数 |
-| `GET /combo-rfqs` | `limit`, `cursor`, `state`, `game_id` | `200` 分页组合记录 | 按创建时间及 ID 倒序；每腿附带纯本地、只读的 `result_won`/`result_basis`/`score_verified`/`game_finished`，组合附带 `by_score`/`judged_legs`/`leg_count`/`score_reason`；列表不查询 Polymarket 上游，市场终态需另调 `/resolution` |
+| `GET /combo-rfqs` | `limit`, `cursor`, `state`, `game_id` | `200` 分页组合记录 | 按创建时间及 ID 倒序；每腿附带纯本地、只读的 `result_won`/`result_basis`/`score_verified`/`game_finished`，组合附带 `by_score`/`judged_legs`/`leg_count`/`score_reason`，组合附带 `close_blocked` / `close_block_reason`（任一腿赛果已确认或停单即禁止平仓）；列表不查询 Polymarket 上游，市场终态需另调 `/resolution` |
 | `GET /combo-rfqs/by-key/{key}` | 本地幂等键与 `wallet_id` | `200` 现有组合请求 | 用于查询不确定的本地请求，404 不证明外部未收到 |
 | `GET /combo-legs/{link_id}/{outcome_id}` | 已确认映射和选项 ID | `200` 目录 position ID | 仅读取目录身份；不代表账户获交易授权 |
 | `GET /combo-rfqs/{rfq_id}` | 本地 RFQ UUID | `200`：`ComboRFQ` | 返回本地状态和已核实的外部 RFQ ID；外部结果未知不能当作无报价或失败 |

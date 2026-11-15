@@ -5,7 +5,8 @@ import re
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-from .models import TradeIntent, MarketLink, MarketOutcome, PolyMarket, ComboRFQ
+from .close_policy import assert_close_allowed
+from .models import TradeIntent, MarketLink, MarketOutcome, PolyMarket, ComboRFQ, Game
 from .trading import wallet_for
 from .trading_gateway import Gateway, TradingError
 
@@ -99,6 +100,7 @@ def inspect_single_position(engine, settings, ident, gateway_cls=Gateway):
             raise TradingError('position_mismatch','订单与持仓市场身份不一致')
         if outcome.asset_kind not in ('position','ctf_token'):
             raise TradingError('position_mismatch','持仓资产类型无法确认')
+        assert_close_allowed(db,db.get(Game,intent.game_id),market)
         asset_id=outcome.asset_id
         with gateway_cls(settings,wallet) as gateway:
             try:

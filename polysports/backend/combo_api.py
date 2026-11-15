@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy.orm import Session
 
 from . import auth
+from .close_policy import MARKET_CLOSED_REASON, RESULT_CONFIRMED_REASON
 from .combo_catalog import fetch_positions
 from .combo_resolution import summarize_combo
 from .order_resolution import judge_score_detail
@@ -85,16 +86,21 @@ def combo_data(db,row):
         won,basis=judge_score_detail(**context) if verified else (None,'外部赛果尚未绑定核实或比分未确认')
         details.append({'game_id':str(leg.game_id),'sport':game.sport,'market_link_id':str(leg.market_link_id),'outcome_id':str(leg.outcome_id),'position_id':leg.position_id,'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label,'watch_state':watch.state if watch else None,'binding_state':binding.state if binding else None,'home_score':game.home_score,'away_score':game.away_score,'next_poll_at':job.due_at.isoformat() if job and job.status=='pending' else None,
                         'game_finished':game.status=='finished','score_verified':verified,
+                        'market_closed':market.accepting_orders is False,
                         'result_won':won,'result_basis':basis})
     score_summary=summarize_combo([{'result_won':x['result_won'],'market_won':None} for x in details],direction=row.direction)
+    # 串关任一腿赛果已确认即胜负已定；任一腿停单也说明组合已进入结算，均不允许再平仓。
+    close_reason=(RESULT_CONFIRMED_REASON if any(x['score_verified'] for x in details)
+                  else MARKET_CLOSED_REASON if any(x['market_closed'] for x in details) else None)
     return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'tx_hash':row.tx_hash,'parent_combo_id':str(row.parent_combo_id) if row.parent_combo_id else None,'combo_position_id':row.combo_position_id,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details,
             'by_score':score_summary['by_score'],'judged_legs':score_summary['judged_legs'],
             'leg_count':score_summary['leg_count'],'score_reason':score_summary['reason'],
+            'close_blocked':close_reason is not None,'close_block_reason':close_reason,
             'quote':{'id':str(row.quote_id),'expires_at':row.quote_expires_at.isoformat(),'price':str(row.quote_price),'total_required':str(row.quote_required),'net_receive':str(row.quote_receive) if row.quote_receive is not None else None} if row.quote_id and row.quote_expires_at else None}
 
 
 def failure(request,exc):
-    status=404 if exc.code=='not_found' else 409 if exc.code in ('mapping_invalid','idempotency_conflict','duplicate_unresolved','quote_expired','quote_unavailable','combo_quote_expired') else 422 if exc.code in ('invalid_amount','combo_legs_invalid') else 403 if exc.code=='geoblock_blocked' else 503
+    status=404 if exc.code=='not_found' else 409 if exc.code in ('mapping_invalid','idempotency_conflict','duplicate_unresolved','quote_expired','quote_unavailable','combo_quote_expired','position_settled') else 422 if exc.code in ('invalid_amount','combo_legs_invalid') else 403 if exc.code=='geoblock_blocked' else 503
     return auth.error(request,status,exc.code.upper(),exc.message)
 
 

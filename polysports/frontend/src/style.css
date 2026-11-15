@@ -30,3 +30,23 @@
 .game-filled{display:inline-block;margin:8px 0;padding:4px 9px;border-radius:6px;background:#e4f5eb;color:#14764c;font-size:12px;font-weight:700}
 
 .outcome-list .outcome-choice{display:inline-flex;align-items:stretch;padding:0;background:transparent;gap:3px}.combo-add{border:1px solid #bcdac7;background:white;color:#17694f;border-radius:8px;padding:6px;font-size:11px;font-weight:700;cursor:pointer}.combo-add:disabled{opacity:.55;cursor:not-allowed}
+
+/* 交易记录：结论前置、证据折叠，常态一张卡片只占几行 */
+.scope-note{margin:4px 0 14px;font-size:12px;line-height:1.6;color:#86968d}
+.summary-line{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px}
+.id-compact{color:#8b9b91;font-size:12px}
+.id-toggle{margin-left:6px;font-size:12px;font-weight:600}
+.order-actions{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:12px 0 4px}
+.order-actions .text-button{font-size:13px}
+.order-actions .text-button:disabled{color:#9aa8a0;cursor:not-allowed;text-decoration:none}
+.resolution-block{margin-top:12px;padding:12px 14px;border-radius:9px;background:#f6f9f7;border:1px solid #e6eee8}
+.check-line{margin:0 0 8px;font-size:14px;font-weight:700}
+.check-line.tone-ok{color:#17694f}.check-line.tone-warn{color:#a64134}.check-line.tone-info{color:#8a6d1f}.check-line.tone-muted{color:#75857d}
+.detail-box,.more-actions{font-size:13px}
+.detail-box>summary,.more-actions>summary{cursor:pointer;list-style:none;color:#397b62;font-weight:700;font-size:13px}
+.detail-box>summary::-webkit-details-marker,.more-actions>summary::-webkit-details-marker{display:none}
+.detail-box>summary:after,.more-actions>summary:after{content:' ▾'}
+.detail-box[open]>summary:after,.more-actions[open]>summary:after{content:' ▴'}
+.detail-box p{font-size:12px;line-height:1.6;margin:6px 0;color:#53675c}
+.more-actions{display:inline-block}
+.more-actions>div{display:grid;gap:8px;padding:10px 0}

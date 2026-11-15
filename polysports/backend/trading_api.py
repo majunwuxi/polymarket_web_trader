@@ -34,7 +34,7 @@ def ok(request,data):return {'data':data,'request_id':request.state.request_id}
 
 def error(request,exc):
     code=exc.code
-    status=403 if code=='geoblock_blocked' else 409 if code in ('preview_stale','mapping_invalid','market_unavailable','idempotency_conflict','duplicate_unresolved') else 422 if code in ('invalid_amount','price_tick_invalid','size_invalid') else 503
+    status=403 if code=='geoblock_blocked' else 409 if code in ('preview_stale','mapping_invalid','market_unavailable','idempotency_conflict','duplicate_unresolved','position_settled') else 422 if code in ('invalid_amount','price_tick_invalid','size_invalid') else 503
     return auth.error(request,status,code.upper(),exc.message,delay=exc.retry_after)
 
 

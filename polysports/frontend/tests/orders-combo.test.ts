@@ -157,3 +157,49 @@ describe('组合交易记录的胜负核对（模拟接口）',()=>{
     view.unmount()
   })
 })
+
+const longId='0x1ba2d214a058182d02120801075244461aaf2784ea80901668aebbe12fc2a47c'
+const compactOrder={...order,market_question:'Mavericks vs. Cavaliers: O/U 227.5',outcome_label:'Under',external_order_id:longId}
+function compactFetch(rows:unknown[]){return vi.fn((url:string)=>{
+  if(url.includes('/resolution'))return Promise.resolve(json({data:{state:'resolved',score_verified:true,game_finished:true,game_status:'finished',home_score:127,away_score:117,outcome_won:false,matched_size:'3',side:'BUY',result_judgment:{state:'judged',outcome_won:false,payout_per_share:'0',basis:'全场总分 127+117=244 高于 盘口 227.5，Under未获胜'},settlement}}))
+  if(url.includes('/combo-rfqs'))return Promise.resolve(json({data:{items:[],next_cursor:null}}))
+  return Promise.resolve(json({data:{items:rows,next_cursor:null}}))
+})}
+
+describe('交易记录精简显示与平仓准入（模拟接口）',()=>{
+  it('摘要去掉重复队名与完整订单编号，不重复显示份额',async()=>{
+    vi.stubGlobal('fetch',compactFetch([compactOrder]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const card=view.get('.order-card')
+    expect(card.text()).toContain('O/U 227.5 · Under')
+    expect(card.text()).not.toContain('Mavericks vs. Cavaliers:')
+    expect(card.text()).toContain('0x1ba2d214…c2a47c')
+    expect(card.text()).not.toContain('交易所订单 ID：')
+    expect(card.text()).toContain('限价 0.4 · 3 份')
+    expect(card.text()).not.toContain('已成交 3')
+    expect(card.find('details.detail-box').exists()).toBe(false)
+    view.unmount()
+  })
+  it('市场已最终结算后，核对结论只占一行且立即平仓自动失效',async()=>{
+    vi.stubGlobal('fetch',compactFetch([compactOrder]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    expect(view.findAll('a').some(a=>a.text()==='立即平仓')).toBe(true)
+    await view.findAll('button').find(b=>b.text()==='核对赛果和市场结算')!.trigger('click');await flushPromises()
+    expect(view.text()).toContain('✓ 两个结果一致 · 选项未获胜 · 结算 3 pUSD')
+    expect(view.find('details.detail-box').attributes('open')).toBeUndefined()
+    expect(view.text()).toContain('判断依据：全场总分 127+117=244')
+    const disabled=view.findAll('button').find(b=>b.text()==='已结算 · 不可平仓')!
+    expect(disabled.attributes('disabled')).toBeDefined()
+    expect(disabled.attributes('title')).toContain('不能平仓')
+    expect(view.findAll('a').some(a=>a.text()==='立即平仓')).toBe(false)
+    view.unmount()
+  })
+  it('列表返回赛果已确认时，无需核对即禁用平仓并在标题显示结论',async()=>{
+    vi.stubGlobal('fetch',compactFetch([{...compactOrder,close_blocked:true,close_block_reason:'比赛结果已确认，持仓已进入结算，不能平仓',result_won:false}]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    expect(view.text()).toContain('买入 · 全部成交 · 选项未获胜')
+    expect(view.text()).toContain('已结算 · 不可平仓')
+    expect(view.findAll('a').some(a=>a.text()==='立即平仓')).toBe(false)
+    view.unmount()
+  })
+})

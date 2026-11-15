@@ -7,6 +7,7 @@ from polymarket import RequestRejectedError
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from .close_policy import assert_close_allowed
 from .combo_catalog import fetch_positions
 from .combo_gateway import ComboGateway
 from .combo_quote import verify_quote, combo_position_id
@@ -57,6 +58,10 @@ def verify_combo_close_origin(db,parent_id,wallet_id,legs,amount,positions=None,
     old=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==original.id)))
     if sorted((str(x.market_link_id),str(x.outcome_id)) for x in old)!=sorted(legs):
         raise TradingError('combo_close_invalid','组合平仓选项与原组合不一致')
+    # 任一腿赛果已确认即组合胜负已定；界面禁用之外再做一次硬校验。
+    for leg in old:
+        link=db.get(MarketLink,leg.market_link_id)
+        assert_close_allowed(db,db.get(Game,link.game_id) if link else None)
     active_query=select(ComboRFQ.id).where(ComboRFQ.parent_combo_id==original.id,ComboRFQ.state.in_(['requesting','quoted','accepting','executing','unknown']))
     if exclude_id is not None:active_query=active_query.where(ComboRFQ.id!=exclude_id)
     if db.scalar(active_query.limit(1)):raise TradingError('duplicate_unresolved','原组合已有未解决的平仓请求')

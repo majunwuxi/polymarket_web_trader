@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from . import auth
 from .combo_catalog import fetch_positions
+from .combo_resolution import summarize_combo
+from .order_resolution import judge_score_detail
 from .markets import valid_link
 from .models import MarketLink, MarketOutcome, PolyMarket
 from .trading_gateway import TradingError
@@ -65,6 +67,7 @@ class AcceptBody(BaseModel):
 
 
 def combo_data(db,row):
+    """组合记录自带逐腿赛果判断（纯本地只读）；各腿市场终态另由 /resolution 查询。"""
     legs=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==row.id)))
     details=[]
     for leg in legs:
@@ -72,8 +75,22 @@ def combo_data(db,row):
         watch=db.scalar(select(WatchedGame).where(WatchedGame.game_id==game.id))
         binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id))
         job=db.scalar(select(Job).where(Job.watched_game_id==watch.id,Job.kind=='result_poll')) if watch else None
-        details.append({'game_id':str(leg.game_id),'sport':game.sport,'market_link_id':str(leg.market_link_id),'outcome_id':str(leg.outcome_id),'position_id':leg.position_id,'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label,'watch_state':watch.state if watch else None,'binding_state':binding.state if binding else None,'home_score':game.home_score,'away_score':game.away_score,'next_poll_at':job.due_at.isoformat() if job and job.status=='pending' else None})
-    return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'tx_hash':row.tx_hash,'parent_combo_id':str(row.parent_combo_id) if row.parent_combo_id else None,'combo_position_id':row.combo_position_id,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details, 'quote':{'id':str(row.quote_id),'expires_at':row.quote_expires_at.isoformat(),'price':str(row.quote_price),'total_required':str(row.quote_required),'net_receive':str(row.quote_receive) if row.quote_receive is not None else None} if row.quote_id and row.quote_expires_at else None}
+        verified=bool(binding and binding.state=='bound' and game.status=='finished'
+                      and game.home_score is not None and game.away_score is not None)
+        # 与单场及 /resolution 完全共用同一套严格规则，不从比分猜测无法识别的命题。
+        context={'sport':game.sport,'question':market.question,'outcome_label':outcome.label,
+                 'home':getattr(home,'source_name',None),'away':getattr(away,'source_name',None),
+                 'home_score':game.home_score if verified else None,'away_score':game.away_score if verified else None,
+                 'provider_status':game.provider_status}
+        won,basis=judge_score_detail(**context) if verified else (None,'外部赛果尚未绑定核实或比分未确认')
+        details.append({'game_id':str(leg.game_id),'sport':game.sport,'market_link_id':str(leg.market_link_id),'outcome_id':str(leg.outcome_id),'position_id':leg.position_id,'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label,'watch_state':watch.state if watch else None,'binding_state':binding.state if binding else None,'home_score':game.home_score,'away_score':game.away_score,'next_poll_at':job.due_at.isoformat() if job and job.status=='pending' else None,
+                        'game_finished':game.status=='finished','score_verified':verified,
+                        'result_won':won,'result_basis':basis})
+    score_summary=summarize_combo([{'result_won':x['result_won'],'market_won':None} for x in details],direction=row.direction)
+    return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'tx_hash':row.tx_hash,'parent_combo_id':str(row.parent_combo_id) if row.parent_combo_id else None,'combo_position_id':row.combo_position_id,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details,
+            'by_score':score_summary['by_score'],'judged_legs':score_summary['judged_legs'],
+            'leg_count':score_summary['leg_count'],'score_reason':score_summary['reason'],
+            'quote':{'id':str(row.quote_id),'expires_at':row.quote_expires_at.isoformat(),'price':str(row.quote_price),'total_required':str(row.quote_required),'net_receive':str(row.quote_receive) if row.quote_receive is not None else None} if row.quote_id and row.quote_expires_at else None}
 
 
 def failure(request,exc):
@@ -161,3 +178,74 @@ def combo_events(request:Request,ident:uuid.UUID,limit:int=50,cursor:str | None=
         rows=list(db.scalars(query.order_by(ComboEvent.created_at,ComboEvent.id).limit(limit+1)));items=rows[:limit]
         next_cursor=cursor_encode([items[-1].created_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None
         return {'data':{'items':[{'state':x.state,'code':x.code,'created_at':x.created_at.isoformat()} for x in items],'next_cursor':next_cursor},'request_id':request.state.request_id}
+
+
+# 单次核对最多串行查询 20 条腿的市场终态，避免一条组合拖住整个只读请求。
+MAX_RESOLUTION_LEGS = 20
+
+
+@router.get('/combo-rfqs/{ident}/resolution')
+def combo_resolution(request:Request,ident:uuid.UUID):
+    """逐腿并列返回赛果判断与各腿底层市场的 Polymarket 终态结算，按串关全中口径汇总。"""
+    import httpx
+    from .combo_resolution import leg_agreement, summarize_combo
+    from .order_resolution import judge_score_detail, read_resolution
+    from .sports_sources import SourceError
+    with Session(request.app.state.engine) as db:
+        row=db.get(ComboRFQ,ident)
+        if not row:return auth.error(request,404,'NOT_FOUND','组合询价不存在')
+        meta={'id':str(row.id),'direction':row.direction,'state':row.state}
+        legs=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==ident).order_by(ComboLeg.id)))
+        items=[]
+        for number,leg in enumerate(legs,1):
+            game=db.get(Game,leg.game_id);link=db.get(MarketLink,leg.market_link_id)
+            market=db.get(PolyMarket,link.market_id) if link else None
+            outcome=db.get(MarketOutcome,leg.outcome_id)
+            home=db.get(Team,game.home_team_id);away=db.get(Team,game.away_team_id)
+            binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id))
+            verified=bool(binding and binding.state=='bound' and game.status=='finished'
+                          and game.home_score is not None and game.away_score is not None)
+            context={'sport':game.sport,'question':market.question if market else None,
+                     'outcome_label':outcome.label if outcome else None,
+                     'home':getattr(home,'source_name',None),'away':getattr(away,'source_name',None),
+                     'home_score':game.home_score if verified else None,'away_score':game.away_score if verified else None,
+                     'provider_status':game.provider_status}
+            # 与单场共用同一套严格规则：大小分/让分/胜负可判断，其余不猜。
+            won,basis=judge_score_detail(**context) if verified else (None,'外部赛果尚未绑定核实或比分未确认')
+            items.append({'leg_no':number,'game_id':str(game.id),'sport':game.sport,
+                'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,
+                'starts_at':game.starts_at.isoformat(),'market_question':context['question'],
+                'outcome_label':context['outcome_label'],'home_score':context['home_score'],
+                'away_score':context['away_score'],'game_finished':game.status=='finished',
+                'game_status':game.status,'score_verified':verified,
+                'binding_state':binding.state if binding else None,
+                'result_judgment':{'state':'judged' if won is not None else ('unsupported' if verified else 'unavailable'),
+                                   'outcome_won':won,'basis':basis},
+                'condition_id':market.condition_id if market else None,
+                'outcome_index':outcome.outcome_index if outcome else None})
+    with httpx.Client() as client:
+        for position,item in enumerate(items):
+            condition,index=item['condition_id'],item['outcome_index']
+            detail={'state':'pending','outcome_won':None,'market_status':None,
+                    'market_status_text':None,'resolved_at':None,'market_error':None}
+            if position>=MAX_RESOLUTION_LEGS:
+                detail.update(state='unavailable',market_error='超过单次核对腿数上限，未查询该腿市场终态')
+            elif not condition or index not in (0,1):
+                detail.update(state='unavailable',market_error='腿的市场条件或选项编号缺失')
+            else:
+                try:
+                    detail=read_resolution(client,condition,index)
+                    detail.setdefault('market_error',None)
+                    for key in ('outcome_won','market_status','market_status_text','resolved_at'):
+                        detail.setdefault(key,None)
+                except SourceError as exc:
+                    detail={'state':'unavailable','outcome_won':None,'market_status':None,
+                            'market_status_text':None,'resolved_at':None,'market_error':str(exc)}
+            item['market']=detail
+            item['result_won']=item['result_judgment']['outcome_won']
+            item['market_won']=detail['outcome_won'] if detail['state']=='resolved' else None
+            item['leg_agreement']=leg_agreement(item)
+    summary=summarize_combo(items,direction=meta['direction'])
+    if len(items)>MAX_RESOLUTION_LEGS:
+        summary['notice']+=f' 本次仅核对前 {MAX_RESOLUTION_LEGS} 条腿，其余腿未查询市场终态。'
+    return {'data':{**meta,'legs':items,**summary},'request_id':request.state.request_id}

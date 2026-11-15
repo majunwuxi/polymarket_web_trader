@@ -174,12 +174,15 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
 | `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 首次 `201`：已得到报价或明确无报价的 `ComboRFQ` ；`202`：仍在请求或结果未知；同键重复且结果明确为 `200` | 创建 Combo 草稿与 RFQ 记录，不触发接受或资金成交；至少两腿、不能重复 outcome；BUY 开仓要求所有映射已确认且真实 Combo 能力已核实，带 `parent_combo_id` 的 SELL 平仓不要求映射确认，改为核验原组合成交记录、原组合腿与官方 Combo 目录持仓标识；`quantity` 最多六位小数 |
-| `GET /combo-rfqs` | `limit`, `cursor` | `200` 分页组合记录 | 按创建时间及 ID 倒序 |
+| `GET /combo-rfqs` | `limit`, `cursor`, `state`, `game_id` | `200` 分页组合记录 | 按创建时间及 ID 倒序；每腿附带纯本地、只读的 `result_won`/`result_basis`/`score_verified`/`game_finished`，组合附带 `by_score`/`judged_legs`/`leg_count`/`score_reason`；列表不查询 Polymarket 上游，市场终态需另调 `/resolution` |
 | `GET /combo-rfqs/by-key/{key}` | 本地幂等键与 `wallet_id` | `200` 现有组合请求 | 用于查询不确定的本地请求，404 不证明外部未收到 |
 | `GET /combo-legs/{link_id}/{outcome_id}` | 已确认映射和选项 ID | `200` 目录 position ID | 仅读取目录身份；不代表账户获交易授权 |
 | `GET /combo-rfqs/{rfq_id}` | 本地 RFQ UUID | `200`：`ComboRFQ` | 返回本地状态和已核实的外部 RFQ ID；外部结果未知不能当作无报价或失败 |
 | `POST /combo-rfqs/{rfq_id}/accept` | `{ "quote_id":"uuid" }`；会话 + CSRF | `200`：明确拒绝或已确认执行的 RFQ；`202`：执行中或未知的 RFQ | 此请求表示用户确认报价及全部腿。锁定 RFQ 与意图，核对有效期、报价、账户和市场；平仓不要求赛事映射确认，但仍核验组合腿市场身份、原组合持仓与报价资产；先原子持久化确认、所有赛事关注及接受开始状态，再调用 SDK。重复请求只返回已存在状态，不再次接受 |
 | `GET /combo-rfqs/{rfq_id}/events` | `limit`, `cursor` | `200` 分页脱敏 RFQ 状态事件 | 按 `created_at,id` 排序；`executing` 不等于成交 |
+| `GET /combo-rfqs/{rfq_id}/resolution` | 本地 RFQ UUID | `200`：`{ "id", "direction", "state", "legs", "leg_count", "judged_legs", "resolved_legs", "by_score", "by_market", "agreement", "reason", "notice", "applicable" }` | 只读核对组合胜负：逐腿返回赛事终态（`score_verified`/`game_finished`/`home_score`/`away_score`）、按赛果判断（`result_judgment`，含 `basis`）、该腿底层市场 condition 的 Polymarket 终态结算（`market`，含 `market_status`/`market_status_text`/`resolved_at`/`market_error`）及单腿 `leg_agreement`（`consistent`/`conflict`/`partial`/`unavailable`）；组合层按串关全中口径汇总 `by_score` 与 `by_market`（bool 或 `null`，`null` 表示不能确认而非输），`agreement` 为 `consistent`/`conflict`/`market_only`/`result_only`/`unavailable`/`not_applicable`（SELL）。任一腿无法判断或尚未终态则不确认整单结论；单次最多串行查询 20 条腿的市场终态。系统未保存组合成交明细，**不计算组合结算金额**；实际赔付以官方组合仓位终态为准 |
+
+组合胜负核对是只读操作，不改变 RFQ 状态、不触发任何资金操作；某条腿的 `market_error` 只影响该腿，不会让其他腿的结果失效。组合仓位没有单一二元 condition，结果二由各腿底层市场的终态结算汇总，不得与单场 `GET /trade-intents/{id}/resolution` 的金额口径混用；SELL 组合平仓按卖出报价成交，`applicable:false`、`agreement:"not_applicable"`。
 
 `POST /combo-rfqs` 的幂等键映射 `combo_rfqs.client_request_id`，指纹覆盖钱包、方向、金额/份额和规范化腿。相同键/相同参数返回原本地 RFQ；参数不同返回 `409 IDEMPOTENCY_CONFLICT`。若请求结果未知，只能查询/对账原 RFQ；不能通过更换幂等键绕过未知状态。服务端必须使用 `(wallet_id, fingerprint)` 的未解决状态唯一约束阻止相同参数换键并发创建额外 RFQ；冲突响应带可查询的原本地 RFQ ID，不得暴露秘密。该约束也适用于单场未知或正在提交的相同业务参数。
 

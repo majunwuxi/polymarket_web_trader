@@ -164,7 +164,7 @@ sudo journalctl -u polysports-api.service -u polysports-worker.service --since '
 sudo systemctl status polysports-api.service polysports-worker.service polysports-backup.timer --no-pager
 ```
 
-升级前确认备份与恢复演练可用，记录当前 Git 提交并停止 API、worker。然后在 `/opt/polysports-src` 使用 `git pull --ff-only` 获取已审核版本，在项目目录重新运行 `uv sync --locked --no-dev`，在 `frontend/` 重新运行 `npm ci --include=dev` 和 `npm run build`。重新启动 `polysports-migrate.service` 后，再启动 API 和 worker，检查健康状态、日志及未到期任务。迁移可能不可逆；不要把 `git checkout` 当作数据库回滚，必要时恢复到新的空库并按上节核对后切换。
+升级前确认备份与恢复演练可用，记录当前 Git 提交并停止 API、worker。然后在 `/opt/polysports-src` 使用 `git pull --ff-only` 获取已审核版本，在项目目录重新运行 `uv sync --locked --no-dev`，在 `frontend/` 重新运行 `npm ci --include=dev` 和 `npm run build`。用 `systemctl restart polysports-migrate.service`（**不是 `start`**）重新执行迁移后，再启动 API 和 worker，检查健康状态、日志及未到期任务。迁移可能不可逆；不要把 `git checkout` 当作数据库回滚，必要时恢复到新的空库并按上节核对后切换。
 
 **关键：`frontend/dist/` 被 `.gitignore` 排除，`git pull` 只更新源码，不会更新浏览器实际加载的静态文件。** 每次拉取后都必须在 `frontend/` 重新执行 `npm run build`；否则页面仍是旧版本，看起来像「更新没生效」。`npm run build` 由 `vue-tsc --noEmit && vite build` 组成，两者以及 TypeScript 都在 `devDependencies` 中，所以 `npm ci --include=dev` 不能省略；Node 24 安装在 `/opt/polysports-node/bin`，新 SSH 会话必须先设置 PATH，否则 `npm: command not found` 且旧 `dist` 会被原样保留。完整升级命令：
 
@@ -191,14 +191,17 @@ sudo grep -o 'assets/index-[A-Za-z0-9_-]*\.js' /opt/polysports-src/polysports/fr
 sudo grep -rl '按赛果判断' /opt/polysports-src/polysports/frontend/dist/assets/*.js
 
 cd /opt/polysports-src
-sudo systemctl start polysports-migrate.service  # 含新增表迁移时必须成功，且必须先于 API 启动
-sudo systemctl status polysports-migrate.service --no-pager
+sudo systemctl restart polysports-migrate.service  # 必须用 restart；start 对已 active(exited) 的 oneshot 服务是 no-op
+sudo systemctl status polysports-migrate.service --no-pager   # Active 时间必须是本次，日志含 Running upgrade ... -> 目标 revision
 sudo -u postgres psql -d polysports -c 'SELECT version_num FROM alembic_version;'   # 应与仓库迁移 head 一致
-sudo systemctl start polysports-api.service polysports-worker.service
+sudo -u postgres psql -d polysports -c "SELECT to_regclass('public.combo_fills');"  # 含新增表时必须非 NULL
+sudo systemctl restart polysports-api.service polysports-worker.service
 curl --fail http://127.0.0.1:8000/api/v1/health/live
 sudo journalctl -u polysports-api.service -u polysports-worker.service --since '10 min ago' --no-pager
 ```
 
 后端 `.py` 改动必须重启 `polysports-api.service` 与 `polysports-worker.service` 才会生效；仅 `git pull` 不会重载已加载的模块。若该版本包含新增表（例如 `combo_fills`），迁移未成功就启动 API，列表接口会直接报 `relation "combo_fills" does not exist`；此时先修复迁移，不要靠重启 API 重试。Nginx 的 `index.html` 应设为不缓存（见 `deploy/nginx/polysports.conf` 的 `location = /index.html`）；更新该配置后需重新安装并执行 `sudo nginx -t && sudo systemctl reload nginx`。浏览器仍显示旧界面时，先用无痕窗口或强制刷新（Ctrl+Shift+R）确认；带 hash 的 JS 可长期缓存，入口 `index.html` 不可缓存。
+
+**升级时 `systemctl start` 不会重跑迁移**：`polysports-migrate.service` 为 `Type=oneshot` + `RemainAfterExit=yes`，首次成功后长期保持 `active (exited)`；此时 `systemctl start` 被 systemd 视为已启动而直接返回，`ExecStart` 不会再次执行。典型症状是 `systemctl status` 的 Active 时间仍是几小时前、日志停在上一版 `Running upgrade ...`、`SELECT version_num FROM alembic_version` 不前进，随后 `SELECT count(*) FROM combo_fills` 报 `relation "combo_fills" does not exist`，API 的列表接口 500。含新迁移的升级必须用 `systemctl restart polysports-migrate.service`（或先 `stop` 再 `start`），并逐项核对：status 的 Active 时间是本次、日志出现 `Running upgrade ... -> <目标 revision>`、数据库 `version_num` 等于仓库 `alembic heads`、新表存在。首次安装时服务处于 inactive，`start` 才有效（见第 3 节）。未确认迁移成功前不要启动 API，也不要靠反复重启 API 来绕过缺表错误。
 
 参考：[systemd 凭据](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)、[Nginx 反向代理](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)、[PostgreSQL pg_restore](https://www.postgresql.org/docs/current/app-pgrestore.html)、[Certbot Webroot](https://eff-certbot.readthedocs.io/en/stable/using.html#webroot)。

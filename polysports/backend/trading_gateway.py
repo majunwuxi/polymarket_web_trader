@@ -118,28 +118,30 @@ class Gateway:
         if self.client: self.client.close()
 
     def inspect(self, market, outcome, side, price, size, event):
-        try:
-            response=httpx.get('https://gamma-api.polymarket.com/events/'+event.gamma_event_id,timeout=10,follow_redirects=False)
-            if response.status_code!=200: raise TradingError('market_unavailable','无法实时核对市场')
-            raw=response.json()
-            if not isinstance(raw,dict) or raw.get('id')!=event.gamma_event_id: raise TradingError('market_unavailable','市场来源身份不一致')
-            expected_game_id=getattr(event,'_expected_source_game_id',None)
-            if expected_game_id is not None and str(raw.get('gameId'))!=expected_game_id:
-                raise TradingError('market_unavailable','市场比赛编号已变更')
-            tags={x.get('slug') for x in raw.get('tags',[]) if isinstance(x,dict)}
-            if ('nba' if event.sport=='nba' else 'soccer') not in tags: raise TradingError('market_unavailable','市场运动类型不一致')
-            teams=raw.get('teams');teams=teams if isinstance(teams,list) else []
-            home=next((x.get('name') for x in teams if isinstance(x,dict) and x.get('ordering')=='home'),None)
-            away=next((x.get('name') for x in teams if isinstance(x,dict) and x.get('ordering')=='away'),None)
-            if home!=event.home_name or away!=event.away_name or timestamp(raw.get('startTime'))!=event.starts_at: raise TradingError('market_unavailable','市场赛事信息已变更')
-            rows=raw.get('markets'); rows=rows if isinstance(rows,list) else []
-            chosen=next((x for x in rows if isinstance(x,dict) and x.get('id')==market.gamma_market_id),None)
-            if not chosen: raise TradingError('market_unavailable','市场已不可用')
-            live=parse_market(chosen)
-            if live.fingerprint!=market.fingerprint or live.accepting_orders is not True or live.condition_id!=market.condition_id or live.version!=market.protocol_version or not any(x.index==outcome.outcome_index and x.asset_id==outcome.asset_id and x.kind==outcome.asset_kind for x in live.outcomes):
-                raise TradingError('market_unavailable','市场或资产信息已变更')
-        except TradingError: raise
-        except Exception as exc: raise TradingError('market_unavailable','无法实时核对市场') from exc
+        # event=None 表示平仓：赛事映射核对只用于开仓，平仓靠真实盘口与链上余额核实持仓身份。
+        if event is not None:
+            try:
+                response=httpx.get('https://gamma-api.polymarket.com/events/'+event.gamma_event_id,timeout=10,follow_redirects=False)
+                if response.status_code!=200: raise TradingError('market_unavailable','无法实时核对市场')
+                raw=response.json()
+                if not isinstance(raw,dict) or raw.get('id')!=event.gamma_event_id: raise TradingError('market_unavailable','市场来源身份不一致')
+                expected_game_id=getattr(event,'_expected_source_game_id',None)
+                if expected_game_id is not None and str(raw.get('gameId'))!=expected_game_id:
+                    raise TradingError('market_unavailable','市场比赛编号已变更')
+                tags={x.get('slug') for x in raw.get('tags',[]) if isinstance(x,dict)}
+                if ('nba' if event.sport=='nba' else 'soccer') not in tags: raise TradingError('market_unavailable','市场运动类型不一致')
+                teams=raw.get('teams');teams=teams if isinstance(teams,list) else []
+                home=next((x.get('name') for x in teams if isinstance(x,dict) and x.get('ordering')=='home'),None)
+                away=next((x.get('name') for x in teams if isinstance(x,dict) and x.get('ordering')=='away'),None)
+                if home!=event.home_name or away!=event.away_name or timestamp(raw.get('startTime'))!=event.starts_at: raise TradingError('market_unavailable','市场赛事信息已变更')
+                rows=raw.get('markets'); rows=rows if isinstance(rows,list) else []
+                chosen=next((x for x in rows if isinstance(x,dict) and x.get('id')==market.gamma_market_id),None)
+                if not chosen: raise TradingError('market_unavailable','市场已不可用')
+                live=parse_market(chosen)
+                if live.fingerprint!=market.fingerprint or live.accepting_orders is not True or live.condition_id!=market.condition_id or live.version!=market.protocol_version or not any(x.index==outcome.outcome_index and x.asset_id==outcome.asset_id and x.kind==outcome.asset_kind for x in live.outcomes):
+                    raise TradingError('market_unavailable','市场或资产信息已变更')
+            except TradingError: raise
+            except Exception as exc: raise TradingError('market_unavailable','无法实时核对市场') from exc
         if (outcome.asset_kind=='position') != bool(is_v2_position_id(outcome.asset_id)):
             raise TradingError('asset_version_mismatch','资产与官方 SDK 识别的协议不一致')
         try:

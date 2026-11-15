@@ -1,5 +1,4 @@
 from datetime import timedelta
-import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .combo_gateway import ComboGateway

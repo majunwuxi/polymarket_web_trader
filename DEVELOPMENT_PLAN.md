@@ -1,6 +1,6 @@
 # PolySports 开发计划与验收
 
-本文保留第五阶段制定的计划，以 [ARCHITECTURE.md](ARCHITECTURE.md)、[DATABASE.md](DATABASE.md)、[API.md](API.md)、[UI.md](UI.md) 和 OpenSpec `build-polysports` 为依据。计划中的 6A–6H 与部署材料已实现；实际测试结果及尚待真实环境核验的项目见 [ACCEPTANCE.md](ACCEPTANCE.md)。下文标注“计划”或“尚未创建”的描述保留制定计划时的历史语境。
+本文保留第五阶段制定的计划，以 [ARCHITECTURE.md](ARCHITECTURE.md)、[DATABASE.md](DATABASE.md)、[API.md](API.md)、[UI.md](UI.md) 和 OpenSpec `build-polysports` 为依据。计划中的 6A–6H 与部署材料已实现；实际测试结果及尚待真实环境核验的项目见 [ACCEPTANCE.md](ACCEPTANCE.md)。下文标注“计划”或“尚未创建”的描述保留制定计划时的历史语境，不代表当前代码状态。**注意：计划中把 API-Football / BallDontLie 作为赛程同步来源，实际实现已改为由 Polymarket 市场发现同步足球与 NBA 赛程，这两家来源现在只用于订单成交后的赛果绑定与比分核验**，以 [polysports/README.md](polysports/README.md) 为准。
 
 ## 1. 工作方式与阶段门
 
@@ -15,7 +15,7 @@
 计划在仓库内新增独立的 `polysports/`：
 
 ```text
-polysports/                         # 以下均为计划结构，尚未创建
+polysports/                         # 以下为当前实际目录结构（制定计划时为待创建）
   backend/                          # FastAPI、领域服务、适配器和配置
   frontend/                         # Vue 3 / TypeScript
   migrations/                       # Alembic 迁移及配置

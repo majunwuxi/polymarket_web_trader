@@ -1,12 +1,12 @@
 # PolySports 系统架构
 
-本文是第一阶段的设计文档，描述拟实现的系统，不表示功能已经开发或通过真实资金验证。详细数据表、内部接口、页面和分阶段验收分别在后续 `DATABASE.md`、`API.md`、`UI.md` 和 `DEVELOPMENT_PLAN.md` 中定义。
+本文是 PolySports 的系统设计说明。仓库中的 `polysports/` 已按本设计实现，后端、前端、迁移、部署脚本与自动化测试均已落地，测试记录见 [ACCEPTANCE.md](ACCEPTANCE.md)；自动化测试使用明确标识的模拟数据，不代表已通过真实资金或目标 VPS 验证。文中关于赛事数据源的部分保留了早期设计设想，实际实现以 [polysports/README.md](polysports/README.md) 和代码为准。详细数据表、内部接口、页面和阶段验收分别在 `DATABASE.md`、`API.md`、`UI.md` 和 `DEVELOPMENT_PLAN.md` 中定义，具体字段与迁移版本以 `polysports/migrations/versions/` 为准。
 
 ## 1. 目标与现有项目关系
 
 PolySports 是本仓库内独立开发、独立部署的个人足球与 NBA 赛事及 Polymarket 交易系统。建议源代码置于 `polysports/`，使用独立的 Python 环境、Vue 构建、PostgreSQL 数据库、systemd 服务和配置；本文及后续交付文档位于仓库根目录。现有 Flask Dashboard、其数据和启动方式保持独立，不作为 PolySports 的运行依赖。
 
-现有 `polymarket_autotrader/execution.py` 已实现部分单场 CLOB 规则校验、钱包配置和错误处理，可作为设计与测试参考；在复用代码前须检查其依赖、线程安全、异常和协议兼容性，不能将已有模拟测试视为真实资金验证。现有代码不具备本文所需的 Combo RFQ 完整流程。
+现有 `polymarket_autotrader/execution.py` 已实现部分单场 CLOB 规则校验、钱包配置和错误处理，可作为设计与测试参考；在复用代码前须检查其依赖、线程安全、异常和协议兼容性，不能将已有模拟测试视为真实资金验证。本文所需的 Combo RFQ 完整流程现已在 `polysports/backend/combo_*.py` 实现（默认由组合执行开关关闭），单场与组合的自动化测试均使用明确标识的模拟上游；真实资金链路仍须在目标环境单独验证。
 
 ## 2. 系统结构与技术选型
 
@@ -17,8 +17,8 @@ flowchart LR
     N -->|内部 HTTP| A[FastAPI 服务]
     A --> D[(PostgreSQL)]
     W[独立调度与查询工作进程] --> D
-    W --> F[API-Football]
-    W --> B[BallDontLie NBA API]
+    W --> F[Polymarket 赛事发现]
+    W --> B[第三方赛果核验]
     A --> P[Polymarket Gamma / CLOB / Combo RFQ]
     W --> P
     A --> R[Polygon RPC]
@@ -32,7 +32,7 @@ flowchart LR
 
 ## 3. 数据源与赛事身份
 
-足球由 API-Football 适配器获取赛程及赛事状态；NBA 由 BallDontLie NBA API 适配器获取。适配器负责认证、分页、限流、时间解析、来源状态转换和错误分类。BallDontLie 文档要求 API key；两家 API 的订阅权限、覆盖范围、队徽字段及额度应在接入和部署时实际验证。没有权限、数据缺失或请求失败时记录可见错误，不填造赛事、赛果或价格。
+**实现说明**：足球与 NBA 赛程现在都由 Polymarket Gamma 的市场发现适配器获取（`backend/polymarket_football.py`、`backend/polymarket_nba.py`），按运动、赛事范围与未来 36 小时窗口过滤并幂等 upsert。API-Football 与 BallDontLie 的适配器（`backend/sports_sources.py`）保留用于**订单被交易所确认接受之后的赛果来源绑定与比分核验**（`backend/result_binding.py`），市场结算状态另由 Polymarket data-api `/v2/resolutions` 只读查询。这两家来源需要各自的 API key，其订阅权限、覆盖范围与额度须在目标环境实际验证；无权限、数据缺失或请求失败时记录可见错误，不填造赛事、赛果或价格。未绑定赛果来源的 Polymarket 赛事不允许关注或下单。
 
 每场比赛按**数据源 + 原始赛事 ID**唯一识别，原始 ID、球队、联赛、开赛时间、状态和更新时间均保留；同步以唯一约束和事务 upsert，保留历史。若延期或取消，保留原赛事 ID、记录状态变化及时间变更，重新评估尚未到期的关注计划；状态不明确时不得视为完赛。
 
@@ -95,4 +95,5 @@ Combo 不是多笔单场订单的简单批量提交。系统需检查每一腿�
 - [Polymarket Combo 工作方式](https://docs.polymarket.com/trading/combos/overview)：组合腿、询价与报价接受流程。
 - [Polymarket Combo Builder 接入](https://docs.polymarket.com/trading/combos/builders)：Builder 凭证、询价状态与恢复。
 - [Polymarket 交易地域限制接口](https://docs.polymarket.com/api-reference/geoblock)：下单前的可用性检查。
-- [BallDontLie NBA API](https://docs.balldontlie.io/) 和 [API-Football 文档](https://www.api-football.com/documentation-v3)：赛事数据来源及接入限制。
+- [Polymarket Gamma 事件游标分页](https://docs.polymarket.com/api-reference/events/list-events-keyset-pagination)：当前足球与 NBA 赛程发现来源。
+- [BallDontLie NBA API](https://docs.balldontlie.io/) 和 [API-Football 文档](https://www.api-football.com/documentation-v3)：订单成交后的赛果绑定与比分核验来源及接入限制。

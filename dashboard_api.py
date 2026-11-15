@@ -15,19 +15,18 @@ import hmac
 import hashlib
 import base64
 import struct
-import uuid
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from flask import Flask, jsonify, send_from_directory, request, abort, session, redirect, url_for
+from flask import Flask, jsonify, send_from_directory, request, session, redirect, url_for
 from flask_cors import CORS
 
 import os
 from dotenv import load_dotenv
 
-from polymarket_autotrader.clients import PolymarketDataClient, PolygonBalanceProvider, RetryConfig
+from polymarket_autotrader.clients import PolymarketDataClient, PolygonBalanceProvider, RetryConfig, retry_request
 from polymarket_autotrader.config import BotConfig, EnvConfig, WalletConfig, load_bot_config, load_env, load_wallets
 from polymarket_autotrader.execution import CLOBOrderExecutor, _classify_restriction
 SELL = "SELL"
@@ -47,7 +46,6 @@ balance_provider: Optional[PolygonBalanceProvider] = None
 config: Optional[BotConfig] = None
 env_config: Optional[EnvConfig] = None
 clob_executor: Optional[CLOBOrderExecutor] = None
-auth_tokens: Dict[str, float] = {}
 positions_cache: Optional[Dict[str, Any]] = None
 positions_cache_ts: float = 0.0
 positions_cache_lock = threading.Lock()
@@ -746,18 +744,6 @@ def verify_totp(secret: str, code: str) -> bool:
     except Exception as e:
         logger.error(f"TOTP Check Error: {e}")
     return False
-
-def check_auth(token: str) -> bool:
-    """Check if auth token is valid"""
-    if not token:
-        return False
-    expiry = auth_tokens.get(token)
-    if not expiry:
-        return False
-    if time.time() > expiry:
-        del auth_tokens[token]
-        return False
-    return True
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_auth_login():

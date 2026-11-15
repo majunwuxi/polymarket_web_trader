@@ -211,7 +211,7 @@ def order_context(request:Request,link_id:uuid.UUID,outcome_id:uuid.UUID):
 @router.get('/outcomes/{outcome_id}/book')
 def public_book(request:Request,outcome_id:uuid.UUID):
     import httpx
-    from decimal import Decimal,InvalidOperation
+    from decimal import Decimal
     from .models import MarketOutcome,PolyMarket
     with Session(request.app.state.engine) as db:
         outcome=db.get(MarketOutcome,outcome_id)

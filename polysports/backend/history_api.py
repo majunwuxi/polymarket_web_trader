@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from . import auth
 from .combo_api import combo_data
-from .models import AuditEvent, ComboLeg, ComboRFQ, Game, Job, SyncRun, Team, TradeFill, TradeIntent, WorkerHeartbeat
+from .models import AuditEvent, ComboLeg, ComboRFQ, Game, Job, SyncRun, TradeFill, TradeIntent, WorkerHeartbeat
 from .scheduler import db_now
 from .sports_api import cursor_decode, cursor_encode, game_data
 from .trading import as_data

@@ -12,6 +12,31 @@ from .trading_gateway import Gateway, TradingError
 POSITION_MANAGER='0x006F54F7f9A22e0000CC2AB60031000000ae9fEF'
 
 
+def market_close_quote(bids,shares,tick_size,min_order_size):
+    """按降序买盘累计深度，给出能一次卖出全部份额的市价（FOK 限价）和保守预计收入。
+
+    市价取能覆盖全部份额的最低买价档；深度不足时不返回价格，避免 FOK 静默失败。
+    预计收入按各档价格逐档累计，实际成交价可能更优，不承诺收入。
+    """
+    with localcontext() as context:
+        context.prec=90
+        target=Decimal(str(shares));tick=Decimal(str(tick_size));minimum=Decimal(str(min_order_size))
+        if not target.is_finite() or target<=0 or not tick.is_finite() or tick<=0 or not minimum.is_finite() or minimum<=0:
+            return None,None,'盘口份额或价格增量无效'
+        if target<minimum:return None,None,'可平仓份额低于市场最小下单量'
+        remaining=target;proceeds=Decimal('0');worst=None
+        for bid in bids:
+            price=Decimal(str(bid['price']));depth=Decimal(str(bid['size']))
+            if not price.is_finite() or not depth.is_finite() or price<=0 or depth<=0 or price%tick:continue
+            take=min(remaining,depth)
+            proceeds+=take*price
+            remaining-=take
+            worst=price
+            if remaining<=0:break
+        if remaining>0:return None,None,'当前买盘深度不足，无法一次全部平仓'
+        return format(worst,'f'),format(proceeds,'f'),None
+
+
 def legacy_combo_receipt_positions(settings,wallet_address,tx_hash,shares,web3_cls=None):
     """用原交易成功回执提取进入原钱包且数量足够的持仓标识。"""
     from web3 import Web3
@@ -94,9 +119,12 @@ def inspect_single_position(engine, settings, ident, gateway_cls=Gateway):
                 with localcontext() as context:
                     context.prec=90
                     candidate=min(balance,remaining).quantize(Decimal('0.01'),rounding=ROUND_DOWN)
+                market_price,proceeds,reason=market_close_quote(bids,candidate,book.tick_size,book.min_order_size)
                 return {'intent_id':str(intent.id),'wallet_id':str(intent.wallet_id),'wallet_address':intent.wallet_address,
+                        'market_link_id':str(intent.market_link_id),'outcome_id':str(intent.outcome_id),
                         'asset_id':asset_id,'matched_shares':str(intent.matched_size),'closed_shares':str(sold),'wallet_shares':str(balance),
                         'candidate_shares':str(candidate),
+                        'market_price':market_price,'estimated_proceeds':proceeds,'market_close_reason':reason,
                         'bids':bids,'tick_size':str(book.tick_size),'min_order_size':str(book.min_order_size),
                         'notice':'同一资产由钱包共享；候选份额按两位小数向下取整，不代表该笔订单独立持仓的证明。'}
             except TradingError:raise

@@ -1,6 +1,6 @@
 # PolySports 内部 API 设计
 
-本文定义 PolySports 浏览器与 FastAPI 服务之间的内部接口契约，供后续实现和 UI 设计使用。本文包含已实现接口和后续阶段的设计；具体可用接口以运行中的 `/openapi.json` 及各阶段记录为准。下文 JSON、标识符和时间均为明确标注的模拟示例，不代表真实赛事、价格或成交。架构和持久化依据分别见 [ARCHITECTURE.md](ARCHITECTURE.md) 与 [DATABASE.md](DATABASE.md)。具体第三方数据字段、Combo 权限和交易能力以接入时的官方接口及实际账户为准。
+本文定义 PolySports 浏览器与 FastAPI 服务之间的内部接口契约，主体接口已在 `polysports/backend/` 实现；文中仍保留少量后续阶段的设计条目，具体可用接口以运行中的 `/openapi.json` 及各阶段记录为准。下文 JSON、标识符和时间均为明确标注的模拟示例，不代表真实赛事、价格或成交。架构和持久化依据分别见 [ARCHITECTURE.md](ARCHITECTURE.md) 与 [DATABASE.md](DATABASE.md)。具体第三方数据字段、Combo 权限和交易能力以接入时的官方接口及实际账户为准。
 
 ## 1. 通用约定
 
@@ -115,6 +115,16 @@
 | `POST /single-orders/preview` | `{ "wallet_id":"uuid", "market_link_id":"uuid", "outcome_id":"uuid", "side":"BUY", "limit_price":"0.52", "size":"10" }` | `200`：`{ "preview_token":"...", "expires_at":"...", "game_id":"...", "market_link_id":"...", "outcome_id":"...", "side":"BUY", "limit_price":"0.52", "size":"10", "estimated_notional":"5.20", "fee_estimate":null, "book_observed_at":"...", "warnings":[] }` | 不签名、不发送订单、不创建关注；确认映射、市场规则、钱包/可用性；预览 token 是短期、不可篡改、绑定上述规范化字段与过期时间的服务端认证令牌，不含秘密和上游签名 |
 
 预览示例数值只是模拟，`estimated_notional` 是限价乘份额，并非已成交金额；服务费不可确认时为 null。预览 token 只表示先前校验和用户看到的订单参数，不能锁定盘口、余额或上游报价。确认时必须重新校验，失效返回 `409 PREVIEW_STALE` 并要求重新预览；不得悄然修改价格或份额。
+
+### 5.1.1 立即平仓（单场）
+
+| 方法与路径 | 请求 | 成功响应 | 业务规则 |
+| --- | --- | --- | --- |
+| `GET /trade-intents/{intent_id}/close-context` | 无 | `200`：`{ "wallet_id", "market_link_id", "outcome_id", "asset_id", "wallet_shares", "matched_shares", "closed_shares", "candidate_shares", "market_price", "estimated_proceeds", "market_close_reason", "bids", "tick_size", "min_order_size", "notice" }` | 只读核实原买入订单、链上余额与真实盘口。`market_price` 由降序买盘逐档累计至能覆盖 `candidate_shares` 的最低价格；买盘深度不足或份额低于最小下单量时为 `null` 并给出 `market_close_reason`。`estimated_proceeds` 为按档累计的保守估计，不承诺实际收入 |
+| `POST /single-orders/preview` | 平仓时带 `order_type:"FOK"`、`parent_trade_id`，`side:"SELL"`，`limit_price` 与 `size` 取自 `close-context` | 与 5.1 相同 | 平仓跳过赛事映射的 15 分钟确认与 Gamma 赛事实时核对，仍校验市场/资产身份、盘口规则、余额、授权、原订单未平仓份额及是否已有未解决的平仓请求 |
+| `POST /single-orders` | 同上并附 `preview_token` 与 `Idempotency-Key` | 与 5.2 相同 | 以 FOK 提交，全部成交或不成交；提交结果未知时不得重发 |
+
+平仓页面不提供方向、限价、金额或份额输入，价格与份额全部由服务端从真实盘口和持仓计算，用户只确认一次；预览有效期 30 秒。组合平仓不走本接口，使用 `POST /combo-rfqs` 的 SELL 报价流程。
 
 ### 5.2 提交、查询和撤单
 

@@ -42,6 +42,52 @@ def test_read_only_context_caps_by_both_wallet_and_matched_shares(monkeypatch):
     assert result['wallet_shares']=='2' and result['candidate_shares']=='2.00'
     assert [x['price'] for x in result['bids']]==['0.6','0.4']
     assert '不代表该笔订单独立持仓的证明' in result['notice']
+    assert result['market_link_id']=='link' and result['outcome_id']=='outcome'
+    assert Decimal(result['market_price'])==Decimal('0.4') and Decimal(result['estimated_proceeds'])==Decimal('1.00')
+    assert result['market_close_reason'] is None
+
+
+def test_market_close_price_uses_full_depth_and_rejects_thin_or_small_positions():
+    bids=[{'price':'0.60','size':'1'},{'price':'0.40','size':'5'}]
+    price,proceeds,reason=module.market_close_quote(bids,'2','0.01','1')
+    assert reason is None and price=='0.40' and Decimal(proceeds)==Decimal('1.00')
+    price,proceeds,reason=module.market_close_quote(bids[:1],'2','0.01','1')
+    assert price is None and proceeds is None and '深度不足' in reason
+    assert module.market_close_quote(bids,'0.5','0.01','1')[0] is None
+    assert module.market_close_quote(bids,'2','0','1')[0] is None
+
+
+def test_close_resolve_ignores_stale_mapping_but_keeps_market_identity(monkeypatch):
+    """平仓不依赖 15 分钟内确认的赛事映射；开仓仍然必须确认。"""
+    from backend import trading
+    link=S(id='link',market_id='market',game_id='game',evidence={})
+    outcome=S(market_id='market',asset_kind='ctf_token')
+    market=S(accepting_orders=True,protocol_version='v1',poly_event_id='event')
+    objects={trading.MarketLink:link,trading.MarketOutcome:outcome,trading.PolyMarket:market}
+    db=S(get=lambda model,ident:objects[model])
+    body=S(market_link_id='link',outcome_id='outcome')
+    monkeypatch.setattr(trading,'valid_link',lambda *args:False)
+    assert trading.resolve(db,body,True)[0] is link
+    with pytest.raises(TradingError,match='赛事映射'):trading.resolve(db,body,False)
+
+
+def test_close_inspection_skips_gamma_checks_but_still_verifies_book_and_allowance(monkeypatch):
+    """event=None 表示平仓：不做赛事实时核对，仍核验盘口、余额与授权。"""
+    import backend.trading_gateway as gateway_module
+    from backend.trading_gateway import Gateway
+    market=S(condition_id='0xcondition',gamma_market_id='100',fingerprint='mock',protocol_version='v1')
+    outcome=S(asset_id='123',asset_kind='ctf_token',outcome_index=0)
+    book=S(asset_id='123',condition_id='0xcondition',tick_size=Decimal('.01'),min_order_size=Decimal('1'),neg_risk=False,hash='mock-hash',bids=(),asks=())
+    account=S(balance=10_000_000,allowances={'0x'+'1'*40:10_000_000})
+    gateway=Gateway(None,S())
+    gateway.client=S(get_order_book=lambda **_:book,get_balance_allowance=lambda **_:account)
+    monkeypatch.setattr(gateway_module.httpx,'get',lambda *a,**k:pytest.fail('平仓不应请求 Gamma 赛事'))
+    monkeypatch.setattr(gateway_module,'is_v2_position_id',lambda _:False)
+    monkeypatch.setattr(gateway_module,'resolve_order_exchange_address',lambda *a,**k:'0x'+'1'*40)
+    result=gateway.inspect(market,outcome,'SELL',Decimal('.4'),Decimal('2'),None)
+    assert result['hash']=='mock-hash' and result['allowance_status']=='ready'
+    account.allowances={}
+    with pytest.raises(TradingError,match='授权'):gateway.inspect(market,outcome,'SELL',Decimal('.4'),Decimal('2'),None)
 
 
 @pytest.mark.parametrize('side,matched',[('SELL',Decimal('3')),('BUY',None),('BUY',Decimal('0'))])

@@ -22,14 +22,14 @@ uv run --locked uvicorn backend.main:app --host 127.0.0.1 --port 8000
 
 ## 赛事数据同步
 
-足球赛程使用 Polymarket 公开胜平负市场；NBA 使用 BallDontLie，在 `.env` 中设置 `POLYSPORTS_BALLDONTLIE_KEY`。API-Football 将在后续阶段用于按需绑定足球赛果。密钥只从本机环境加载，不写入数据库或 Git。迁移完成后，可手动同步：
+足球和 NBA 赛程均来自 Polymarket 公开市场发现（Gamma），按运动、赛事范围和未来 36 小时窗口筛选。交易所确认接受订单后，赛果绑定与比分核验分别使用 API-Football（足球）和 BallDontLie（NBA），需配置 `POLYSPORTS_API_FOOTBALL_KEY` 与 `POLYSPORTS_BALLDONTLIE_KEY`；市场结算状态另由 Polymarket data-api `/v2/resolutions` 只读查询。密钥只从本机环境加载，不写入数据库或 Git。迁移完成后，可手动同步：
 
 ```bash
 uv run --locked python -m backend.sync_cli football
 uv run --locked python -m backend.sync_cli nba
 ```
 
-每次调用以实际开始时间为起点，获取并精确过滤未来 36 小时；足球只展示 Polymarket 已开设、可识别为胜平负的比赛，市场关闭后保留历史但不再显示在未来列表。分页失败或来源限流记为失败，不删除既有赛事。新发现的足球比赛暂不能关注或下单：API-Football 绑定与赛果查询尚待下一阶段实现。自动同步需要独立 worker，默认按 UTC 00:00、08:00 同步，可在页面修改；NBA 同步额外请求季前赛。中文名称需管理员核实维护，未知队徽以占位显示。
+每次调用以实际开始时间为起点，获取并精确过滤未来 36 小时；足球只展示 Polymarket 已开设、可识别为胜平负的比赛，市场关闭后保留历史但不再显示在未来列表。分页失败或来源限流记为失败，不删除既有赛事。Polymarket 来源赛事必须先完成赛果来源绑定才能关注或下单；绑定候选与赛果查询代码已实现，但需要有效密钥在目标环境联调确认。自动同步需要独立 worker，默认按 UTC 00:00、08:00 同步，可在页面修改。中文名称需管理员核实维护，未知队徽以占位显示。
 
 足球与 NBA 的中文名和队徽可使用用户提供的 `sportsmatch` 球队资料快照作为展示参考；只有同运动的完整英文名称唯一匹配时才使用。人工确认的中文名与已有非占位队徽优先，目录不会修改数据库或作为交易身份核验依据。快照版本见 `backend/team_data/README.md`。
 
@@ -37,7 +37,7 @@ uv run --locked python -m backend.sync_cli nba
 
 点击赛事“查看详情”会打开弹窗并只读查询 Polymarket 市场、选项与来源参考价格，显示查询时间。Polymarket 来源足球比赛按来源比赛 ID 核对；其他来源按运动、主客队和时间寻找候选，候选不会自动变成交易映射。数据不可用时显示错误，不把空白或旧数据当作真实报价；参考价格不保证可以成交。
 
-接口依据：[API-Football fixtures](https://www.api-football.com/documentation-v3) 和 [BALLDONTLIE NBA games](https://docs.balldontlie.io/#get-all-games)。
+接口依据：赛程与市场来自 [Polymarket Gamma 事件游标分页](https://docs.polymarket.com/api-reference/events/list-events-keyset-pagination) 和 [市场字段](https://docs.polymarket.com/api-reference/markets/list-markets)；结算来自 Polymarket data-api；赛果绑定来源见 [API-Football fixtures](https://www.api-football.com/documentation-v3) 与 [BALLDONTLIE NBA games](https://docs.balldontlie.io/#get-all-games)。
 
 ## 后台任务和关注
 
@@ -49,7 +49,7 @@ uv run --locked python -m backend.worker
 
 worker 通过 PostgreSQL 生成和领取持久任务，允许多个实例并发运行；进程退出或机器重启后重新启动 worker 即可恢复到期任务。任务只会在数据库时间达到截止时间后被领取，过期租约的旧结果不会写入。系统管理页面提供计划修改、worker 心跳、任务和尝试记录；实际 VPS 的 systemd 服务配置在部署阶段提供。
 
-对于已支持赛果来源的既有赛事，足球首次查询为开赛后 120 分钟，未完赛每 10 分钟查询；NBA 首次为开赛后 159 分钟，未完赛每 3 分钟查询。新发现的 Polymarket 足球赛事需要后续完成 API-Football 绑定后才能启用关注与赛果查询。来源确认完赛后停止常规查询；来源失败和限流保留任务记录。
+对于已绑定赛果来源的赛事，足球首次查询为开赛后 120 分钟，未完赛每 10 分钟查询；NBA 首次为开赛后 159 分钟，未完赛每 3 分钟查询。Polymarket 来源赛事须先完成赛果来源绑定才能启用关注与下单；绑定与比分查询已实现，但需要真实密钥在目标环境验证。来源确认完赛后停止常规查询；来源失败和限流保留任务记录。
 
 ## Polymarket 市场与钱包
 
@@ -94,7 +94,9 @@ POLYSPORTS_POLYGON_RPC_URL=<仅在本机安全配置>
 
 ## 立即平仓
 
-交易记录中已成交的买入单可进入平仓预览；单场按指定最低卖价提交 FOK 卖单，即所选份额全部成交或不成交。组合使用原组合各腿请求 SELL 报价，要求报价覆盖全部指定份额，并在确认前核验持仓余额与授权。确认操作涉及真实资金；请求接受或执行中不代表成交。未知结果不得重新提交，后台以原请求进行只读对账。
+交易记录中已成交的买入单点击「立即平仓」进入独立页面。**单场平仓不需要填写方向、限价、金额或份额**：服务端读取真实盘口买盘并逐档累计深度，得出能一次卖出全部可平仓份额的市价（FOK 限价）与保守预计收入。页面只显示钱包、持仓份额、当前市价和预计收入，确认后按该市价提交 FOK 卖单，全部成交或不成交；买盘深度不足或份额低于最小下单量时禁用平仓并说明原因。市价预览有效期 30 秒，过期需刷新；提交时再次核验盘口、余额、授权、原订单身份与幂等键。平仓不依赖赛事映射的 15 分钟确认时效，持仓身份由真实盘口、链上余额与原始订单共同核实。
+
+组合平仓走官方 Combo RFQ：沿用原组合各腿请求 SELL 报价，要求报价覆盖全部指定份额，并在确认前核验持仓余额与授权。组合没有可直接吃盘的单一市价，因此仍需「请求真实卖出报价 → 确认接受」两步。确认操作涉及真实资金；请求接受或执行中不代表成交。未知结果不得重新提交，后台以原请求进行只读对账。
 
 同一钱包的相同资产份额可由多笔订单共享；页面的候选份额根据当前余额、原单已成交数量和本系统已确认的平仓记录计算，不能证明每笔历史订单拥有独立份额。新组合保存官方持仓编号；历史组合需要从原交易成功回执核验该编号和转入数量，无法核实则不能平仓。真实资金链路仍需在目标服务器验证。
 

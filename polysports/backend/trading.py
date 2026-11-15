@@ -79,13 +79,15 @@ def decode_token(settings,token):
     except Exception as exc: raise TradingError('preview_stale','预览无效或已过期，请重新预览') from exc
 
 
-def resolve(db,body):
+def resolve(db,body,closing=False):
+    """开仓要求赛事映射在 15 分钟内确认；平仓只核对持仓的市场与资产身份。"""
     link=db.get(MarketLink,body.market_link_id)
     outcome=db.get(MarketOutcome,body.outcome_id)
-    if not link or not outcome or link.market_id!=outcome.market_id or not valid_link(db,link): raise TradingError('mapping_invalid','赛事映射未确认或已过期')
+    if not link or not outcome or link.market_id!=outcome.market_id: raise TradingError('mapping_invalid','市场映射不存在')
     market=db.get(PolyMarket,link.market_id)
-    if market.accepting_orders is not True or market.protocol_version not in ('v1','v2') or outcome.asset_kind!=('position' if market.protocol_version=='v2' else 'ctf_token'):
+    if not market or market.accepting_orders is not True or market.protocol_version not in ('v1','v2') or outcome.asset_kind!=('position' if market.protocol_version=='v2' else 'ctf_token'):
         raise TradingError('market_unavailable','市场不可接单或协议未核实')
+    if not closing and not valid_link(db,link): raise TradingError('mapping_invalid','赛事映射未确认或已过期')
     return link,market,outcome
 
 
@@ -96,13 +98,23 @@ def event_for_inspection(db,link,market):
     return event
 
 
+def inspection_event(db,link,market,closing):
+    """平仓跳过 Gamma 赛事核对：持仓身份由真实盘口、余额与原订单核验，不依赖赛事映射。"""
+    if closing: return None
+    event=event_for_inspection(db,link,market)
+    if event is None: raise TradingError('market_unavailable','市场来源不可用')
+    return event
+
+
 def prepare(engine,settings,body,gateway_cls=Gateway):
     data,price,size=normalize(body);wallet=wallet_for(settings,body.wallet_id)
+    closing=getattr(body,'order_type',None)=='FOK'
     with Session(engine) as db:
         verify_close_origin(db,body,size)
-        link,market,outcome=resolve(db,body)
+        link,market,outcome=resolve(db,body,closing)
         game_id=link.game_id
-        with gateway_cls(settings,wallet) as gateway: context=gateway.inspect(market,outcome,body.side,price,size,event_for_inspection(db,link,market))
+        event=inspection_event(db,link,market,closing)
+        with gateway_cls(settings,wallet) as gateway: context=gateway.inspect(market,outcome,body.side,price,size,event)
         if not context.get('hash'): raise TradingError('book_unavailable','订单簿缺少有效版本标识')
         now=db_now(db)
     token=encode_token(settings,{'fingerprint':fingerprint(data),'book_hash':context['hash'],'expires_at':int((now+timedelta(seconds=PREVIEW_SECONDS)).timestamp())})
@@ -143,6 +155,7 @@ def save_result(engine,intent_id,state,code=None,order_id=None,retry_after=None)
 
 def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
     data,price,size=normalize(body);fp=fingerprint(data);wallet=wallet_for(settings,body.wallet_id)
+    closing=getattr(body,'order_type',None)=='FOK'
     with Session(engine) as db:
         existing=get_existing(db,body.wallet_id,request_id,fp)
         if existing: return existing.id,False
@@ -151,9 +164,10 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
         now=db_now(db)
         if token.get('fingerprint')!=fp or type(token.get('expires_at')) is not int or token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期或订单参数改变')
         verify_close_origin(db,body,size)
-        link,market,outcome=resolve(db,body)
+        link,market,outcome=resolve(db,body,closing)
+        event=inspection_event(db,link,market,closing)
         with gateway_cls(settings,wallet) as gateway:
-            context=gateway.inspect(market,outcome,body.side,price,size,event_for_inspection(db,link,market))
+            context=gateway.inspect(market,outcome,body.side,price,size,event)
             if not context.get('hash') or context['hash']!=token.get('book_hash'): raise TradingError('preview_stale','盘口变化，请重新预览')
             try:
                 with Session(engine) as tx, tx.begin():
@@ -164,7 +178,7 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
                     tx.scalar(select(MarketLink).where(MarketLink.id==body.market_link_id).with_for_update())
                     if getattr(body,'parent_trade_id',None):
                         tx.scalar(select(TradeIntent).where(TradeIntent.id==body.parent_trade_id).with_for_update())
-                    verified,_,_=resolve(tx,body)
+                    verified,_,_=resolve(tx,body,closing)
                     verify_close_origin(tx,body,size)
                     now=db_now(tx)
                     if token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期，请重新预览')

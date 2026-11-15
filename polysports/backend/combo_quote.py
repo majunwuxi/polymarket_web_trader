@@ -1,4 +1,4 @@
-"""组合报价的可信字段检查；真实资金流程尚未对外启用。"""
+"""组合报价的可信字段检查；真实资金执行需管理员显式开启组合开关。"""
 from decimal import Decimal, InvalidOperation
 from .trading_gateway import TradingError
 

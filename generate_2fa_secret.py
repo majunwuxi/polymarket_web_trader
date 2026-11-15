@@ -7,7 +7,6 @@ as DASHBOARD_2FA_SECRET.
 
 import pyotp
 import qrcode
-import os
 
 def generate_secret():
     # Generate a random base32 secret

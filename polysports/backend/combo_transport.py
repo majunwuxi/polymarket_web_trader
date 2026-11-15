@@ -1,4 +1,4 @@
-"""Combo SDK 发送边界；6G 完成前不得作为用户交易入口。"""
+"""Combo SDK 发送边界；单次接受调用在传输层禁止重发。"""
 from __future__ import annotations
 
 from dataclasses import replace

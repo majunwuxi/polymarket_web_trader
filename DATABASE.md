@@ -1,6 +1,6 @@
 # PolySports 数据库设计
 
-本文是第二阶段的设计契约，数据库尚未创建，DDL 尚未作为 Alembic 迁移执行。以 [ARCHITECTURE.md](ARCHITECTURE.md) 和 OpenSpec 变更 `build-polysports` 为依据；具体迁移版本将在编码阶段建立，并以 PostgreSQL 集成测试确认。除有标记外，本设计适用于独立的 PostgreSQL 数据库，不依赖原有 Dashboard。
+本文是数据库设计契约。Alembic 迁移已落在 `polysports/migrations/versions/`，并在隔离的 PostgreSQL 测试库中通过集成测试（见 [ACCEPTANCE.md](ACCEPTANCE.md)）；本文保留设计语境，**精确字段、约束和索引以迁移文件为准**，两者不一致时以代码为准。以 [ARCHITECTURE.md](ARCHITECTURE.md) 和 OpenSpec 变更 `build-polysports` 为依据。除有标记外，本设计适用于独立的 PostgreSQL 数据库，不依赖原有 Dashboard。
 
 > 6G 实际组合持久化使用 `combo_rfqs`、`combo_legs`、`combo_events` 与 `jobs.combo_rfq_id`；精确字段、约束和索引以 Alembic 迁移为准。单场订单继续使用现有 `trade_intents`。
 

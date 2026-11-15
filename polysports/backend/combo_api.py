@@ -1,4 +1,4 @@
-"""组合腿只读检查；询价和接受入口尚未开放。"""
+"""组合腿只读检查，以及组合询价与接受入口（由组合执行开关控制）。"""
 from __future__ import annotations
 
 import uuid

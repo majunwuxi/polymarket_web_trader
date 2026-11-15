@@ -3,8 +3,13 @@
 两个结果分别是：由已绑定、已完赛的外部比分按市场命题规则推算的胜负（赛果结果），
 以及 Polymarket data-api 终态二元赔付给出的胜负（市场结算结果）。理论上两者一致；
 只有一致时才确认应结算金额，冲突时并列展示两个结果并要求人工核实，不掩盖差异。
+
+赛果判断覆盖系统实际接受的三类全场市场：胜负（moneyline）、大小分/总进球
+（totals）、以及选项明确写出让分数的让分盘（spreads）。半场、局节、单队、
+球员和盘口口径不明确的市场一律不推断，返回 None 与具体原因。
 """
 import re
+import unicodedata
 from decimal import Decimal, InvalidOperation, localcontext
 
 import httpx
@@ -12,36 +17,161 @@ import httpx
 from .sports_sources import SourceError
 from .gamma import normal
 
+# 与 live_markets.supported_full_game_market 同一口径：局部市场不参与比分推断。
+_PARTIAL_MARKET=re.compile(r'\b(?:first|second|1st|2nd|1h|2h|half|quarter|period|q[1-4]|team\s+total)\b',re.I)
+# 保留小数点与正负号的题目规范化：normal() 会把 227.5 变成 "227 5"，不能用于解析盘口。
+_TOTAL_LINE=re.compile(r'(?:\bo\s*/?\s*u\b|\bover\s*/?\s*under\b|\bover\s+under\b|\btotals?\b)'
+                       r'(?:\s+(?:points?|goals?|score|pts))?\s*[:=]?\s*(\d{1,4}(?:\.\d{1,2})?)')
+_PROP_LINE=re.compile(r'\b(over|under)\s+(\d{1,4}(?:\.\d{1,2})?)\b')
+_TOTAL_KEYWORD=re.compile(r'\bo\s*/?\s*u\b|\bover\b|\bunder\b|\btotals?\b')
+_SPREAD_KEYWORD=re.compile(r'\b(?:spread|handicap)\b')
+_SIDE_LABEL=re.compile(r'^(over|under|o|u)(?:\s+(\d{1,4}(?:\.\d{1,2})?))?$')
+_SPREAD_LABEL=re.compile(r'^(.*?)\s*([+-]\d{1,3}(?:\.\d{1,2})?)$')
+# 无队名的纯盘口题目允许的普通词；出现任何其他词（球员、其他球队等）即拒绝推断。
+_GENERIC_WORDS=frozenset({'o','u','v','vs','over','under','total','totals','point','points','goal','goals',
+                          'score','pts','will','there','be','in','the','a','an','game','match','between','and',
+                          'on','at','of','to','for','is','it','this','both','teams','combined','more','than',
+                          'less','exactly','by','line','full','time','regulation','or','spread','handicap',
+                          'yes','no'})
 
-def judge_moneyline_score(*,sport,question,outcome_label,home,away,home_score,away_score,provider_status):
-    """只依据已确认比分与市场命题判断所选选项是否获胜；规则不可严格识别时返回 None。"""
-    if not all(isinstance(x,str) and x.strip() for x in (question,outcome_label,home,away)):
-        return None
-    if type(home_score) is not int or type(away_score) is not int:
-        return None
-    h,a=normal(home),normal(away)
-    if not h or not a or h==a: return None
-    q=normal(question);label=normal(outcome_label)
-    if sport=='nba':
-        if q not in (f'{h} vs {a}',f'{a} vs {h}') or label not in (h,a) or home_score==away_score:
-            return None
-        return (home_score>away_score) if label==h else (away_score>home_score)
-    if sport=='football' and provider_status=='FT':
-        # 仅接受明确的球队获胜命题；加时/点球及其他问题保持待核实。
-        matched=re.fullmatch(r'will (.+) win on (\d{4}) (\d{2}) (\d{2})',q)
-        if not matched or matched.group(1) not in (h,a) or label not in ('yes','no'):
-            return None
-        team_won=home_score>away_score if matched.group(1)==h else away_score>home_score
-        return team_won if label=='yes' else not team_won
+
+def _compact(value):
+    return ' '.join(unicodedata.normalize('NFKC',value).casefold().split())
+
+
+def _has_name(text,name):
+    """完整队名或队名末词命中：Gamma 常用 "Cleveland Cavaliers"，题目只写 "Cavaliers"。"""
+    if re.search(r'(?<![a-z0-9])'+re.escape(name)+r'(?![a-z0-9])',text): return True
+    tail=name.split()[-1]
+    return len(tail)>=4 and tail not in _GENERIC_WORDS and bool(
+        re.search(r'(?<![a-z0-9])'+re.escape(tail)+r'(?![a-z0-9])',text))
+
+
+def _team_in(text,h,a):
+    for key,name in (('home',h),('away',a)):
+        if _has_name(text,name): return key
     return None
 
 
-def compare_moneyline_score(*,sport,question,outcome_label,home,away,home_score,away_score,provider_status,outcome_won):
+def _game_scope_ok(question,h,a):
+    """题目须指向本场比赛；无队名的纯盘口题目也不得夹带其他主体。"""
+    names=normal(question)
+    if _has_name(names,h) and _has_name(names,a): return True
+    words=re.findall(r'[a-z]+',_compact(question))
+    return all(word in _GENERIC_WORDS for word in words)
+
+
+def _number(value,*,allow_negative=False):
+    try:
+        number=Decimal(str(value))
+    except (InvalidOperation,TypeError,ValueError):
+        return None
+    if not number.is_finite() or abs(number)>=10000: return None
+    return number if allow_negative or number>0 else None
+
+
+def _judge_totals(*,q,label,question,h,a,home_score,away_score):
+    """全场大小分/总进球：总分与盘口比较；正好相等视为走盘，不推断。"""
+    if not _game_scope_ok(question,h,a): return None
+    prop=_PROP_LINE.search(q)
+    ql=_TOTAL_LINE.search(q)
+    question_line=_number(ql.group(1)) if ql else (_number(prop.group(2)) if prop else None)
+    side_match=_SIDE_LABEL.fullmatch(label)
+    if side_match:
+        side='over' if side_match.group(1) in ('over','o') else 'under'
+        label_line=_number(side_match.group(2)) if side_match.group(2) else None
+    elif label in ('yes','no') and prop:
+        side='over' if (label=='yes')==(prop.group(1)=='over') else 'under'
+        label_line=None
+    else:
+        return None
+    if question_line and label_line and question_line!=label_line: return None
+    line=question_line or label_line or (_number(prop.group(2)) if prop else None)
+    if line is None: return None
+    total=Decimal(home_score+away_score)
+    if total==line:
+        return (None,f'全场总分 {total} 正好等于盘口 {line}，走盘规则无法自动判定')
+    won=total>line if side=='over' else total<line
+    rule='高于' if total>line else '低于'
+    return (won,f'全场总分 {home_score}+{away_score}={total} {rule} 盘口 {line}，'
+                f'{"Over" if side=="over" else "Under"}{"获胜" if won else "未获胜"}')
+
+
+def _judge_spread(*,label,question,h,a,home_score,away_score):
+    """仅在选项自身写明「球队 + 让分数」时推断；Yes/No 等口径不明的不猜。"""
+    if not _game_scope_ok(question,h,a): return None
+    matched=_SPREAD_LABEL.fullmatch(label)
+    if not matched: return None
+    team=_team_in(normal(matched.group(1)),h,a)
+    handicap=_number(matched.group(2),allow_negative=True)
+    if team is None or handicap is None: return None
+    own,other=(home_score,away_score) if team=='home' else (away_score,home_score)
+    adjusted=Decimal(own-other)+handicap
+    if adjusted==0: return (None,f'让分 {handicap:+} 后正好打平，走盘规则无法自动判定')
+    won=adjusted>0
+    return (won,f'{matched.group(1).strip()} {own}:{other} 让分 {handicap:+} 后 '
+                f'{"覆盖" if won else "未覆盖"}盘口')
+
+
+def judge_score_detail(*,sport,question,outcome_label,home,away,home_score,away_score,provider_status):
+    """返回 (是否获胜|None, 依据说明)；规则不可严格识别时一律 None，附具体原因。"""
+    if not all(isinstance(x,str) and x.strip() for x in (question,outcome_label,home,away)):
+        return (None,'市场命题或已确认比分信息不足，不从比分推断输赢')
+    if type(home_score) is not int or type(away_score) is not int:
+        return (None,'已确认比分不是整数，不从比分推断输赢')
+    if sport not in ('nba','football'):
+        return (None,'运动类型不支持按比分自动判断')
+    h,a=normal(home),normal(away)
+    if not h or not a or h==a: return (None,'球队名称无法核实，不从比分推断输赢')
+    q=_compact(question);label=_compact(outcome_label);qnames=normal(question)
+    if _PARTIAL_MARKET.search(q.replace('-',' ')):
+        return (None,'半场、局节、单队或球员等局部市场不按全场比分推断')
+    if sport=='football' and provider_status!='FT':
+        return (None,'足球需常规时间完赛（FT）才按比分推断；加时、点球或状态未确认不推断')
+    totals_keyword=bool(_TOTAL_KEYWORD.search(q))
+    spread_keyword=bool(_SPREAD_KEYWORD.search(q))
+    # 胜负命题（moneyline）：题目不带盘口关键词，选项为球队名或 Yes/No。
+    if not totals_keyword and not spread_keyword:
+        if sport=='nba' and ' vs ' in f' {qnames} ' and _game_scope_ok(question,h,a):
+            pick=_team_in(label,h,a)
+            if pick and home_score!=away_score:
+                won=(home_score>away_score) if pick=='home' else (away_score>home_score)
+                return (won,f'胜负命题：{home} {home_score}:{away_score} {away}，'
+                            f'{outcome_label.strip()} {"获胜" if won else "未获胜"}')
+        if sport=='football':
+            matched=re.fullmatch(r'will (.+) win on \d{4} \d{2} \d{2}',qnames)
+            picked=_team_in(matched.group(1),h,a) if matched else None
+            if picked and label in ('yes','no'):
+                team_won=(home_score>away_score) if picked=='home' else (away_score>home_score)
+                won=team_won if label=='yes' else not team_won
+                return (won,f'球队获胜命题：{home} {home_score}:{away_score} {away}，'
+                            f'{outcome_label.strip()} {"获胜" if won else "未获胜"}')
+        return (None,'市场命题规则无法严格识别，不从比分推断输赢')
+    if totals_keyword:
+        totals=_judge_totals(q=q,label=label,question=question,h=h,a=a,home_score=home_score,away_score=away_score)
+        if totals is not None: return totals
+    if spread_keyword:
+        spread=_judge_spread(label=label,question=question,h=h,a=a,home_score=home_score,away_score=away_score)
+        if spread is not None: return spread
+        return (None,'让分/让球盘口口径未明确写在选项中，需人工核实或等待市场终态')
+    return (None,'大小分盘口或选项无法严格识别，需人工核实或等待市场终态')
+
+
+def judge_score(**kwargs):
+    """按已确认比分独立判断所选选项是否获胜；无法严格识别返回 None。"""
+    return judge_score_detail(**kwargs)[0]
+
+
+def compare_score(*,outcome_won,**kwargs):
     """以市场终态结果为基准比较比分推算结果；保留既有 score_consistency 字段口径。"""
-    expected=judge_moneyline_score(sport=sport,question=question,outcome_label=outcome_label,home=home,away=away,
-                                   home_score=home_score,away_score=away_score,provider_status=provider_status)
+    expected=judge_score(**kwargs)
     if expected is None or type(outcome_won) is not bool: return 'unsupported'
     return 'consistent' if expected==outcome_won else 'conflict'
+
+
+# 兼容既有调用点与测试中的旧命名；语义已扩展到全部三类全场市场。
+judge_moneyline_score=judge_score
+compare_moneyline_score=compare_score
 
 
 def read_resolution(client, condition_id, outcome_index):

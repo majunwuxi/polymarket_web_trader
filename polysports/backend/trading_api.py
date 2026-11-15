@@ -110,7 +110,7 @@ def resolution(request:Request,intent_id:uuid.UUID):
     """并列返回赛果判断与 Polymarket 终态结算两个独立结果，互相印证一致才确认金额。"""
     import httpx
     from .models import Game, MarketOutcome, PolyMarket, ResultBindingRequest, Team, TradeFill
-    from .order_resolution import compare_moneyline_score, judge_moneyline_score, read_resolution, settlement_amounts
+    from .order_resolution import compare_score, judge_score_detail, read_resolution, settlement_amounts
     from .sports_sources import SourceError
     with Session(request.app.state.engine) as db:
         intent=db.get(TradeIntent,intent_id)
@@ -129,12 +129,11 @@ def resolution(request:Request,intent_id:uuid.UUID):
             'home':getattr(home,'source_name',None),'away':getattr(away,'source_name',None),
             'home_score':game.home_score if verified else None,'away_score':game.away_score if verified else None,
             'provider_status':game.provider_status}
-        result_won=judge_moneyline_score(**score_context) if verified else None
+        result_won,judgment_basis=judge_score_detail(**score_context) if verified else (None,'外部赛果尚未绑定或比分未确认')
         result_judgment={'state':'judged' if result_won is not None else ('unsupported' if verified else 'unavailable'),
             'outcome_won':result_won,
             'payout_per_share':('1' if result_won else '0') if result_won is not None else None,
-            'basis':'已绑定外部赛果比分 + 严格识别的市场胜负命题' if result_won is not None else
-                    ('市场命题规则无法严格识别，不从比分推断输赢' if verified else '外部赛果尚未绑定或比分未确认')}
+            'basis':judgment_basis}
     if matched is None or matched<=0:
         return ok(request,{**base,'state':'pending','score_consistency':'unverified','result_judgment':result_judgment,
             'market_error':'订单没有已确认的成交份额，未查询市场结算',
@@ -143,7 +142,7 @@ def resolution(request:Request,intent_id:uuid.UUID):
     try:
         with httpx.Client() as client: data=read_resolution(client,condition,index)
         market_won=data['outcome_won'] if data['state']=='resolved' else None
-        data['score_consistency']=compare_moneyline_score(**score_context,outcome_won=market_won) if market_won is not None and verified else 'unverified'
+        data['score_consistency']=compare_score(**score_context,outcome_won=market_won) if market_won is not None and verified else 'unverified'
         data['result_judgment']=result_judgment
         data['settlement']=settlement_amounts(side=side,matched_size=matched,fills=fills,
             market_outcome_won=market_won,result_outcome_won=result_won)

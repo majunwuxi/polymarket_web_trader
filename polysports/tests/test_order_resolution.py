@@ -3,7 +3,8 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from backend.order_resolution import compare_moneyline_score, judge_moneyline_score, read_resolution, settlement_amounts
+from backend.order_resolution import (compare_moneyline_score, compare_score, judge_moneyline_score,
+                                      judge_score, judge_score_detail, read_resolution, settlement_amounts)
 from backend.sports_sources import SourceError
 
 CONDITION='0x'+'a'*64
@@ -99,3 +100,53 @@ def test_settlement_refuses_sell_and_missing_shares():
     assert settle(side='SELL')['settlement_amount'] is None and '卖出' in settle(side='SELL')['reason']
     assert settle(matched_size=Decimal('0'))['settlement_amount'] is None
     assert settle(matched_size=None)['settlement_amount'] is None
+
+
+# 截图实例：NBA 全场大小分 227.5，比分 127:117，总分 244。
+OU=dict(sport='nba',question='Mavericks vs. Cavaliers: O/U 227.5',
+        home='Cleveland Cavaliers',away='Dallas Mavericks',
+        home_score=127,away_score=117,provider_status='final')
+
+
+def test_totals_market_is_judged_from_final_score():
+    won,basis=judge_score_detail(**OU,outcome_label='Under')
+    assert won is False and '244' in basis and '227.5' in basis and 'Under' in basis
+    assert judge_score(**OU,outcome_label='Over') is True
+    assert compare_score(**OU,outcome_label='Under',outcome_won=False)=='consistent'
+    assert compare_score(**OU,outcome_label='Under',outcome_won=True)=='conflict'
+
+
+def test_totals_accepts_explicit_variants_and_refuses_push():
+    variants=[dict(question='Mavericks vs. Cavaliers: Over/Under 227.5',outcome_label='Over'),
+              dict(question='Mavericks vs. Cavaliers: O/U 227.5',outcome_label='Under 227.5'),
+              dict(question='Will there be over 227.5 points in Mavericks vs Cavaliers?',outcome_label='Yes'),
+              dict(question='Will there be over 227.5 points in Mavericks vs Cavaliers?',outcome_label='No')]
+    assert [judge_score(**(OU|variant)) for variant in variants]==[True,False,True,False]
+    push,basis=judge_score_detail(**(OU|dict(question='Mavericks vs. Cavaliers: O/U 244',outcome_label='Under')))
+    assert push is None and '走盘' in basis
+    assert judge_score_detail(**(OU|dict(outcome_label='Under 230.5')))[0] is None
+
+
+def test_partial_and_unclear_markets_are_not_guessed():
+    partial,basis=judge_score_detail(**(OU|dict(question='Mavericks vs. Cavaliers: First Half O/U 110.5',outcome_label='Under')))
+    assert partial is None and '半场' in basis
+    assert judge_score(**(OU|dict(question='Mavericks vs. Cavaliers: Spread',outcome_label='Yes'))) is None
+    assert judge_score(**(OU|dict(question='LeBron James: O/U 27.5 points',outcome_label='Under'))) is None
+    assert judge_score(**(OU|dict(home_score=None,outcome_label='Under'))) is None
+
+
+def test_spread_only_when_outcome_states_the_handicap():
+    spread=OU|dict(question='Mavericks vs. Cavaliers: Spread')
+    won,basis=judge_score_detail(**spread,outcome_label='Cavaliers -4.5')
+    assert won is True and '覆盖' in basis
+    assert judge_score(**spread,outcome_label='Mavericks +4.5') is False
+    push,basis=judge_score_detail(**(spread|dict(outcome_label='Cavaliers -10')))
+    assert push is None and '走盘' in basis
+
+
+def test_football_totals_require_full_time():
+    football=dict(sport='football',question='Will there be over 2.5 goals in Norway vs Wales?',
+                  outcome_label='Yes',home='Norway',away='Wales',home_score=2,away_score=1,provider_status='FT')
+    assert judge_score(**football) is True
+    assert judge_score(**(football|dict(outcome_label='No'))) is False
+    assert judge_score(**(football|dict(provider_status='AET'))) is None

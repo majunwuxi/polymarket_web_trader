@@ -166,4 +166,37 @@ sudo systemctl status polysports-api.service polysports-worker.service polysport
 
 升级前确认备份与恢复演练可用，记录当前 Git 提交并停止 API、worker。然后在 `/opt/polysports-src` 使用 `git pull --ff-only` 获取已审核版本，在项目目录重新运行 `uv sync --locked --no-dev`，在 `frontend/` 重新运行 `npm ci --include=dev` 和 `npm run build`。重新启动 `polysports-migrate.service` 后，再启动 API 和 worker，检查健康状态、日志及未到期任务。迁移可能不可逆；不要把 `git checkout` 当作数据库回滚，必要时恢复到新的空库并按上节核对后切换。
 
+**关键：`frontend/dist/` 被 `.gitignore` 排除，`git pull` 只更新源码，不会更新浏览器实际加载的静态文件。** 每次拉取后都必须在 `frontend/` 重新执行 `npm run build`；否则页面仍是旧版本，看起来像「更新没生效」。`npm run build` 由 `vue-tsc --noEmit && vite build` 组成，两者以及 TypeScript 都在 `devDependencies` 中，所以 `npm ci --include=dev` 不能省略；Node 24 安装在 `/opt/polysports-node/bin`，新 SSH 会话必须先设置 PATH，否则 `npm: command not found` 且旧 `dist` 会被原样保留。完整升级命令：
+
+```bash
+cd /opt/polysports-src
+sudo git rev-parse HEAD                          # 记录升级前版本
+sudo systemctl start polysports-backup.service    # 升级前备份
+sudo systemctl stop polysports-api.service polysports-worker.service
+sudo git pull --ff-only origin main
+sudo git rev-parse HEAD                          # 必须等于已审核的目标提交
+
+export PATH="/opt/polysports-node/bin:$PATH"     # Node 24 不在系统默认 PATH
+node --version && npm --version
+
+sudo /opt/polysports-tools/bin/uv sync --locked --no-dev --python /usr/bin/python3.12 \
+  --directory /opt/polysports-src/polysports
+cd /opt/polysports-src/polysports/frontend
+sudo env "PATH=$PATH" npm ci --include=dev       # vue-tsc / vite 只在 devDependencies
+sudo env "PATH=$PATH" npm run build              # 必须成功；失败时旧 dist 保留，页面不变
+
+# 构建校验：index.html 引用的 JS 必须存在，且产物包含当前版本特征字符串
+sudo ls -l --time-style=long-iso /opt/polysports-src/polysports/frontend/dist/assets/
+sudo grep -o 'assets/index-[A-Za-z0-9_-]*\.js' /opt/polysports-src/polysports/frontend/dist/index.html
+sudo grep -rl '按赛果判断' /opt/polysports-src/polysports/frontend/dist/assets/*.js
+
+cd /opt/polysports-src
+sudo systemctl start polysports-migrate.service  # 无新迁移时为 no-op
+sudo systemctl start polysports-api.service polysports-worker.service
+curl --fail http://127.0.0.1:8000/api/v1/health/live
+sudo journalctl -u polysports-api.service -u polysports-worker.service --since '10 min ago' --no-pager
+```
+
+后端 `.py` 改动必须重启 `polysports-api.service` 与 `polysports-worker.service` 才会生效；仅 `git pull` 不会重载已加载的模块。Nginx 的 `index.html` 应设为不缓存（见 `deploy/nginx/polysports.conf` 的 `location = /index.html`）；更新该配置后需重新安装并执行 `sudo nginx -t && sudo systemctl reload nginx`。浏览器仍显示旧界面时，先用无痕窗口或强制刷新（Ctrl+Shift+R）确认；带 hash 的 JS 可长期缓存，入口 `index.html` 不可缓存。
+
 参考：[systemd 凭据](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)、[Nginx 反向代理](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)、[PostgreSQL pg_restore](https://www.postgresql.org/docs/current/app-pgrestore.html)、[Certbot Webroot](https://eff-certbot.readthedocs.io/en/stable/using.html#webroot)。

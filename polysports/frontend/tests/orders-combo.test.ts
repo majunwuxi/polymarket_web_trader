@@ -81,4 +81,14 @@ describe('交易记录中的两个结算结果（模拟接口）',()=>{
     expect(view.text()).not.toContain('结算金额：')
     view.unmount()
   })
+  it('大小分市场按总分判断输赢并显示计算依据，不再显示无法判断',async()=>{
+    const provisional={...settlement,agreement:'result_only',settlement_amount:null,market_settlement_amount:null,market_outcome_won:null,result_settlement_amount:'0',result_outcome_won:false,cost_basis:null,realized_pnl:null,covered_shares:null,cost_verified:false,reason:'市场尚未进入终态；按赛果推算的金额仅为预计值，待 Polymarket 结算确认'}
+    const judged={state:'judged',outcome_won:false,payout_per_share:'0',basis:'全场总分 127+117=244 高于 盘口 227.5，Under未获胜'}
+    const view=await openResolution({state:'pending',score_verified:true,home_score:127,away_score:117,matched_size:'5.12',side:'BUY',result_judgment:judged,settlement:provisional})
+    expect(view.text()).toContain('选项未获胜')
+    expect(view.text()).toContain('判断依据：全场总分 127+117=244')
+    expect(view.text()).toContain('推算应结算 0 pUSD')
+    expect(view.text()).not.toContain('无法判断')
+    view.unmount()
+  })
 })

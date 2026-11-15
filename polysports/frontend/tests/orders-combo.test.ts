@@ -6,7 +6,7 @@ import Orders from '../src/views/Orders.vue'
 // 模拟本地接口，绝不访问交易服务。
 const json=(body:unknown,status=200)=>({ok:status>=200&&status<300,status,json:async()=>body}) as Response
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/',component:Orders}]})
-const combo={id:'mock-rfq',state:'confirmed',direction:'BUY',quantity:'1',wallet_address:'mock-wallet',external_rfq_id:'mock-external',tx_hash:'mock-tx',by_score:true,judged_legs:1,leg_count:1,score_reason:null,quote:{price:'0.5',total_required:'1',net_receive:'2'},legs:[{outcome_id:'1',home:'模拟主队',away:'模拟客队',market_question:'模拟胜负',outcome_label:'模拟主队',starts_at:'2026-11-15T00:00:00Z',sport:'nba',watch_state:'active',binding_state:'bound',home_score:100,away_score:99,result_won:true,result_basis:'胜负命题：模拟主队 100:99 模拟客队，模拟主队 获胜'}]}
+const combo={id:'mock-rfq',state:'confirmed',direction:'BUY',quantity:'1',wallet_address:'mock-wallet',external_rfq_id:'mock-external',tx_hash:'mock-tx',by_score:true,judged_legs:1,leg_count:1,score_reason:null,quote:{price:'0.5',total_required:'1',net_receive:'2'},buy_summary:{size:'5.12',price:'0.41',cost:'2.0992',basis:'combo_fill',estimated:false,source:'signed_order',detail:'份额与金额取自已确认组合成交明细'},legs:[{outcome_id:'1',home:'模拟主队',away:'模拟客队',market_question:'模拟胜负',outcome_label:'模拟主队',starts_at:'2026-11-15T00:00:00Z',sport:'nba',watch_state:'active',binding_state:'bound',home_score:100,away_score:99,result_won:true,result_basis:'胜负命题：模拟主队 100:99 模拟客队，模拟主队 获胜'}]}
 beforeEach(async()=>{await router.push('/');await router.isReady()})
 afterEach(()=>vi.unstubAllGlobals())
 
@@ -116,7 +116,7 @@ describe('交易记录中的两个结算结果（模拟接口）',()=>{
 
 const comboLegOne={leg_no:1,home:'Grizzlies',away:'Nets',market_question:'Nets vs. Grizzlies',outcome_label:'Grizzlies',home_score:129,away_score:110,score_verified:true,game_status:'finished',result_judgment:{state:'judged',outcome_won:true,basis:'胜负命题：Grizzlies 129:110 Nets，Grizzlies 获胜'},market:{state:'resolved',outcome_won:true,market_status:'resolved',market_status_text:'已最终结算',resolved_at:'2026-11-15T02:00:00Z'},result_won:true,market_won:true,leg_agreement:'consistent'}
 const comboLegTwo={leg_no:2,home:'Timberwolves',away:'Bulls',market_question:'Bulls vs. Timberwolves: O/U 244.5',outcome_label:'Under',home_score:106,away_score:117,score_verified:true,game_status:'finished',result_judgment:{state:'judged',outcome_won:true,basis:'全场总分 106+117=223 低于 盘口 244.5，Under获胜'},market:{state:'resolved',outcome_won:true,market_status:'resolved',market_status_text:'已最终结算',resolved_at:'2026-11-15T02:10:00Z'},result_won:true,market_won:true,leg_agreement:'consistent'}
-const comboResolutionPayload={id:'mock-rfq',direction:'BUY',state:'confirmed',leg_count:2,judged_legs:2,resolved_legs:2,by_score:true,by_market:true,agreement:'consistent',reason:'两个结果一致确认组合获胜',notice:'组合按全中口径核对：全部腿命中才算获胜；本系统未保存组合成交明细，不计算组合结算金额。',legs:[comboLegOne,comboLegTwo]}
+const comboResolutionPayload={id:'mock-rfq',direction:'BUY',state:'confirmed',leg_count:2,judged_legs:2,resolved_legs:2,by_score:true,by_market:true,agreement:'consistent',reason:'两个结果一致确认组合获胜',notice:'组合按全中口径核对：全部腿命中才算获胜；该只读核对不计算组合结算金额，卡片盈亏来自已落库成交明细，实际赔付以 Polymarket 组合仓位终态为准。',legs:[comboLegOne,comboLegTwo]}
 function comboResolutionFetch(payload:unknown){return vi.fn((url:string)=>{
   if(url.includes('/combo-rfqs/mock-rfq/resolution'))return Promise.resolve(json({data:payload}))
   if(url.includes('/combo-rfqs'))return Promise.resolve(json({data:{items:[combo],next_cursor:null}}))
@@ -135,7 +135,7 @@ describe('组合交易记录的胜负核对（模拟接口）',()=>{
     expect(text).toContain('组合结果一 · 按赛果判断：全部腿命中，组合获胜')
     expect(text).toContain('组合结果二 · 各腿 Polymarket 终态结算：全部腿命中，组合获胜')
     expect(text).toContain('两个结果核对：一致，组合胜负已确认')
-    expect(text).toContain('组合结算金额：系统未记录组合成交明细，暂不确认结算金额。')
+    expect(text).toContain('组合结算金额：该只读核对不计算结算金额')
     expect(text).not.toContain('无法判断')
     view.unmount()
   })
@@ -266,6 +266,70 @@ describe('订单卡片直接标注盈亏金额（模拟接口）',()=>{
     expect(badge.text()).toContain('盈亏待确认')
     expect(badge.classes()).not.toContain('pnl-loss')
     expect(badge.classes()).not.toContain('pnl-profit')
+    view.unmount()
+  })
+})
+
+describe('组合买入摘要与详情分层（模拟接口）',()=>{
+  function comboRows(rows:unknown[]){return vi.fn((url:string)=>{
+    if(url.includes('/combo-rfqs'))return Promise.resolve(json({data:{items:rows,next_cursor:null}}))
+    return Promise.resolve(json({data:{items:[],next_cursor:null}}))
+  })}
+  it('卡片直接显示份额总额、买入价格与买入金额，不再把预算误标为份额',async()=>{
+    vi.stubGlobal('fetch',comboRows([combo]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const card=view.get('[aria-label="组合交易记录"]').find('.order-card')
+    const metrics=card.findAll('.buy-metric')
+    expect(metrics).toHaveLength(3)
+    expect(metrics[0].text()).toContain('份额总额')
+    expect(metrics[0].text()).toContain('5.12 份')
+    expect(metrics[1].text()).toContain('买入价格')
+    expect(metrics[1].text()).toContain('0.41 pUSD/份')
+    expect(metrics[2].text()).toContain('买入金额')
+    expect(metrics[2].text()).toContain('2.0992 pUSD')
+    expect(metrics[2].text()).not.toContain('约')
+    expect(card.find('.summary-line').text()).not.toContain('1 份')
+    expect(card.findAll('.leg-chip')).toHaveLength(1)
+    view.unmount()
+  })
+  it('按报价重建时金额标「约」，缺数据时三项都写待核实',async()=>{
+    vi.stubGlobal('fetch',comboRows([
+      {...combo,buy_summary:{size:'2',price:'0.5',cost:'1',basis:'quote_rebuilt',estimated:true,source:'quote_rebuilt',detail:'按签名报价重建'}},
+      {...combo,id:'mock-missing',buy_summary:{size:null,price:null,cost:null,basis:'unavailable',estimated:false,source:null,detail:'缺少可核实数据'}}
+    ]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const cards=view.get('[aria-label="组合交易记录"]').findAll('.order-card')
+    expect(cards[0].findAll('.buy-metric')[2].text()).toContain('约1 pUSD')
+    expect(cards[1].findAll('.buy-metric').every(m=>m.text().includes('待核实'))).toBe(true)
+    view.unmount()
+  })
+  it('组合卖出不显示买入摘要',async()=>{
+    vi.stubGlobal('fetch',comboRows([{...combo,direction:'SELL'}]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    expect(view.get('[aria-label="组合交易记录"]').find('.buy-metrics').exists()).toBe(false)
+    view.unmount()
+  })
+  it('核对详情按逐腿 / 组合结论 / 口径说明分层，每腿各占一张小卡片',async()=>{
+    const view=await openComboResolution(comboResolutionPayload)
+    const detail=view.get('[aria-label="组合交易记录"]').find('.resolution-block .detail-box')
+    const titles=detail.findAll('.detail-section-title').map(s=>s.text())
+    expect(titles[0]).toContain('赛事终态核对：共 2 腿')
+    expect(titles).toContain('组合结论')
+    expect(titles).toContain('口径说明')
+    expect(detail.findAll('.mini-card-grid .mini-card')).toHaveLength(2)
+    expect(detail.findAll('.mini-card').length).toBeGreaterThanOrEqual(4)
+    expect(detail.find('.mini-card-grid').text()).toContain('腿 1 · Grizzlies 对 Nets')
+    expect(detail.findAll('.detail-row').length).toBeGreaterThanOrEqual(10)
+    view.unmount()
+  })
+  it('逐腿与报价明细同样分层，并保留比分追踪与赛果判断证据',async()=>{
+    vi.stubGlobal('fetch',comboRows([combo]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const more=view.get('[aria-label="组合交易记录"]').find('.more-actions')
+    expect(more.findAll('.mini-card').length).toBeGreaterThanOrEqual(3)
+    expect(more.text()).toContain('比分追踪：已关注 · 外部赛果：已绑定 · 当前比分：100 : 99')
+    expect(more.text()).toContain('赛果判断：选项获胜')
+    expect(more.text()).toContain('mock-external')
     view.unmount()
   })
 })

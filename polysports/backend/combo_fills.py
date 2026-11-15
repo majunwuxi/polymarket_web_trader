@@ -13,7 +13,7 @@ SDK 明确定义 BUY 报价的 ``maker_amount`` 是签名接受订单实际支�
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal, InvalidOperation, ROUND_CEILING
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP, localcontext
 
 from sqlalchemy import select
 
@@ -80,3 +80,64 @@ def void_combo_fill(db, row):
     if fill is not None and fill.state == 'pending':
         fill.state = 'void'
     return fill
+
+
+def _decimal(value):
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return number if number.is_finite() else None
+
+
+def _trim(value):
+    """展示用数值：最多 6 位小数（micro-USDC 精度），去掉 Numeric(38,18) 的长尾零。"""
+    if value is None:
+        return None
+    with localcontext() as context:
+        context.prec = 50
+        text = format(value.quantize(_MICRO, rounding=ROUND_HALF_UP), 'f')
+    return (text.rstrip('0').rstrip('.') if '.' in text else text) or '0'
+
+
+def buy_summary(direction, quote, fill):
+    """组合买入三项摘要：份额总额 / 每份价格 / 买入金额（仅 BUY 有意义）。
+
+    份额取 takerAmount、金额取 makerAmount，绝不把 ``quantity``（BUY 预算）当份额，
+    也绝不把 ``total_required``（接受报价所需余额）当实际支出。明细缺失时只按
+    官方签名报价给出可核实的两项，金额按 blended_price × takerAmount 重建并明确标
+    为约值；校验不通过时金额留空，不猜测。
+    """
+    if direction != 'BUY':
+        return None
+    fill = fill or {}
+    quote = quote or {}
+    cost = _decimal(fill.get('cost'))
+    size = _decimal(fill.get('size'))
+    if (fill.get('state') == 'confirmed' and cost is not None and size is not None
+            and cost > 0 and size > 0):
+        with localcontext() as context:
+            context.prec = 50
+            price = cost / size
+        return {'size': _trim(size), 'price': _trim(price), 'cost': _trim(cost),
+                'basis': 'combo_fill', 'estimated': False, 'source': fill.get('source'),
+                'detail': ('份额与金额取自已确认组合成交明细（签名接受订单的 '
+                           'makerAmount / takerAmount）；每份价格 = 买入金额 ÷ 份额。')}
+
+    price = _decimal(quote.get('price'))
+    shares = _decimal(quote.get('net_receive'))
+    if price is None or shares is None or not (Decimal(0) < price < Decimal(1)) or shares <= 0:
+        return {'size': None, 'price': None, 'cost': None, 'basis': 'unavailable',
+                'estimated': False, 'source': None,
+                'detail': '缺少已确认成交明细或完整签名报价，份额、价格与金额均无法核实。'}
+
+    rebuilt = rebuilt_cost(price, shares, quote.get('total_required'))
+    if rebuilt is not None:
+        return {'size': _trim(shares), 'price': _trim(price), 'cost': _trim(rebuilt),
+                'basis': 'quote_rebuilt', 'estimated': True, 'source': 'quote_rebuilt',
+                'detail': ('未落库 CONFIRMED 成交明细；份额与每份价格来自官方签名报价，'
+                           '金额按 blended_price × takerAmount 以 micro-USDC 精度重建，为约值。')}
+    return {'size': _trim(shares), 'price': _trim(price), 'cost': None,
+            'basis': 'quote_partial', 'estimated': True, 'source': 'quote',
+            'detail': ('签名报价字段不完整或校验未通过，金额不猜测；total_required 只是'
+                       '接受报价所需余额，不等于实际支出。')}

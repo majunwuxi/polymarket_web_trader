@@ -59,6 +59,20 @@ const legWinner=(won:any,fallback:string)=>won===true?'选项获胜':won===false
 const comboWinner=(won:any)=>won===true?'全部腿命中，组合获胜':won===false?'已有腿未命中，组合未获胜':'暂不能确认组合胜负'
 const comboAgreement=(a:string)=>({consistent:'一致，组合胜负已确认',conflict:'不一致，请人工核实，不确认组合胜负',market_only:'仅有各腿市场终态，按市场结果核对，建议人工核实',result_only:'仅有赛果判断，市场终态未齐，组合结果仅为预计值',unavailable:'两个结果均不可用，暂不能确认',not_applicable:'组合卖出不适用终态胜负核对'} as Record<string,string>)[a]||'暂不能确认'
 const legCheck=(a:string)=>({consistent:'两个结果一致',conflict:'两个结果不一致，需人工核实',partial:'仅有一个结果，暂不确认',unavailable:'两个结果均不可用'} as Record<string,string>)[a]||'暂不确认'
+// 组合买入三项摘要只消费后端 buy_summary：不把 quantity（预算）当份额，也不把
+// total_required（接受报价所需余额）当买入金额。缺数据时明确写「待核实」。
+const buyMetrics=(c:any)=>{
+  const s=c?.buy_summary
+  const hint=s?.basis==='combo_fill'?'已落库成交明细':s?.basis==='quote_rebuilt'?'按签名报价重建 · 约值':s?.basis==='quote_partial'?'报价不完整，金额待核实':'缺少可核实数据'
+  const detail=s?.detail||'接口未提供可核实的组合买入数据。'
+  return [
+    {label:'份额总额',value:s?.size?s.size+' 份':'待核实',hint,detail},
+    {label:'买入价格',value:s?.price?s.price+' pUSD/份':'待核实',hint,detail},
+    {label:'买入金额',value:s?.cost?(s.estimated?'约':'')+s.cost+' pUSD':'待核实',hint:s?.cost?hint:'金额不猜测',detail}
+  ]
+}
+const buySource=(c:any)=>({combo_fill:'已落库 CONFIRMED 成交明细（签名接受订单的 makerAmount / takerAmount）',quote_rebuilt:'官方签名报价按 micro-USDC 精度重建',quote_partial:'签名报价字段不完整，金额未核实',unavailable:'暂无可核实的成交明细或报价'} as Record<string,string>)[c?.buy_summary?.basis]||'暂无可核实的成交明细或报价'
+const legTone=(leg:any)=>leg.leg_agreement==='conflict'?'mini-tag-warn':leg.result_won===true?'mini-tag-ok':'mini-tag-neutral'
 onMounted(()=>{load();loadCombos()})
 </script>
 
@@ -140,24 +154,49 @@ onMounted(()=>{load();loadCombos()})
       <p v-else-if="comboLoaded && !combos.length">暂无已确认组合交易。</p>
       <article v-for="combo in combos" :key="combo.id" class="market-card order-card">
         <h3 class="card-title"><span>组合{{combo.direction==='BUY'?'买入':'卖出'}} · {{comboState(combo.state)}}<span v-if="combo.by_score!==null&&combo.by_score!==undefined"> · {{comboWinner(combo.by_score)}}</span></span><span class="pnl-badge" :class="pnlBadge(combo).cls" :title="pnlBadge(combo).hint">{{pnlBadge(combo).text}}</span></h3>
-        <p v-for="leg in combo.legs" :key="leg.outcome_id" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span> · {{legWinner(leg.result_won,'无法判断')}}</p>
-        <p class="summary-line"><span>按赛果判断：{{comboWinner(combo.by_score)}} · 已判断 {{combo.judged_legs ?? 0}}/{{combo.leg_count ?? combo.legs.length}} 腿<template v-if="combo.score_reason"> · {{combo.score_reason}}</template></span><span class="id-compact">{{combo.quantity}} 份 · {{shortId(combo.external_rfq_id)}}</span></p>
+        <div v-if="combo.direction==='BUY'" class="buy-metrics" aria-label="组合买入摘要">
+          <div v-for="m in buyMetrics(combo)" :key="m.label" class="buy-metric" :title="m.detail"><span class="buy-metric-label">{{m.label}}</span><strong class="buy-metric-value">{{m.value}}</strong><span class="buy-metric-hint">{{m.hint}}</span></div>
+        </div>
+        <p v-for="leg in combo.legs" :key="leg.outcome_id" class="leg-chip" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span> · {{legWinner(leg.result_won,'无法判断')}}</p>
+        <p class="summary-line"><span>按赛果判断：{{comboWinner(combo.by_score)}} · 已判断 {{combo.judged_legs ?? 0}}/{{combo.leg_count ?? combo.legs.length}} 腿<template v-if="combo.score_reason"> · {{combo.score_reason}}</template></span><span class="id-compact">{{shortId(combo.external_rfq_id)}}</span></p>
         <div class="order-actions">
           <RouterLink v-if="combo.direction==='BUY' && combo.state==='confirmed' && !combo.close_blocked" class="text-button" :to="{path:'/combos',query:{close:combo.id}}">立即平仓</RouterLink>
           <button v-else class="text-button" disabled :title="closeHint(combo)">{{combo.close_blocked?'已结算 · 不可平仓':'立即平仓'}}</button>
           <button class="text-button" @click="loadComboResolution(combo.id)">核对组合赛果和市场结算</button>
           <details class="more-actions"><summary>更多</summary><div>
             <details class="detail-box"><summary>逐腿与报价明细</summary>
-              <div v-for="leg in combo.legs" :key="leg.outcome_id">
-                <p>{{leg.home}} 对 {{leg.away}} · {{leg.market_question}} · {{leg.outcome_label}} · {{new Date(leg.starts_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}} UTC+8</p>
-                <p>比分追踪：{{watchName(leg.watch_state)}} · 外部赛果：{{bindingName(leg.binding_state)}}<span v-if="leg.home_score != null && leg.away_score != null"> · 当前比分：{{leg.home_score}} : {{leg.away_score}}</span><span v-else> · 比分待查询</span><span v-if="leg.next_poll_at"> · 下次查询：{{new Date(leg.next_poll_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}} UTC+8</span><span :title="leg.result_basis ?? ''"> · 赛果判断：{{legWinner(leg.result_won,'无法判断')}}</span></p>
-                <RouterLink v-if="leg.sport==='football' || leg.sport==='nba'" :to="'/sports/'+leg.sport">前往赛事中心核对</RouterLink>
+              <p class="detail-section-title">逐腿信息</p>
+              <div class="mini-card-grid">
+                <div v-for="leg in combo.legs" :key="leg.outcome_id" class="mini-card">
+                  <div class="mini-card-head"><strong>{{leg.home}} 对 {{leg.away}}</strong><span class="mini-tag" :class="leg.result_won===true?'mini-tag-ok':'mini-tag-neutral'">{{legWinner(leg.result_won,'无法判断')}}</span></div>
+                  <p class="mini-card-meta">{{leg.market_question}} · {{leg.outcome_label}}</p>
+                  <div class="detail-rows">
+                    <div class="detail-row"><span class="detail-label">比赛时间：</span>{{new Date(leg.starts_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}} UTC+8</div>
+                    <div class="detail-row"><span class="detail-label">比分追踪：</span>{{watchName(leg.watch_state)}} · 外部赛果：{{bindingName(leg.binding_state)}}<span v-if="leg.home_score != null && leg.away_score != null"> · 当前比分：{{leg.home_score}} : {{leg.away_score}}</span><span v-else> · 比分待查询</span></div>
+                    <div v-if="leg.next_poll_at" class="detail-row"><span class="detail-label">下次查询：</span>{{new Date(leg.next_poll_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}} UTC+8</div>
+                    <div class="detail-row" :title="leg.result_basis ?? ''"><span class="detail-label">赛果判断：</span>{{legWinner(leg.result_won,'无法判断')}}</div>
+                  </div>
+                  <RouterLink v-if="leg.sport==='football' || leg.sport==='nba'" class="text-button" :to="'/sports/'+leg.sport">前往赛事中心核对</RouterLink>
+                </div>
               </div>
-              <p>预算或份额：{{combo.quantity}} · 钱包：{{combo.wallet_address}}</p>
-              <p v-if="combo.quote">询价价格：{{combo.quote.price}} · 报价所需：{{combo.quote.total_required}} · 报价预计{{combo.direction==='BUY'?'份额':'收入'}}：{{combo.quote.net_receive ?? '未知'}}</p>
-              <p class="id-text">组合 RFQ：{{combo.external_rfq_id || '未知'}}</p>
-              <p v-if="combo.tx_hash" class="id-text">交易哈希：{{combo.tx_hash}}</p>
-              <p v-if="combo.error_code">状态说明：{{combo.error_code}}</p>
+              <p class="detail-section-title">买入与报价</p>
+              <div class="mini-card">
+                <div class="detail-rows">
+                  <div class="detail-row"><span class="detail-label">金额来源：</span>{{buySource(combo)}}</div>
+                  <div class="detail-row"><span class="detail-label">预算 / 份额参数：</span>{{combo.quantity}}（BUY 为预算，不等于份额）</div>
+                  <div v-if="combo.quote" class="detail-row"><span class="detail-label">签名报价：</span>每份 {{combo.quote.price}} · 报价所需 {{combo.quote.total_required}} · 预计{{combo.direction==='BUY'?'份额':'收入'}} {{combo.quote.net_receive ?? '未知'}}</div>
+                  <div v-if="combo.fill" class="detail-row"><span class="detail-label">成交明细：</span>支出 {{combo.fill.cost}} · 份额 {{combo.fill.size}} · {{combo.fill.source==='signed_order'?'签名接受订单':'按签名报价重建'}}<span v-if="combo.fill.confirmed_at"> · {{new Date(combo.fill.confirmed_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}} UTC+8</span></div>
+                </div>
+              </div>
+              <p class="detail-section-title">标识与状态</p>
+              <div class="mini-card">
+                <div class="detail-rows">
+                  <div class="detail-row id-text"><span class="detail-label">钱包：</span>{{combo.wallet_address}}</div>
+                  <div class="detail-row id-text"><span class="detail-label">组合 RFQ：</span>{{combo.external_rfq_id || '未知'}}</div>
+                  <div v-if="combo.tx_hash" class="detail-row id-text"><span class="detail-label">交易哈希：</span>{{combo.tx_hash}}</div>
+                  <div v-if="combo.error_code" class="detail-row"><span class="detail-label">状态说明：</span>{{combo.error_code}}</div>
+                </div>
+              </div>
             </details>
             <RouterLink to="/combos">查看组合记录</RouterLink>
           </div></details>
@@ -166,19 +205,32 @@ onMounted(()=>{load();loadCombos()})
         <div v-if="comboResolutionId===combo.id" class="resolution-block">
           <p class="check-line" :class="comboResolution.agreement==='consistent'?'tone-ok':comboResolution.agreement==='conflict'?'tone-warn':'tone-info'">{{comboAgreement(comboResolution.agreement)}}</p>
           <details class="detail-box"><summary>详情</summary>
-            <p>赛事终态核对：共 {{comboResolution.leg_count}} 腿 · 已按赛果判断 {{comboResolution.judged_legs}} 腿 · 已有市场终态 {{comboResolution.resolved_legs}} 腿</p>
-            <div v-for="leg in comboResolution.legs" :key="leg.leg_no">
-              <p>腿 {{leg.leg_no}} · {{leg.home}} 对 {{leg.away}} · {{leg.market_question}} · {{leg.outcome_label}} · <template v-if="leg.score_verified">比赛已结束，外部赛果已核实 {{leg.home_score}} : {{leg.away_score}}</template><template v-else>比赛尚未确认结束或外部赛果未核实（{{leg.game_status}}）</template></p>
-              <p class="muted">结果一 · 按赛果判断：{{legWinner(leg.result_won,'无法判断')}} · 判断依据：{{leg.result_judgment?.basis ?? '赛果未确认'}}</p>
-              <p class="muted">结果二 · 该腿 Polymarket 终态结算：<template v-if="leg.market?.state==='resolved'">{{legWinner(leg.market_won,'暂无终态结果')}} · 每份 {{leg.market_won?'1':'0'}} pUSD · 已最终结算<template v-if="leg.market.resolved_at"> · {{new Date(leg.market.resolved_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}} UTC+8</template></template><template v-else>暂无终态结果（{{leg.market?.market_status_text ?? leg.market?.market_error ?? '结算流程尚未完成'}}）<template v-if="leg.market?.market_status"> · 阶段 {{leg.market.market_status}}</template></template></p>
-              <p class="muted">单腿核对：{{legCheck(leg.leg_agreement)}}</p>
+            <p class="detail-section-title">赛事终态核对：共 {{comboResolution.leg_count}} 腿 · 已按赛果判断 {{comboResolution.judged_legs}} 腿 · 已有市场终态 {{comboResolution.resolved_legs}} 腿</p>
+            <div class="mini-card-grid">
+              <div v-for="leg in comboResolution.legs" :key="leg.leg_no" class="mini-card">
+                <div class="mini-card-head"><strong>腿 {{leg.leg_no}} · {{leg.home}} 对 {{leg.away}}</strong><span class="mini-tag" :class="legTone(leg)">{{legWinner(leg.result_won,'无法判断')}}</span></div>
+                <p class="mini-card-meta">{{leg.market_question}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span></p>
+                <div class="detail-rows">
+                  <div class="detail-row"><span class="detail-label">赛事终态：</span><template v-if="leg.score_verified">比赛已结束，外部赛果已核实 {{leg.home_score}} : {{leg.away_score}}</template><template v-else>比赛尚未确认结束或外部赛果未核实（{{leg.game_status}}）</template></div>
+                  <div class="detail-row"><span class="detail-label">结果一 · 按赛果判断：</span>{{legWinner(leg.result_won,'无法判断')}}</div>
+                  <div class="detail-row detail-note"><span class="detail-label">判断依据：</span>{{leg.result_judgment?.basis ?? '赛果未确认'}}</div>
+                  <div class="detail-row"><span class="detail-label">结果二 · 该腿 Polymarket 终态结算：</span><template v-if="leg.market?.state==='resolved'">{{legWinner(leg.market_won,'暂无终态结果')}} · 每份 {{leg.market_won?'1':'0'}} pUSD · 已最终结算<template v-if="leg.market.resolved_at"> · {{new Date(leg.market.resolved_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}} UTC+8</template></template><template v-else>暂无终态结果（{{leg.market?.market_status_text ?? leg.market?.market_error ?? '结算流程尚未完成'}}）<template v-if="leg.market?.market_status"> · 阶段 {{leg.market.market_status}}</template></template></div>
+                  <div class="detail-row"><span class="detail-label">单腿核对：</span>{{legCheck(leg.leg_agreement)}}</div>
+                </div>
+              </div>
             </div>
-            <p>组合结果一 · 按赛果判断：{{comboWinner(comboResolution.by_score)}}</p>
-            <p>组合结果二 · 各腿 Polymarket 终态结算：{{comboWinner(comboResolution.by_market)}}</p>
-            <p>两个结果核对：{{comboAgreement(comboResolution.agreement)}}</p>
-            <p v-if="comboResolution.reason">{{comboResolution.reason}}</p>
-            <p class="muted">组合结算金额：系统未记录组合成交明细，暂不确认结算金额。</p>
-            <p class="muted">{{comboResolution.notice}}</p>
+            <p class="detail-section-title">组合结论</p>
+            <div class="mini-card">
+              <div class="detail-rows">
+                <div class="detail-row"><span class="detail-label">组合结果一 · 按赛果判断：</span>{{comboWinner(comboResolution.by_score)}}</div>
+                <div class="detail-row"><span class="detail-label">组合结果二 · 各腿 Polymarket 终态结算：</span>{{comboWinner(comboResolution.by_market)}}</div>
+                <div class="detail-row"><span class="detail-label">两个结果核对：</span>{{comboAgreement(comboResolution.agreement)}}</div>
+                <div v-if="comboResolution.reason" class="detail-row"><span class="detail-label">核对说明：</span>{{comboResolution.reason}}</div>
+                <div class="detail-row"><span class="detail-label">组合结算金额：</span>该只读核对不计算结算金额；卡片盈亏来自已落库成交明细，实际赔付以 Polymarket 组合仓位终态为准。</div>
+              </div>
+            </div>
+            <p class="detail-section-title">口径说明</p>
+            <div class="mini-card mini-card-note"><p>{{comboResolution.notice}}</p></div>
           </details>
         </div>
       </article>

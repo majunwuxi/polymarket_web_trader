@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from . import auth
 from .close_policy import MARKET_CLOSED_REASON, RESULT_CONFIRMED_REASON
 from .combo_catalog import fetch_positions
-from .combo_fills import fill_payload
+from .combo_fills import buy_summary as combo_buy_summary, fill_payload
 from .combo_resolution import summarize_combo
 from .order_resolution import judge_score_detail
 from .pnl import combo_pnl
@@ -113,7 +113,8 @@ def combo_data(db,row,fill=_MISSING):
             'by_score':score_summary['by_score'],'judged_legs':score_summary['judged_legs'],
             'leg_count':score_summary['leg_count'],'score_reason':score_summary['reason'],
             'close_blocked':close_reason is not None,'close_block_reason':close_reason,
-            'quote':quote,'fill':fill_data,'pnl':pnl}
+            'quote':quote,'fill':fill_data,'pnl':pnl,
+            'buy_summary':combo_buy_summary(row.direction,quote,fill_data)}
 
 
 def failure(request,exc):

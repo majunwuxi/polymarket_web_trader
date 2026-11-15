@@ -132,6 +132,8 @@
 
 **组合成交明细（5.1.1c）**：`combo_fills` 表由 Alembic 迁移 `b5d2e7c41a90` 建立，一条 RFQ 最多一条明细。接受报价时在同一事务写入 `makerAmount` / `takerAmount`（`state:"pending"`、`source:"signed_order"`）；RFQ 进入 `CONFIRMED` 后置为 `confirmed` 并回填 `tx_hash`，终态失败/过期/拒绝则置 `void`，因此未成交或结果不明的报价不会变成确定盈亏。迁移对历史 `state="confirmed"` 的 BUY 组合按 `blended_price × takerAmount` 重建实际支出（`source:"quote_rebuilt"`），仅当签名报价字段完整、成本为正且 `total_required >= 重建成本` 时才写入；不满足条件的记录不回填，卡片继续显示带「约」的估算。`GET /combo-rfqs` 与 `GET /combo-rfqs/{rfq_id}` 返回只读 `fill` 字段（`cost` / `size` / `source` / `state` / `tx_hash` / `confirmed_at`），只包含 `confirmed` 明细。
 
+**组合买入三项摘要（5.1.1d）**：BUY 组合在 `GET /combo-rfqs` 与 `GET /combo-rfqs/{rfq_id}` 另附只读 `buy_summary`：`{ "size", "price", "cost", "basis", "estimated", "source", "detail" }`，SELL 为 `null`。三项分别是份额总额（`takerAmount`）、每份价格与买入金额（`makerAmount`）。`basis` 为 `combo_fill`（已落库 `state="confirmed"` 明细，`estimated:false`，`price = cost / size`）/ `quote_rebuilt`（明细缺失但签名报价完整，`price` 取 `blended_price`、`size` 取 `net_receive`、`cost` 按 `blended_price × takerAmount` 以 micro-USDC 精度重建，`estimated:true`）/ `quote_partial`（重建校验不通过，`cost:null`，金额不猜测）/ `unavailable`（三项均为 `null`）。数值由 `backend/combo_fills.py::buy_summary()` 统一格式化到最多 6 位小数并去掉 `Numeric(38,18)` 的尾零。**`quantity` 是 BUY 预算、`total_required` 只是接受报价所需余额，两者都不是份额或实际支出，绝不用于这三项**；界面把三项各放一张小卡片，悬停可见 `detail` 口径说明。该字段纯本地计算、不查上游；`quote_rebuilt` 的重建金额与 `pnl` 的 `quote_estimate`（按 `total_required` 投入估算）是不同用途的两种估算，都不能当作链上结算金额。
+
 ### 5.1.2 赛果与结算金额核对（单场）
 
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
@@ -180,7 +182,7 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
 | `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 首次 `201`：已得到报价或明确无报价的 `ComboRFQ` ；`202`：仍在请求或结果未知；同键重复且结果明确为 `200` | 创建 Combo 草稿与 RFQ 记录，不触发接受或资金成交；至少两腿、不能重复 outcome；BUY 开仓要求所有映射已确认且真实 Combo 能力已核实，带 `parent_combo_id` 的 SELL 平仓不要求映射确认，改为核验原组合成交记录、原组合腿与官方 Combo 目录持仓标识；`quantity` 最多六位小数 |
-| `GET /combo-rfqs` | `limit`, `cursor`, `state`, `game_id` | `200` 分页组合记录 | 按创建时间及 ID 倒序；每腿附带纯本地、只读的 `result_won`/`result_basis`/`score_verified`/`game_finished`，组合附带 `by_score`/`judged_legs`/`leg_count`/`score_reason`，组合附带 `close_blocked` / `close_block_reason`（任一腿赛果已确认或停单即禁止平仓）、只读 `fill`（已确认成交明细，见 5.1.1c）与卡片盈亏 `pnl`（有 `confirmed` 明细则为不带「约」的确定金额，见 5.1.1b）；列表一次取出本页 `combo_fills`，不查询 Polymarket 上游，市场终态需另调 `/resolution` |
+| `GET /combo-rfqs` | `limit`, `cursor`, `state`, `game_id` | `200` 分页组合记录 | 按创建时间及 ID 倒序；每腿附带纯本地、只读的 `result_won`/`result_basis`/`score_verified`/`game_finished`，组合附带 `by_score`/`judged_legs`/`leg_count`/`score_reason`，组合附带 `close_blocked` / `close_block_reason`（任一腿赛果已确认或停单即禁止平仓）、只读 `fill`（已确认成交明细，见 5.1.1c）、卡片盈亏 `pnl`（有 `confirmed` 明细则为不带「约」的确定金额，见 5.1.1b）与买入三项摘要 `buy_summary`（见 5.1.1d）；列表一次取出本页 `combo_fills`，不查询 Polymarket 上游，市场终态需另调 `/resolution` |
 | `GET /combo-rfqs/by-key/{key}` | 本地幂等键与 `wallet_id` | `200` 现有组合请求 | 用于查询不确定的本地请求，404 不证明外部未收到 |
 | `GET /combo-legs/{link_id}/{outcome_id}` | 已确认映射和选项 ID | `200` 目录 position ID | 仅读取目录身份；不代表账户获交易授权 |
 | `GET /combo-rfqs/{rfq_id}` | 本地 RFQ UUID | `200`：`ComboRFQ` | 返回本地状态和已核实的外部 RFQ ID；外部结果未知不能当作无报价或失败 |

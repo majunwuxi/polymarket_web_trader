@@ -57,3 +57,30 @@
 .pnl-profit{background:#c62828;color:#fff}
 .pnl-flat{background:#4b5563;color:#fff}
 .pnl-pending{background:#eef2ee;color:#53675c;border:1px solid #d8e3da;font-weight:600}
+
+/* 组合买入三项摘要：份额 / 每份价格 / 买入金额，各占一张小卡片 */
+.buy-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:2px 0 12px}
+.buy-metric{display:grid;gap:3px;padding:10px 12px;background:#f7faf8;border:1px solid #e3ece5;border-radius:10px;min-width:0}
+.buy-metric-label{font-size:11px;color:#7d9085;letter-spacing:.02em}
+.buy-metric-value{font-size:15px;color:#244638;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+.buy-metric-hint{font-size:10px;color:#9aaba1;overflow-wrap:anywhere}
+@media(max-width:600px){.buy-metrics{grid-template-columns:1fr;gap:8px}.buy-metric{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.buy-metric-label{flex:0 0 auto}.buy-metric-hint{margin-left:auto}}
+/* 详情分层：小节标题 + 一组等宽小卡片 + 卡片内标签/值对齐 */
+.order-history .leg-chip{margin:5px 0;padding:6px 10px;background:#f5f8f6;border:1px solid #e9f0eb;border-radius:8px;font-size:12px;line-height:1.5}
+.detail-box .detail-section-title{margin:14px 0 8px;font-size:12px;font-weight:700;color:#397b62;letter-spacing:.02em}
+.detail-section-title:first-of-type{margin-top:4px}
+.mini-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px}
+.mini-card{padding:12px 13px;background:#fff;border:1px solid #e3ebe5;border-radius:11px;min-width:0}
+.mini-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.mini-card-head strong{font-size:13px;color:#244638;overflow-wrap:anywhere}
+.detail-box .mini-card-meta{margin:0 0 8px;font-size:11px;line-height:1.5;color:#8a9b91;overflow-wrap:anywhere}
+.mini-tag{flex:0 0 auto;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700}
+.mini-tag-ok{background:#e4f5eb;color:#14764c}
+.mini-tag-warn{background:#fff2e2;color:#9a651a}
+.mini-tag-neutral{background:#eef2ee;color:#6b7d72}
+.mini-card-note{background:#f7faf8}
+.detail-box .mini-card-note p{margin:0;font-size:11px;line-height:1.6;color:#8a9b91}
+.detail-rows{display:grid;gap:5px}
+.detail-row{font-size:12px;line-height:1.6;color:#53675c;overflow-wrap:anywhere}
+.detail-label{display:inline-block;min-width:96px;font-weight:700;color:#7b8d82}
+.detail-note{color:#8a9b91;font-size:11px}

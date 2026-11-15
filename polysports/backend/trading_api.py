@@ -107,9 +107,10 @@ def close_context(request:Request,intent_id:uuid.UUID):
 
 @router.get('/trade-intents/{intent_id}/resolution')
 def resolution(request:Request,intent_id:uuid.UUID):
+    """并列返回赛果判断与 Polymarket 终态结算两个独立结果，互相印证一致才确认金额。"""
     import httpx
-    from .models import Game, MarketOutcome, PolyMarket, ResultBindingRequest, Team
-    from .order_resolution import compare_moneyline_score, read_resolution
+    from .models import Game, MarketOutcome, PolyMarket, ResultBindingRequest, Team, TradeFill
+    from .order_resolution import compare_moneyline_score, judge_moneyline_score, read_resolution, settlement_amounts
     from .sports_sources import SourceError
     with Session(request.app.state.engine) as db:
         intent=db.get(TradeIntent,intent_id)
@@ -120,20 +121,39 @@ def resolution(request:Request,intent_id:uuid.UUID):
         verified=bool(binding and binding.state=='bound' and game.status=='finished' and game.home_score is not None and game.away_score is not None)
         base={'score_verified':verified,'home_score':game.home_score if verified else None,'away_score':game.away_score if verified else None,
               'matched_size':str(intent.matched_size) if intent.matched_size is not None else None,'side':intent.side}
-        if intent.matched_size is None or intent.matched_size<=0 or not verified:
-            return ok(request,{**base,'state':'pending'})
+        side,matched=intent.side,intent.matched_size
+        fills=[{'size':x.size,'price':x.price,'status':x.status} for x in db.scalars(select(TradeFill).where(TradeFill.intent_id==intent_id))]
         condition,index=market.condition_id,outcome.outcome_index
         home=db.get(Team,game.home_team_id);away=db.get(Team,game.away_team_id)
         score_context={'sport':game.sport,'question':market.question,'outcome_label':outcome.label,
-            'home':home.source_name,'away':away.source_name,'home_score':game.home_score,
-            'away_score':game.away_score,'provider_status':game.provider_status}
+            'home':getattr(home,'source_name',None),'away':getattr(away,'source_name',None),
+            'home_score':game.home_score if verified else None,'away_score':game.away_score if verified else None,
+            'provider_status':game.provider_status}
+        result_won=judge_moneyline_score(**score_context) if verified else None
+        result_judgment={'state':'judged' if result_won is not None else ('unsupported' if verified else 'unavailable'),
+            'outcome_won':result_won,
+            'payout_per_share':('1' if result_won else '0') if result_won is not None else None,
+            'basis':'已绑定外部赛果比分 + 严格识别的市场胜负命题' if result_won is not None else
+                    ('市场命题规则无法严格识别，不从比分推断输赢' if verified else '外部赛果尚未绑定或比分未确认')}
+    if matched is None or matched<=0:
+        return ok(request,{**base,'state':'pending','score_consistency':'unverified','result_judgment':result_judgment,
+            'market_error':'订单没有已确认的成交份额，未查询市场结算',
+            'settlement':settlement_amounts(side=side,matched_size=matched,fills=fills,
+                market_outcome_won=None,result_outcome_won=result_won)})
     try:
         with httpx.Client() as client: data=read_resolution(client,condition,index)
-        if data['state']=='resolved':
-            data['score_consistency']=compare_moneyline_score(**score_context,outcome_won=data['outcome_won'])
+        market_won=data['outcome_won'] if data['state']=='resolved' else None
+        data['score_consistency']=compare_moneyline_score(**score_context,outcome_won=market_won) if market_won is not None and verified else 'unverified'
+        data['result_judgment']=result_judgment
+        data['settlement']=settlement_amounts(side=side,matched_size=matched,fills=fills,
+            market_outcome_won=market_won,result_outcome_won=result_won)
         return ok(request,{**base,**data})
     except SourceError:
-        return auth.error(request,503,'RESOLUTION_UNAVAILABLE','市场结算状态暂不可用')
+        # 上游暂不可用时仍返回赛果这一个独立结果，但明确标注市场结果缺失、金额不确认。
+        return ok(request,{**base,'state':'unavailable','score_consistency':'unverified',
+            'result_judgment':result_judgment,'market_error':'市场结算状态暂不可用',
+            'settlement':settlement_amounts(side=side,matched_size=matched,fills=fills,
+                market_outcome_won=None,result_outcome_won=result_won)})
 
 
 def update_cancel(engine,intent_id,state,code=None,delay=None):

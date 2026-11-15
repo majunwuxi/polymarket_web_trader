@@ -124,7 +124,17 @@
 | `POST /single-orders/preview` | 平仓时带 `order_type:"FOK"`、`parent_trade_id`，`side:"SELL"`，`limit_price` 与 `size` 取自 `close-context` | 与 5.1 相同 | 平仓跳过赛事映射的 15 分钟确认与 Gamma 赛事实时核对，仍校验市场/资产身份、盘口规则、余额、授权、原订单未平仓份额及是否已有未解决的平仓请求 |
 | `POST /single-orders` | 同上并附 `preview_token` 与 `Idempotency-Key` | 与 5.2 相同 | 以 FOK 提交，全部成交或不成交；提交结果未知时不得重发 |
 
-平仓页面不提供方向、限价、金额或份额输入，价格与份额全部由服务端从真实盘口和持仓计算，用户只确认一次；预览有效期 30 秒。组合平仓不走本接口，使用 `POST /combo-rfqs` 的 SELL 报价流程。
+平仓页面不提供方向、限价、金额或份额输入，价格与份额全部由服务端从真实盘口和持仓计算，用户只确认一次；预览有效期 30 秒。组合平仓不走本接口，使用 `POST /combo-rfqs` 的 SELL 报价流程：带 `parent_combo_id` 时，请求报价与接受报价都不要求赛事映射在 15 分钟内确认，仅核验组合腿的市场与资产身份、原组合成交份额、官方 Combo 目录 `position_id`、卖出报价资产、余额与授权。
+
+### 5.1.2 赛果与结算金额核对（单场）
+
+| 方法与路径 | 请求 | 成功响应 | 业务规则 |
+| --- | --- | --- | --- |
+| `GET /trade-intents/{intent_id}/resolution` | 无 | `200`：`{ "state", "score_verified", "home_score", "away_score", "matched_size", "side", "outcome_won", "resolved_at", "score_consistency", "result_judgment", "settlement", "market_error" }` | 返回两个相互独立的结算结果：按已绑定外部赛果比分推算的胜负（`result_judgment`），以及 Polymarket data-api `/v2/resolutions` 的终态二元赔付（`state:"resolved"` 时，`payouts` 仅接受 `[1,0]` / `[0,1]`）。理论上两者应一致；仅 `settlement.agreement:"consistent"` 时确认应结算金额。市场未终态（`state:"pending"`）或上游不可用（`state:"unavailable"`，附 `market_error`）时仍返回赛果判断，但不确认金额 |
+
+`result_judgment` 字段：`state`（`judged` / `unsupported` / `unavailable`）、`outcome_won`、`payout_per_share`、`basis`。仅当外部赛果已绑定完赛、且市场命题能严格识别为胜负选项（NBA 的 `A vs B` 队伍选项；足球 `provider_status:"FT"` 的 `Will X win on YYYY MM DD?` Yes/No）时才从比分判断输赢，其余情况不从比分推断。`score_consistency` 保留既有比分核对口径；市场结果不可用时为 `unverified`。
+
+`settlement` 字段：`settlement_amount`（已确认的应结算金额，pUSD）、`market_settlement_amount`（市场结果口径）、`result_settlement_amount`（赛果结果口径）、`market_outcome_won`、`result_outcome_won`、`agreement`、`cost_basis`（成交成本）、`realized_pnl`（净盈亏）、`covered_shares`（已核实成交份额）、`confirmed_fill_count`、`cost_verified`、`currency`、`reason`、`notice`。两个结果各自按 `matched_size × 1`（获胜）或 `0`（未获胜）换算，绝不互相替代：`agreement` 为 `consistent`（两结果一致，确认金额）、`conflict`（不一致，并列保留两个金额但不确认，需人工核实）、`market_only`（仅市场结果可用，按市场终态给出金额并建议人工核实）、`result_only`（仅赛果结果可用，金额为**预计值**不确认）、`unavailable`（两者皆无）。`cost_basis` 与 `realized_pnl` 只在金额已确认、且本系统已保存的 `CONFIRMED` 成交明细份额之和严格等于 `matched_size` 时给出，否则为 `null` 并在 `reason` 中说明（可先查询成交记录）。`side:"SELL"` 平仓订单按成交价结算，不适用市场最终赔付。金额是按二元终态赔付与已确认成交计算的**应结算金额**，不含未记录费用，不代表链上赎回或实际到账；组合交易不走本接口。
 
 ### 5.2 提交、查询和撤单
 
@@ -161,12 +171,12 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
-| `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 首次 `201`：已得到报价或明确无报价的 `ComboRFQ` ；`202`：仍在请求或结果未知；同键重复且结果明确为 `200` | 创建 Combo 草稿与 RFQ 记录，不触发接受或资金成交；至少两腿、不能重复 outcome，所有映射已确认且真实 Combo 能力已核实；`quantity` 最多六位小数 |
+| `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 首次 `201`：已得到报价或明确无报价的 `ComboRFQ` ；`202`：仍在请求或结果未知；同键重复且结果明确为 `200` | 创建 Combo 草稿与 RFQ 记录，不触发接受或资金成交；至少两腿、不能重复 outcome；BUY 开仓要求所有映射已确认且真实 Combo 能力已核实，带 `parent_combo_id` 的 SELL 平仓不要求映射确认，改为核验原组合成交记录、原组合腿与官方 Combo 目录持仓标识；`quantity` 最多六位小数 |
 | `GET /combo-rfqs` | `limit`, `cursor` | `200` 分页组合记录 | 按创建时间及 ID 倒序 |
 | `GET /combo-rfqs/by-key/{key}` | 本地幂等键与 `wallet_id` | `200` 现有组合请求 | 用于查询不确定的本地请求，404 不证明外部未收到 |
 | `GET /combo-legs/{link_id}/{outcome_id}` | 已确认映射和选项 ID | `200` 目录 position ID | 仅读取目录身份；不代表账户获交易授权 |
 | `GET /combo-rfqs/{rfq_id}` | 本地 RFQ UUID | `200`：`ComboRFQ` | 返回本地状态和已核实的外部 RFQ ID；外部结果未知不能当作无报价或失败 |
-| `POST /combo-rfqs/{rfq_id}/accept` | `{ "quote_id":"uuid" }`；会话 + CSRF | `200`：明确拒绝或已确认执行的 RFQ；`202`：执行中或未知的 RFQ | 此请求表示用户确认报价及全部腿。锁定 RFQ 与意图，核对有效期、报价、账户、市场和映射；先原子持久化确认、所有赛事关注及接受开始状态，再调用 SDK。重复请求只返回已存在状态，不再次接受 |
+| `POST /combo-rfqs/{rfq_id}/accept` | `{ "quote_id":"uuid" }`；会话 + CSRF | `200`：明确拒绝或已确认执行的 RFQ；`202`：执行中或未知的 RFQ | 此请求表示用户确认报价及全部腿。锁定 RFQ 与意图，核对有效期、报价、账户和市场；平仓不要求赛事映射确认，但仍核验组合腿市场身份、原组合持仓与报价资产；先原子持久化确认、所有赛事关注及接受开始状态，再调用 SDK。重复请求只返回已存在状态，不再次接受 |
 | `GET /combo-rfqs/{rfq_id}/events` | `limit`, `cursor` | `200` 分页脱敏 RFQ 状态事件 | 按 `created_at,id` 排序；`executing` 不等于成交 |
 
 `POST /combo-rfqs` 的幂等键映射 `combo_rfqs.client_request_id`，指纹覆盖钱包、方向、金额/份额和规范化腿。相同键/相同参数返回原本地 RFQ；参数不同返回 `409 IDEMPOTENCY_CONFLICT`。若请求结果未知，只能查询/对账原 RFQ；不能通过更换幂等键绕过未知状态。服务端必须使用 `(wallet_id, fingerprint)` 的未解决状态唯一约束阻止相同参数换键并发创建额外 RFQ；冲突响应带可查询的原本地 RFQ ID，不得暴露秘密。该约束也适用于单场未知或正在提交的相同业务参数。

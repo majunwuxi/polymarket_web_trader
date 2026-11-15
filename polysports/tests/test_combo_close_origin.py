@@ -3,7 +3,9 @@ import uuid
 from decimal import Decimal
 from types import SimpleNamespace as S
 import pytest
+from backend import combo_service
 from backend.combo_service import verify_combo_close_origin
+from backend.models import MarketLink, MarketOutcome, PolyMarket
 from backend.trading_gateway import TradingError
 
 
@@ -31,3 +33,40 @@ def test_close_rejects_unresolved_or_previously_sold_shares():
     with pytest.raises(TradingError,match='未解决'):verify_combo_close_origin(db,origin.id,origin.wallet_id,legs,Decimal('1'),positions)
     db,origin,legs,positions=setup_case(sold=Decimal('4'))
     with pytest.raises(TradingError,match='超过'):verify_combo_close_origin(db,origin.id,origin.wallet_id,legs,Decimal('2'),positions)
+
+
+def legs_case(mismatch=False,missing_market=False,duplicate=False):
+    market=S(id=uuid.uuid4())
+    other=S(id=market.id if duplicate else uuid.uuid4())
+    link1=S(id=uuid.uuid4(),market_id=market.id,game_id=uuid.uuid4())
+    outcome1=S(id=uuid.uuid4(),market_id=other.id if mismatch else market.id)
+    link2=S(id=uuid.uuid4(),market_id=other.id,game_id=uuid.uuid4())
+    outcome2=S(id=uuid.uuid4(),market_id=other.id)
+    rows={MarketLink:{link1.id:link1,link2.id:link2},MarketOutcome:{outcome1.id:outcome1,outcome2.id:outcome2},
+          PolyMarket:{market.id:market,other.id:None if missing_market else other}}
+    class Db:
+        def get(self,model,ident):return rows.get(model,{}).get(ident)
+    return Db(),[(str(link1.id),str(outcome1.id)),(str(link2.id),str(outcome2.id))],(link1,market,outcome1)
+
+
+def test_open_still_requires_confirmed_event_mapping(monkeypatch):
+    db,legs,_=legs_case()
+    monkeypatch.setattr(combo_service,'valid_link',lambda *args,**kwargs:False)
+    with pytest.raises(TradingError,match='赛事映射'):combo_service.resolve_legs(db,legs)
+    with pytest.raises(TradingError,match='赛事映射'):combo_service.resolve_legs(db,legs,False)
+
+
+def test_combo_close_ignores_stale_event_mapping(monkeypatch):
+    db,legs,expected=legs_case()
+    monkeypatch.setattr(combo_service,'valid_link',lambda *args,**kwargs:False)
+    result=combo_service.resolve_legs(db,legs,True)
+    assert len(result)==2 and result[0]==expected
+
+
+def test_combo_close_still_checks_market_asset_identity(monkeypatch):
+    monkeypatch.setattr(combo_service,'valid_link',lambda *args,**kwargs:True)
+    for kwargs in ({'mismatch':True},{'missing_market':True}):
+        db,legs,_=legs_case(**kwargs)
+        with pytest.raises(TradingError,match='映射|市场'):combo_service.resolve_legs(db,legs,True)
+    db,legs,_=legs_case(duplicate=True)
+    with pytest.raises(TradingError,match='重复'):combo_service.resolve_legs(db,legs,True)

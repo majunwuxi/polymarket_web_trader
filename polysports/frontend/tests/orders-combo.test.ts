@@ -40,3 +40,45 @@ describe('交易记录中的组合（模拟接口）',()=>{
     view.unmount()
   })
 })
+
+const order={id:'mock-order',side:'BUY',state:'filled',limit_price:'0.4',size:'3',matched_size:'3',external_order_id:'mock-external',home:'模拟主队',away:'模拟客队',market_question:'模拟胜负',outcome_label:'模拟主队',market_link_id:'mock-link',outcome_id:'mock-outcome'}
+const settlement={settlement_amount:'3',market_settlement_amount:'3',result_settlement_amount:'3',market_outcome_won:true,result_outcome_won:true,agreement:'consistent',cost_basis:'1.2',realized_pnl:'1.8',covered_shares:'3',confirmed_fill_count:1,cost_verified:true,currency:'pUSD',reason:null,notice:'赛果判断与 Polymarket 终态结算一致；按市场终态赔付与已确认成交份额计算，不等于链上赎回或实际到账。'}
+const resultJudgment={state:'judged',outcome_won:true,payout_per_share:'1',basis:'已绑定外部赛果比分 + 严格识别的市场胜负命题'}
+function resolutionFetch(payload:unknown){return vi.fn((url:string)=>{
+  if(url.includes('/resolution'))return Promise.resolve(json({data:payload}))
+  if(url.includes('/combo-rfqs'))return Promise.resolve(json({data:{items:[],next_cursor:null}}))
+  return Promise.resolve(json({data:{items:[order],next_cursor:null}}))
+})}
+async function openResolution(payload:unknown){vi.stubGlobal('fetch',resolutionFetch(payload));const view=mount(Orders,{global:{plugins:[router]}});await flushPromises();await view.findAll('button').find(button=>button.text()==='核对赛果和市场结算')!.trigger('click');await flushPromises();return view}
+
+describe('交易记录中的两个结算结果（模拟接口）',()=>{
+  it('赛果判断与市场结算一致时确认结算金额、成本与盈亏',async()=>{
+    const view=await openResolution({state:'resolved',score_verified:true,home_score:100,away_score:90,outcome_won:true,matched_size:'3',side:'BUY',result_judgment:resultJudgment,settlement})
+    expect(view.text()).toContain('结果一 · 按赛果判断')
+    expect(view.text()).toContain('结果二 · Polymarket 终态结算')
+    expect(view.text()).toContain('两个结果核对：一致，结算金额已确认')
+    expect(view.text()).toContain('结算金额：3 pUSD')
+    expect(view.text()).toContain('成交成本：1.2')
+    expect(view.text()).toContain('已实现盈亏：1.8')
+    expect(view.text()).toContain('不等于链上赎回或实际到账')
+    view.unmount()
+  })
+  it('两个结果冲突时并列展示金额但不确认结算金额',async()=>{
+    const conflict={...settlement,agreement:'conflict',settlement_amount:null,result_outcome_won:false,result_settlement_amount:'0',cost_basis:null,realized_pnl:null,covered_shares:null,cost_verified:false,reason:'两个结算结果不一致，需人工核实，不确认结算金额'}
+    const view=await openResolution({state:'resolved',score_verified:true,home_score:100,away_score:90,outcome_won:true,matched_size:'3',side:'BUY',result_judgment:{...resultJudgment,outcome_won:false,payout_per_share:'0'},settlement:conflict})
+    expect(view.text()).toContain('不一致，请人工核实')
+    expect(view.text()).toContain('推算应结算 0 pUSD')
+    expect(view.text()).toContain('应结算 3 pUSD')
+    expect(view.text()).not.toContain('结算金额：')
+    view.unmount()
+  })
+  it('市场尚未终态时仅显示按赛果推算的预计金额，不当作已确认结算',async()=>{
+    const provisional={...settlement,agreement:'result_only',settlement_amount:null,market_settlement_amount:null,market_outcome_won:null,cost_basis:null,realized_pnl:null,covered_shares:null,cost_verified:false,reason:'市场尚未进入终态；按赛果推算的金额仅为预计值，待 Polymarket 结算确认'}
+    const view=await openResolution({state:'pending',score_verified:true,home_score:100,away_score:90,matched_size:'3',side:'BUY',result_judgment:resultJudgment,settlement:provisional})
+    expect(view.text()).toContain('市场尚未进入终态')
+    expect(view.text()).toContain('推算应结算 3 pUSD')
+    expect(view.text()).toContain('金额仅为预计值')
+    expect(view.text()).not.toContain('结算金额：')
+    view.unmount()
+  })
+})

@@ -144,7 +144,7 @@ def statistics(request:Request,sport:Literal['football','nba']|None=None,start:d
         trade_count=db.scalar(select(func.count()).select_from(trades))
         fill_count=db.scalar(select(func.count(TradeFill.id)).where(func.upper(TradeFill.status)=='CONFIRMED',TradeFill.intent_id.in_(select(trades.c.id).where(trades.c.kind=='single'))))
         combo_confirmed=db.scalar(select(func.count()).select_from(trades).join(ComboRFQ,ComboRFQ.id==trades.c.id).where(trades.c.kind=='combo',ComboRFQ.state=='confirmed'))
-        return envelope(request,{'games_total':game_count,'finished_total':finished,'trade_count':trade_count,'confirmed_fill_count':fill_count,'confirmed_combo_count':combo_confirmed,'realized_pnl':None,'currency':'pUSD','as_of':db_now(db).isoformat(),'scope':'成交仅计已保存的 CONFIRMED 证据；组合已确认单独计数。收益证据不足。'})
+        return envelope(request,{'games_total':game_count,'finished_total':finished,'trade_count':trade_count,'confirmed_fill_count':fill_count,'confirmed_combo_count':combo_confirmed,'realized_pnl':None,'currency':'pUSD','as_of':db_now(db).isoformat(),'scope':'成交仅计已保存的 CONFIRMED 证据；组合已确认单独计数。结算金额须在交易记录页按赛果判断与市场终态两结果交叉核对后逐笔确认，本系统未持久化结算结果，故不汇总收益。'})
 
 
 def spreadsheet_text(value):

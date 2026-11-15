@@ -78,12 +78,19 @@ def verify_combo_close_quote(quote,amount,expected_position):
         raise TradingError('combo_quote_mismatch','组合平仓持仓标识与原组合不一致')
 
 
-def resolve_legs(db, legs):
+def resolve_legs(db, legs, closing=False):
+    """开仓要求赛事映射在 15 分钟内确认；平仓只核对持仓腿的市场与资产身份。
+
+    平仓卖出的是已成交的原组合，其身份由原组合腿记录、官方 Combo 目录
+    position_id 与卖出报价资产核验，不依赖赛事映射的新鲜度。
+    """
     result=[]
     for link_id,outcome_id in legs:
         link=db.get(MarketLink,uuid.UUID(link_id)); outcome=db.get(MarketOutcome,uuid.UUID(outcome_id))
-        if not link or not outcome or link.market_id!=outcome.market_id or not valid_link(db,link): raise TradingError('mapping_invalid','组合腿赛事映射未确认或已过期')
+        if not link or not outcome or link.market_id!=outcome.market_id: raise TradingError('mapping_invalid','组合腿市场映射不存在')
+        if not closing and not valid_link(db,link): raise TradingError('mapping_invalid','组合腿赛事映射未确认或已过期')
         market=db.get(PolyMarket,link.market_id)
+        if not market: raise TradingError('mapping_invalid','组合腿市场不存在')
         result.append((link,market,outcome))
     if len({x[1].id for x in result}) != len(result): raise TradingError('combo_legs_invalid','同一市场不能重复作为组合腿')
     return result
@@ -102,11 +109,12 @@ def get_existing(db,wallet_id,key,fp):
 
 def request_quote(engine,settings,body,key,gateway_cls=ComboGateway,catalog=fetch_positions):
     data,amount,fp=body_data(body);wallet=wallet_for(settings,body.wallet_id)
+    closing=bool(data.get('parent_combo_id'))
     identity=credential_fingerprint(settings,wallet)
     with Session(engine) as db:
         existing=get_existing(db,body.wallet_id,key,fp)
         if existing:return existing.id,False
-        legs=resolve_legs(db,data['legs']);positions=catalog([x[1] for x in legs],[x[2] for x in legs])
+        legs=resolve_legs(db,data['legs'],closing);positions=catalog([x[1] for x in legs],[x[2] for x in legs])
         origin=verify_combo_close_origin(db,data.get('parent_combo_id'),body.wallet_id,data['legs'],amount,positions)
         if origin and origin.wallet_address!=wallet.wallet_address:raise TradingError('wallet_mismatch','原组合钱包已变化')
         expected_position=origin.combo_position_id if origin else None
@@ -123,7 +131,7 @@ def request_quote(engine,settings,body,key,gateway_cls=ComboGateway,catalog=fetc
                         tx.scalar(select(ComboRFQ).where(ComboRFQ.id==body.parent_combo_id).with_for_update())
                     for game_id in sorted({x[0].game_id for x in legs},key=str):tx.scalar(select(Game).where(Game.id==game_id).with_for_update())
                     for link_id,_ in data['legs']:tx.scalar(select(MarketLink).where(MarketLink.id==uuid.UUID(link_id)).with_for_update())
-                    current=resolve_legs(tx,data['legs']); now=db_now(tx)
+                    current=resolve_legs(tx,data['legs'],closing); now=db_now(tx)
                     verify_combo_close_origin(tx,data.get('parent_combo_id'),body.wallet_id,data['legs'],amount,positions)
                     row=ComboRFQ(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=key,fingerprint=fp,direction=body.direction,quantity=amount,state='requesting',gateway_mode='requester',parent_combo_id=getattr(body,'parent_combo_id',None))
                     tx.add(row);tx.flush()
@@ -200,6 +208,7 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
         row=db.get(ComboRFQ,ident)
         if not row:raise TradingError('not_found','组合询价不存在')
         if row.state!='quoted':return
+        closing=bool(row.parent_combo_id)
         wallet=wallet_for(settings,row.wallet_id)
         if wallet.wallet_address!=row.wallet_address:raise TradingError('wallet_mismatch','钱包已变化')
         with _quote_lock: cached=_quotes.get(ident)
@@ -208,7 +217,7 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
         quote=cached[1]
         verify_quote(quote,rfq_id=row.external_rfq_id,direction=row.direction,quantity=row.quantity,now_ms=int(datetime.now(timezone.utc).timestamp()*1000))
         saved=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==ident)))
-        current=resolve_legs(db,[(str(x.market_link_id),str(x.outcome_id)) for x in saved])
+        current=resolve_legs(db,[(str(x.market_link_id),str(x.outcome_id)) for x in saved],closing)
         positions=catalog([x[1] for x in current],[x[2] for x in current])
         if any(positions[x.outcome_id]!=x.position_id for x in saved):raise TradingError('combo_market_mismatch','组合市场已变更')
         if row.parent_combo_id:
@@ -226,7 +235,7 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
             legs=list(tx.scalars(select(ComboLeg).where(ComboLeg.rfq_id==ident)))
             for game_id in sorted({x.game_id for x in legs},key=str):tx.scalar(select(Game).where(Game.id==game_id).with_for_update())
             for leg in sorted(legs,key=lambda x:str(x.market_link_id)):tx.scalar(select(MarketLink).where(MarketLink.id==leg.market_link_id).with_for_update())
-            resolve_legs(tx,[(str(x.market_link_id),str(x.outcome_id)) for x in legs])
+            resolve_legs(tx,[(str(x.market_link_id),str(x.outcome_id)) for x in legs],closing)
             for game_id in sorted({x.game_id for x in legs},key=str):
                 game=tx.get(Game,game_id)
                 if game and game.provider!='polymarket':watch_game(tx,game_id)

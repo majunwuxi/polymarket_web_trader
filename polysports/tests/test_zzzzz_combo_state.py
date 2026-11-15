@@ -179,6 +179,24 @@ def test_combo_close_uses_original_legs_and_blocks_second_unresolved_request(sam
         combo_service.request_quote(engine,settings,sell,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
 
 
+def test_combo_close_ignores_stale_mapping_but_opening_still_blocked(sample,monkeypatch):
+    """赛事映射过期时组合平仓仍可询价；BUY 开仓仍必须确认映射。"""
+    engine,client,headers,body=sample;settings=client.app.state.settings
+    monkeypatch.setattr(combo_service,'credential_fingerprint',lambda s,w:b'mock-credential-fingerprint')
+    original,_=combo_service.request_quote(engine,settings,body,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE combo_rfqs SET state='confirmed',quote_receive=18 WHERE id=:id"),{'id':original})
+    def sell_quote(self,**kwargs):
+        return S(rfq_id='mock-sell-rfq',quote=S(rfq_id='mock-sell-rfq',position_id='123456',direction='SELL',expires_at=int((datetime.now(timezone.utc)+timedelta(minutes=3)).timestamp()*1000),blended_price=Decimal('0.4'),maker_amount=Decimal('5'),taker_amount=Decimal('2'),total_required=Decimal('5'),net_receive=Decimal('2')))
+    monkeypatch.setattr(FakeGateway,'request_combo_quote',sell_quote)
+    sell=body.model_copy(update={'direction':'SELL','quantity':'5','parent_combo_id':original})
+    monkeypatch.setattr(combo_service,'valid_link',lambda *args,**kwargs:False)
+    close,_=combo_service.request_quote(engine,settings,sell,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
+    with Session(engine) as db:assert db.get(ComboRFQ,close).state=='quoted'
+    with pytest.raises(TradingError,match='赛事映射'):
+        combo_service.request_quote(engine,settings,body,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
+
+
 def test_no_quote_is_terminal_and_retry_permitted(sample,monkeypatch):
     engine,client,headers,body=sample;settings=client.app.state.settings
     monkeypatch.setattr(combo_service,'credential_fingerprint',lambda settings,wallet:b'mock-credential-fingerprint')

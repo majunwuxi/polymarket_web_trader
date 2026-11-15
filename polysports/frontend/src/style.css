@@ -50,3 +50,10 @@
 .detail-box p{font-size:12px;line-height:1.6;margin:6px 0;color:#53675c}
 .more-actions{display:inline-block}
 .more-actions>div{display:grid;gap:8px;padding:10px 0}
+.card-title{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.card-title>span:first-child{flex:1 1 auto;min-width:0}
+.pnl-badge{flex:0 0 auto;display:inline-block;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.5;white-space:nowrap}
+.pnl-loss{background:#000;color:#fff}
+.pnl-profit{background:#c62828;color:#fff}
+.pnl-flat{background:#4b5563;color:#fff}
+.pnl-pending{background:#eef2ee;color:#53675c;border:1px solid #d8e3da;font-weight:600}

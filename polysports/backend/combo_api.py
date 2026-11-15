@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from . import auth
 from .close_policy import MARKET_CLOSED_REASON, RESULT_CONFIRMED_REASON
 from .combo_catalog import fetch_positions
+from .combo_fills import fill_payload
 from .combo_resolution import summarize_combo
 from .order_resolution import judge_score_detail
+from .pnl import combo_pnl
 from .markets import valid_link
 from .models import MarketLink, MarketOutcome, PolyMarket
 from .trading_gateway import TradingError
@@ -47,7 +49,7 @@ from sqlalchemy import select, tuple_
 from datetime import datetime
 from .sports_api import cursor_decode, cursor_encode
 from .combo_service import request_quote, accept_quote
-from .models import ComboRFQ, ComboLeg, ComboEvent, Game, Team, WatchedGame, ResultBindingRequest, Job
+from .models import ComboRFQ, ComboLeg, ComboEvent, ComboFill, Game, Team, WatchedGame, ResultBindingRequest, Job
 
 
 class ComboLegBody(BaseModel):
@@ -67,8 +69,14 @@ class AcceptBody(BaseModel):
     quote_id: uuid.UUID
 
 
-def combo_data(db,row):
-    """组合记录自带逐腿赛果判断（纯本地只读）；各腿市场终态另由 /resolution 查询。"""
+_MISSING = object()
+
+
+def combo_data(db,row,fill=_MISSING):
+    """组合记录自带逐腿赛果判断（纯本地只读）；各腿市场终态另由 /resolution 查询。
+
+    ``fill`` 由列表接口批量传入以避免 N+1；单条接口未传时按 rfq_id 自行查询。
+    """
     legs=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==row.id)))
     details=[]
     for leg in legs:
@@ -92,11 +100,20 @@ def combo_data(db,row):
     # 串关任一腿赛果已确认即胜负已定；任一腿停单也说明组合已进入结算，均不允许再平仓。
     close_reason=(RESULT_CONFIRMED_REASON if any(x['score_verified'] for x in details)
                   else MARKET_CLOSED_REASON if any(x['market_closed'] for x in details) else None)
+    quote=({'id':str(row.quote_id),'expires_at':row.quote_expires_at.isoformat(),'price':str(row.quote_price),
+            'total_required':str(row.quote_required),
+            'net_receive':str(row.quote_receive) if row.quote_receive is not None else None}
+           if row.quote_id and row.quote_expires_at else None)
+    if fill is _MISSING:
+        fill=db.scalar(select(ComboFill).where(ComboFill.rfq_id==row.id,ComboFill.state=='confirmed'))
+    fill_data=fill_payload(fill)
+    pnl=combo_pnl(direction=row.direction,by_score=score_summary['by_score'],
+                  quantity=row.quantity,quote=quote,fill=fill_data)
     return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'tx_hash':row.tx_hash,'parent_combo_id':str(row.parent_combo_id) if row.parent_combo_id else None,'combo_position_id':row.combo_position_id,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details,
             'by_score':score_summary['by_score'],'judged_legs':score_summary['judged_legs'],
             'leg_count':score_summary['leg_count'],'score_reason':score_summary['reason'],
             'close_blocked':close_reason is not None,'close_block_reason':close_reason,
-            'quote':{'id':str(row.quote_id),'expires_at':row.quote_expires_at.isoformat(),'price':str(row.quote_price),'total_required':str(row.quote_required),'net_receive':str(row.quote_receive) if row.quote_receive is not None else None} if row.quote_id and row.quote_expires_at else None}
+            'quote':quote,'fill':fill_data,'pnl':pnl}
 
 
 def failure(request,exc):
@@ -131,8 +148,13 @@ def list_combos(request:Request,limit:int=50,cursor:str | None=None,state:Litera
     except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
         rows=list(db.scalars(query.order_by(ComboRFQ.created_at.desc(),ComboRFQ.id.desc()).limit(limit+1)));items=rows[:limit]
+        # 一次取出本页全部已确认成交明细，避免每张组合卡片各查一次。
+        fill_map={}
+        if items:
+            for fill in db.scalars(select(ComboFill).where(ComboFill.rfq_id.in_([x.id for x in items]),ComboFill.state=='confirmed')):
+                fill_map[fill.rfq_id]=fill
         next_cursor=cursor_encode([items[-1].created_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None
-        return {'data':{'items':[combo_data(db,row) for row in items],'next_cursor':next_cursor},'request_id':request.state.request_id}
+        return {'data':{'items':[combo_data(db,row,fill_map.get(row.id)) for row in items],'next_cursor':next_cursor},'request_id':request.state.request_id}
 
 
 @router.get('/combo-rfqs/by-key/{key}')

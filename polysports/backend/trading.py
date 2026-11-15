@@ -9,8 +9,9 @@ from .close_policy import assert_close_allowed, close_decision, game_result_stat
 from .config import Settings
 from .market_api import wallet_id
 from .markets import valid_link
-from .models import Game,Job,MarketLink,MarketOutcome,PolyEvent,PolyMarket,Team,TradeIntent,TradeStateEvent,TradeSubmission
+from .models import Game,Job,MarketLink,MarketOutcome,PolyEvent,PolyMarket,Team,TradeFill,TradeIntent,TradeStateEvent,TradeSubmission
 from .order_resolution import judge_score_detail
+from .pnl import single_pnl
 from .scheduler import db_now,watch_game
 from .trading_gateway import Gateway,TradingError,finite_decimal,restriction
 
@@ -133,7 +134,7 @@ def get_existing(db,wallet,request_id,fp):
     return intent
 
 
-def as_data(intent,db=None):
+def as_data(intent,db=None,fills=None):
     value={'id':str(intent.id),'wallet_id':str(intent.wallet_id),'game_id':str(intent.game_id),'market_link_id':str(intent.market_link_id),'outcome_id':str(intent.outcome_id),'side':intent.side,'order_type':intent.order_type,'parent_trade_id':str(intent.parent_trade_id) if intent.parent_trade_id else None,'limit_price':canonical(intent.limit_price),'size':canonical(intent.requested_size),'state':intent.state,'external_order_id':intent.external_order_id,'matched_size':canonical(intent.matched_size) if intent.matched_size is not None else None,'cancel_state':intent.cancel_state,'error_code':intent.error_code,'retry_after_seconds':intent.retry_after_seconds,'created_at':intent.created_at.isoformat(),'updated_at':intent.updated_at.isoformat()}
     if db:
         game=db.get(Game,intent.game_id);link=db.get(MarketLink,intent.market_link_id);market=db.get(PolyMarket,link.market_id);outcome=db.get(MarketOutcome,intent.outcome_id)
@@ -147,6 +148,10 @@ def as_data(intent,db=None):
         value.update({'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label,
                       'game_finished':finished,'score_verified':verified,'result_won':won,'result_basis':basis,
                       'close_blocked':blocked,'close_block_reason':reason})
+        if fills is None:
+            fills=[{'size':x.size,'price':x.price,'status':x.status} for x in db.scalars(select(TradeFill).where(TradeFill.intent_id==intent.id))]
+        value['pnl']=single_pnl(side=intent.side,matched_size=intent.matched_size,
+            limit_price=intent.limit_price,result_won=won,fills=fills,score_verified=verified)
     return value
 
 

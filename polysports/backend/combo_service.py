@@ -13,7 +13,7 @@ from .combo_gateway import ComboGateway
 from .combo_quote import verify_quote, combo_position_id
 from .combo_transport import accept_once
 from .markets import valid_link
-from .models import ComboRFQ, ComboLeg, ComboEvent, Game, Job, MarketLink, MarketOutcome, PolyMarket
+from .models import ComboRFQ, ComboLeg, ComboEvent, ComboFill, Game, Job, MarketLink, MarketOutcome, PolyMarket
 from .scheduler import db_now, watch_game
 from .trading import wallet_for, canonical
 from .trading_gateway import TradingError, finite_decimal
@@ -246,6 +246,12 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
                 if game and game.provider!='polymarket':watch_game(tx,game_id)
             external_id=row.external_rfq_id
             row.accept_started_at=now;record(tx,row,'accepting')
+            # 签名接受订单的 makerAmount/takerAmount 就是链上实际支出与收到的组合份额，
+            # 在同一事务里先落库为待确认明细，RFQ 进入 CONFIRMED 后才用于确定盈亏。
+            if row.direction=='BUY' and tx.scalar(select(ComboFill.id).where(ComboFill.rfq_id==row.id)) is None:
+                tx.add(ComboFill(id=uuid.uuid4(),rfq_id=row.id,quote_id=row.quote_id,direction='BUY',
+                                 cost=Decimal(str(quote.maker_amount)),size=Decimal(str(quote.taker_amount)),
+                                 source='signed_order',state='pending'))
             if job.status=='pending':job.due_at=now+timedelta(seconds=90)
         with _quote_lock:_quotes.pop(ident,None)
         try:

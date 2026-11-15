@@ -191,12 +191,14 @@ sudo grep -o 'assets/index-[A-Za-z0-9_-]*\.js' /opt/polysports-src/polysports/fr
 sudo grep -rl '按赛果判断' /opt/polysports-src/polysports/frontend/dist/assets/*.js
 
 cd /opt/polysports-src
-sudo systemctl start polysports-migrate.service  # 无新迁移时为 no-op
+sudo systemctl start polysports-migrate.service  # 含新增表迁移时必须成功，且必须先于 API 启动
+sudo systemctl status polysports-migrate.service --no-pager
+sudo -u postgres psql -d polysports -c 'SELECT version_num FROM alembic_version;'   # 应与仓库迁移 head 一致
 sudo systemctl start polysports-api.service polysports-worker.service
 curl --fail http://127.0.0.1:8000/api/v1/health/live
 sudo journalctl -u polysports-api.service -u polysports-worker.service --since '10 min ago' --no-pager
 ```
 
-后端 `.py` 改动必须重启 `polysports-api.service` 与 `polysports-worker.service` 才会生效；仅 `git pull` 不会重载已加载的模块。Nginx 的 `index.html` 应设为不缓存（见 `deploy/nginx/polysports.conf` 的 `location = /index.html`）；更新该配置后需重新安装并执行 `sudo nginx -t && sudo systemctl reload nginx`。浏览器仍显示旧界面时，先用无痕窗口或强制刷新（Ctrl+Shift+R）确认；带 hash 的 JS 可长期缓存，入口 `index.html` 不可缓存。
+后端 `.py` 改动必须重启 `polysports-api.service` 与 `polysports-worker.service` 才会生效；仅 `git pull` 不会重载已加载的模块。若该版本包含新增表（例如 `combo_fills`），迁移未成功就启动 API，列表接口会直接报 `relation "combo_fills" does not exist`；此时先修复迁移，不要靠重启 API 重试。Nginx 的 `index.html` 应设为不缓存（见 `deploy/nginx/polysports.conf` 的 `location = /index.html`）；更新该配置后需重新安装并执行 `sudo nginx -t && sudo systemctl reload nginx`。浏览器仍显示旧界面时，先用无痕窗口或强制刷新（Ctrl+Shift+R）确认；带 hash 的 JS 可长期缓存，入口 `index.html` 不可缓存。
 
 参考：[systemd 凭据](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)、[Nginx 反向代理](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)、[PostgreSQL pg_restore](https://www.postgresql.org/docs/current/app-pgrestore.html)、[Certbot Webroot](https://eff-certbot.readthedocs.io/en/stable/using.html#webroot)。

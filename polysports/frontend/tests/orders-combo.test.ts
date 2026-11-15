@@ -203,3 +203,69 @@ describe('交易记录精简显示与平仓准入（模拟接口）',()=>{
     view.unmount()
   })
 })
+
+const cardLoss={amount:'2.0992',tone:'loss',label:'约亏损 2.0992 pUSD',basis:'limit_estimate',estimated:true,detail:'成本按限价 0.41 × 5.12 份估算',cost:'2.0992',payout:'0'}
+const cardProfit={amount:'3.072',tone:'profit',label:'盈利 3.072 pUSD',basis:'confirmed_fills',estimated:false,detail:'CONFIRMED 成交明细已覆盖 5.12 份',cost:'2.048',payout:'5.12'}
+function comboWithPnl(p:unknown){return vi.fn((url:string)=>{
+  if(url.includes('/combo-rfqs'))return Promise.resolve(json({data:{items:[{...combo,pnl:p}],next_cursor:null}}))
+  return Promise.resolve(json({data:{items:[],next_cursor:null}}))
+})}
+
+describe('订单卡片直接标注盈亏金额（模拟接口）',()=>{
+  it('单场亏损使用黑底白字徽标并直接写出金额',async()=>{
+    vi.stubGlobal('fetch',compactFetch([{...compactOrder,pnl:cardLoss}]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const badge=view.find('.pnl-badge')
+    expect(badge.classes()).toContain('pnl-loss')
+    expect(badge.text()).toContain('亏损 2.0992 pUSD')
+    expect(badge.attributes('title')).toContain('限价')
+    view.unmount()
+  })
+  it('单场盈利使用红底白字徽标，已核实成本不加「约」',async()=>{
+    vi.stubGlobal('fetch',compactFetch([{...compactOrder,pnl:cardProfit}]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const badge=view.find('.pnl-badge')
+    expect(badge.classes()).toContain('pnl-profit')
+    expect(badge.text()).toContain('盈利 3.072 pUSD')
+    expect(badge.text()).not.toContain('约盈利')
+    view.unmount()
+  })
+  it('组合卡片也直接标注盈亏金额并注明按报价估算',async()=>{
+    vi.stubGlobal('fetch',comboWithPnl({...cardProfit,label:'约盈利 1 pUSD',amount:'1',basis:'quote_estimate',estimated:true,detail:'组合未落库成交明细，按已确认报价估算'}))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const badge=view.get('[aria-label="组合交易记录"]').find('.pnl-badge')
+    expect(badge.classes()).toContain('pnl-profit')
+    expect(badge.text()).toContain('约盈利 1 pUSD')
+    expect(badge.attributes('title')).toContain('报价')
+    view.unmount()
+  })
+  it('组合有 CONFIRMED 成交明细时，亏损金额不带「约」并用黑底白字',async()=>{
+    vi.stubGlobal('fetch',comboWithPnl({amount:'2.0992',tone:'loss',label:'亏损 2.0992 pUSD',basis:'combo_fill',estimated:false,detail:'成交成本 2.0992 pUSD（官方签名报价按 micro-USDC 精度重建的成交金额）· 实际份额 5.12 份',cost:'2.0992',payout:'0'}))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const badge=view.get('[aria-label="组合交易记录"]').find('.pnl-badge')
+    expect(badge.classes()).toContain('pnl-loss')
+    expect(badge.text()).toBe('亏损 2.0992 pUSD')
+    expect(badge.text()).not.toContain('约')
+    expect(badge.attributes('title')).toContain('实际份额')
+    view.unmount()
+  })
+  it('组合有 CONFIRMED 成交明细时，盈利金额不带「约」并用红底白字',async()=>{
+    vi.stubGlobal('fetch',comboWithPnl({amount:'3.62',tone:'profit',label:'盈利 3.62 pUSD',basis:'combo_fill',estimated:false,detail:'成交成本 1.5 pUSD（签名接受订单的 makerAmount/takerAmount）· 实际份额 5.12 份',cost:'1.5',payout:'5.12'}))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const badge=view.get('[aria-label="组合交易记录"]').find('.pnl-badge')
+    expect(badge.classes()).toContain('pnl-profit')
+    expect(badge.text()).toBe('盈利 3.62 pUSD')
+    expect(badge.text()).not.toContain('约')
+    view.unmount()
+  })
+  it('盈亏未确认时用中性样式，不误用黑底或红底',async()=>{
+    vi.stubGlobal('fetch',compactFetch([compactOrder]))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const badge=view.find('.pnl-badge')
+    expect(badge.classes()).toContain('pnl-pending')
+    expect(badge.text()).toContain('盈亏待确认')
+    expect(badge.classes()).not.toContain('pnl-loss')
+    expect(badge.classes()).not.toContain('pnl-profit')
+    view.unmount()
+  })
+})

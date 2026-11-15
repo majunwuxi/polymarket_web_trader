@@ -20,6 +20,13 @@ const resultTag=(o:any)=>o.result_won===true?'选项获胜':o.result_won===false
 const canClose=(o:any)=>o.side==='BUY'&&Number(o.matched_size)>0&&!o.close_blocked
 const closeHint=(o:any)=>o.close_blocked?(o.close_block_reason||'比赛结果已确认或市场已结算，不能平仓'):'该记录没有已确认的买入持仓可供平仓'
 const confirmedAmount=(o:any)=>resolutionOrder.value===o.id&&resolution.value?.settlement?.agreement==='consistent'?resolution.value.settlement.settlement_amount:null
+// 卡片盈亏由列表接口直接给出：黑底为亏损、红底为盈利；未确认时用中性样式，不用黑白/红白误导。
+const pnlBadge=(o:any)=>{
+  const p=o?.pnl
+  if(p&&['profit','loss','flat'].includes(p.tone))return {cls:'pnl-'+p.tone,text:p.label,hint:p.detail||''}
+  if(p?.tone==='na')return {cls:'pnl-pending',text:p.label||'平仓不适用',hint:p.detail||''}
+  return {cls:'pnl-pending',text:p?.label||'盈亏待确认',hint:p?.detail||'赛果或成交数据未齐，暂不标注金额'}
+}
 
 function checkLine(r:any){
   const s=r?.settlement??{}
@@ -67,10 +74,10 @@ onMounted(()=>{load();loadCombos()})
 
     <section class="welcome-card">
       <h2>单场订单</h2>
-      <p class="scope-note">赛果判断与 Polymarket 终态结算一致才确认金额；金额按已确认成交份额计算，不等于链上赎回或实际到账。已结算或赛果已确认的订单不再提供平仓。</p>
+      <p class="scope-note">赛果判断与 Polymarket 终态结算一致才确认金额；金额按已确认成交份额计算，不等于链上赎回或实际到账。已结算或赛果已确认的订单不再提供平仓。卡片盈亏标签：黑底为亏损、红底为盈利；有完整 CONFIRMED 成交明细时用真实成本，缺失时按限价估算并标「约」，悬停可看口径。</p>
       <p v-if="loaded && !orders.length">暂无已记录订单。</p>
       <article v-for="order in orders" :key="order.id" class="market-card order-card">
-        <h2>{{order.side==='BUY'?'买入':'卖出'}} · {{stateName(order.state)}}<span v-if="resultTag(order)"> · {{resultTag(order)}}</span></h2>
+        <h2 class="card-title"><span>{{order.side==='BUY'?'买入':'卖出'}} · {{stateName(order.state)}}<span v-if="resultTag(order)"> · {{resultTag(order)}}</span></span><span class="pnl-badge" :class="pnlBadge(order).cls" :title="pnlBadge(order).hint">{{pnlBadge(order).text}}</span></h2>
         <p>{{order.home}} 对 {{order.away}} · {{shortQuestion(order.market_question)}} · {{order.outcome_label}}</p>
         <p class="summary-line"><span>{{sharesLine(order)}}<template v-if="confirmedAmount(order)!=null"> · 结算 {{confirmedAmount(order)}} pUSD</template></span><span v-if="order.external_order_id" class="id-text id-compact">ID <template v-if="fullId===order.id">{{order.external_order_id}}</template><template v-else>{{shortId(order.external_order_id)}}</template><button class="text-button id-toggle" @click="fullId=fullId===order.id?null:order.id">{{fullId===order.id?'收起':'全文'}}</button></span></p>
         <p v-if="order.error_code">状态说明：{{order.error_code}}<span v-if="order.retry_after_seconds!==null"> · 建议等待 {{order.retry_after_seconds}} 秒</span></p>
@@ -127,12 +134,12 @@ onMounted(()=>{load();loadCombos()})
 
     <section class="welcome-card" aria-label="组合交易记录">
       <h2>组合交易</h2>
-      <p class="scope-note">这里只显示已确认的组合交易；组合按全中口径核对，系统未记录组合成交明细，不计算组合结算金额。</p>
+      <p class="scope-note">这里只显示已确认的组合交易；组合按全中口径核对。已落库 CONFIRMED 成交明细的卡片按签名订单实际支出与份额显示确定盈亏（不带「约」）；未回填的历史组合仍按报价估算并标「约」。金额不等于链上赎回或实际到账。</p>
       <button class="text-button" :disabled="comboBusy" @click="loadCombos()">刷新组合记录</button>
       <p v-if="comboError" role="alert">{{comboError}}</p>
       <p v-else-if="comboLoaded && !combos.length">暂无已确认组合交易。</p>
       <article v-for="combo in combos" :key="combo.id" class="market-card order-card">
-        <h3>组合{{combo.direction==='BUY'?'买入':'卖出'}} · {{comboState(combo.state)}}<span v-if="combo.by_score!==null&&combo.by_score!==undefined"> · {{comboWinner(combo.by_score)}}</span></h3>
+        <h3 class="card-title"><span>组合{{combo.direction==='BUY'?'买入':'卖出'}} · {{comboState(combo.state)}}<span v-if="combo.by_score!==null&&combo.by_score!==undefined"> · {{comboWinner(combo.by_score)}}</span></span><span class="pnl-badge" :class="pnlBadge(combo).cls" :title="pnlBadge(combo).hint">{{pnlBadge(combo).text}}</span></h3>
         <p v-for="leg in combo.legs" :key="leg.outcome_id" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span> · {{legWinner(leg.result_won,'无法判断')}}</p>
         <p class="summary-line"><span>按赛果判断：{{comboWinner(combo.by_score)}} · 已判断 {{combo.judged_legs ?? 0}}/{{combo.leg_count ?? combo.legs.length}} 腿<template v-if="combo.score_reason"> · {{combo.score_reason}}</template></span><span class="id-compact">{{combo.quantity}} 份 · {{shortId(combo.external_rfq_id)}}</span></p>
         <div class="order-actions">

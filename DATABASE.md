@@ -2,7 +2,7 @@
 
 本文是数据库设计契约。Alembic 迁移已落在 `polysports/migrations/versions/`，并在隔离的 PostgreSQL 测试库中通过集成测试（见 [ACCEPTANCE.md](ACCEPTANCE.md)）；本文保留设计语境，**精确字段、约束和索引以迁移文件为准**，两者不一致时以代码为准。以 [ARCHITECTURE.md](ARCHITECTURE.md) 和 OpenSpec 变更 `build-polysports` 为依据。除有标记外，本设计适用于独立的 PostgreSQL 数据库，不依赖原有 Dashboard。
 
-> 6G 实际组合持久化使用 `combo_rfqs`、`combo_legs`、`combo_events` 与 `jobs.combo_rfq_id`；精确字段、约束和索引以 Alembic 迁移为准。单场订单继续使用现有 `trade_intents`。
+> 6G 实际组合持久化使用 `combo_rfqs`、`combo_legs`、`combo_events`、`combo_fills` 与 `jobs.combo_rfq_id`；精确字段、约束和索引以 Alembic 迁移为准。单场订单继续使用现有 `trade_intents`。
 
 ## 1. 约定
 
@@ -193,13 +193,17 @@ Combo 询价时可预先保存 `draft` 意图和所有腿；用户确认后更�
 
 `order_fills`：`id uuid PK`；`submission_id uuid` 必填外键；`external_trade_id varchar(255)` 必填；`transaction_hash varchar(255)` 可空；`size`, `price numeric(38,18)` 必填且正数；`fee numeric(38,18)` 可空非负；`settlement_status varchar(24)` 必填；`matched_at timestamptz` 可空；`observed_at timestamptz` 必填。唯一 `(submission_id, external_trade_id)`；索引 `(submission_id, matched_at)`。同一交易可能包含多笔成交；只有明确数量与状态证据才更新已成交数量及收益。
 
-### 7.3 `combo_rfqs`、`combo_quotes`、`rfq_status_events`
+### 7.3 `combo_rfqs`、`combo_legs`、`combo_events`、`combo_fills`（实际落地）
 
-`combo_rfqs`：`id uuid PK`；`intent_id uuid` 必填外键；`request_no integer` 必填且 > 0；`external_rfq_id varchar(255)` 可空；`state varchar(24)` 必填，取 `preparing`, `requesting`, `quoted`, `accepting`, `executing`, `confirmed`, `expired`, `rejected`, `failed`, `unknown`；`requested_at timestamptz` 必填；`accept_started_at`, `resolved_at timestamptz` 可空；`error_code varchar(80)`, `error_summary text` 可空。唯一 `(intent_id, request_no)`；外部 RFQ ID 非空时唯一；部分唯一 `(intent_id) WHERE state IN ('preparing','requesting','quoted','accepting','executing','unknown')`。询价或接受结果不明时，不得靠创建新的 RFQ 来重试；优先使用外部 RFQ ID 对账，ID 不可得时保留未知并人工处理。
+`combo_rfqs`：`id uuid PK`；`wallet_id uuid`、`wallet_address varchar(42)`、`client_request_id uuid`、`fingerprint varchar(64)` 必填；`direction varchar(4)` 取 `BUY`/`SELL`；`quantity numeric(38,18)` 必填且 > 0（BUY 为预算、SELL 为份额）；`state varchar(24)` 取 `requesting`, `quoted`, `accepting`, `executing`, `confirmed`, `expired`, `rejected`, `failed`, `unknown`；`gateway_mode varchar(16)` 默认 `builder`；`external_rfq_id varchar(255)`、`combo_position_id varchar(78)`、`parent_combo_id uuid`（自引用外键）、`quote_id uuid`、`quote_expires_at timestamptz`、`quote_price`/`quote_required`/`quote_receive numeric(38,18)`、`error_code varchar(80)`、`tx_hash varchar(255)`、`accept_started_at timestamptz` 可空；`created_at`/`updated_at timestamptz` 必填。唯一 `(wallet_id, client_request_id)`、唯一 `external_rfq_id`；部分唯一索引 `uq_combo_unresolved (wallet_id, fingerprint) WHERE state IN ('requesting','quoted','accepting','executing','unknown')`；索引 `(parent_combo_id)`；检查约束 `parent_combo_id IS NULL OR direction='SELL'`。`quote_price` 是签名报价 blended_price、`quote_receive` 是 BUY 的 takerAmount（实际份额）或 SELL 的 net_receive、`quote_required` 是 total_required（接受所需余额，不是实际支出）。询价或接受结果不明时，不得靠创建新的 RFQ 来重试；优先使用外部 RFQ ID 对账，ID 不可得时保留未知并人工处理。
 
-`combo_quotes`：`id uuid PK`；`rfq_id uuid` 必填外键；`external_quote_id varchar(255)` 必填唯一；`price`, `size`, `fee_estimate numeric(38,18)` 可空；`expires_at timestamptz` 必填；`received_at timestamptz` 必填；`accepted_at timestamptz` 可空；`quote_summary jsonb` 必填默认 `{}`，仅保存展示与对账需要的非秘密字段。索引 `(rfq_id, expires_at)`。用户只能在有效期内确认报价；实际签名内容从可信 SDK 构建，禁止存储签名原文。接受前再次核对腿、预算和报价有效性。
+`combo_legs`：`id uuid PK`；`rfq_id uuid` 必填外键；`game_id`、`market_link_id`、`outcome_id uuid` 必填；`position_id varchar(78)` 必填（官方 Combo 目录持仓标识）。唯一 `(rfq_id, outcome_id)`、唯一 `(rfq_id, position_id)`。
 
-`rfq_status_events`：`id uuid PK`；`rfq_id uuid` 必填外键；`external_event_key varchar(255)` 可空；`state varchar(24)` 必填；`observed_at timestamptz` 必填；`transaction_hash varchar(255)`, `error_code varchar(80)`, `error_summary text` 可空。唯一 `(rfq_id, external_event_key) WHERE external_event_key IS NOT NULL`；索引 `(rfq_id, observed_at)`。状态事件只能依据真实服务端结果写入；服务端没有事件 ID 时由应用去重且保留未知状态。
+`combo_events`：`id uuid PK`；`rfq_id uuid` 必填外键；`state varchar(24)` 必填；`code varchar(80)` 可空；`created_at timestamptz` 必填；索引 `(rfq_id, created_at)`。状态只依据真实服务端结果写入。
+
+`combo_fills`（迁移 `b5d2e7c41a90`）：`id uuid PK`；`rfq_id uuid` 必填外键、唯一 `uq_combo_fill_rfq`；`quote_id uuid`、`tx_hash varchar(255)`、`confirmed_at timestamptz` 可空；`direction varchar(4)`、`cost`/`size numeric(38,18)`（均 > 0）、`source varchar(24)`（`signed_order` / `quote_rebuilt`）、`state varchar(16)`（`pending` / `confirmed` / `void`）、`observed_at timestamptz` 必填；索引 `(state)`。BUY 的 `cost` 是签名接受订单实际支出的 `makerAmount`、`size` 是实际收到的 `takerAmount`；`source='quote_rebuilt'` 表示历史组合由 `blended_price × takerAmount` 按 micro-USDC 精度重建，且写入前校验 `quote_required >= cost`。只有 `state='confirmed'` 的明细用于不带「约」的确定盈亏；终态失败/过期/拒绝时把 `pending` 置 `void`。迁移只回填 `state='confirmed' AND direction='BUY'` 且签名报价字段完整、校验通过的历史记录，不猜测缺失数据。
+
+设计稿中的 `combo_quotes` 与 `rfq_status_events` **未落地**：报价对象只保存在单个 API 进程的 `_quotes` 内存缓存（不持久化签名敏感字段），RFQ 状态由 `combo_events` 与外部 RFQ ID 对账；服务重启后报价不可再接受，需重新询价。
 
 `trade_state_events`：`id uuid PK`；`intent_id uuid` 必填外键；`old_state`, `new_state varchar(24)`、`reason varchar(80)` 必填；`source varchar(24)` 必填，`user`, `exchange`, `reconcile`, `system`；`observed_at timestamptz` 必填；`correlation_id uuid` 可空；索引 `(intent_id, observed_at)`。状态转换、事实写入、事件和必要的对账任务应在同一事务中提交。来源更新必须幂等且不得把确认后的终态静默倒退；发生更正应追加事件。
 

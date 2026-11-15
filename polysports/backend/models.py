@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, time
+from decimal import Decimal
 
-from sqlalchemy import Integer, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text, Time, UniqueConstraint, func, text
+from sqlalchemy import Integer, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, Text, Time, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -427,6 +428,34 @@ class ComboLeg(Base):
     market_link_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('market_links.id',ondelete='RESTRICT'),nullable=False)
     outcome_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('market_outcomes.id',ondelete='RESTRICT'),nullable=False)
     position_id: Mapped[str] = mapped_column(String(78),nullable=False)
+
+
+class ComboFill(Base):
+    """已确认组合成交明细：成本与份额来自链上签名接受订单，不来自预算或余额要求。
+
+    BUY 时 cost 为 makerAmount（实际支出的抵押品）、size 为 takerAmount（实际收到的
+    组合份额）。source='signed_order' 表示接受报价时直接落库；'quote_rebuilt' 表示
+    从已落库的官方签名报价 blended_price × taker_amount 按 micro-USDC 精度重建。
+    只有 state='confirmed' 的明细才用于计算不带「约」的确定盈亏。
+    """
+    __tablename__ = 'combo_fills'
+    __table_args__ = (UniqueConstraint('rfq_id', name='uq_combo_fill_rfq'),
+                      CheckConstraint("direction IN ('BUY','SELL')", name='ck_combo_fill_direction'),
+                      CheckConstraint("state IN ('pending','confirmed','void')", name='ck_combo_fill_state'),
+                      CheckConstraint("source IN ('signed_order','quote_rebuilt')", name='ck_combo_fill_source'),
+                      CheckConstraint('cost > 0 AND size > 0', name='ck_combo_fill_amounts'),
+                      Index('ix_combo_fills_state', 'state'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    rfq_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('combo_rfqs.id', ondelete='RESTRICT'), nullable=False)
+    quote_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    direction: Mapped[str] = mapped_column(String(4), nullable=False)
+    cost: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    size: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    source: Mapped[str] = mapped_column(String(24), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    tx_hash: Mapped[str | None] = mapped_column(String(255))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ComboEvent(Base):

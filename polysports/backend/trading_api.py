@@ -8,7 +8,7 @@ from pydantic import BaseModel,Field,StrictStr
 from sqlalchemy import select,tuple_
 from sqlalchemy.orm import Session
 from . import auth
-from .models import Job,MarketLink,TradeIntent,TradeStateEvent,TradeSubmission
+from .models import Job,MarketLink,TradeFill,TradeIntent,TradeStateEvent,TradeSubmission
 from .scheduler import db_now
 from .sports_api import cursor_decode,cursor_encode
 from .trading import as_data,execute,prepare,wallet_for
@@ -85,7 +85,12 @@ def list_intents(request:Request,limit:int=50,wallet_id:uuid.UUID | None=None,ga
     except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
         rows=list(db.scalars(query.order_by(TradeIntent.created_at.desc(),TradeIntent.id.desc()).limit(limit+1)));items=rows[:limit]
-        return ok(request,{'items':[as_data(x,db) for x in items],'next_cursor':cursor_encode([items[-1].created_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
+        # 一次取出本页全部成交明细，避免每张卡片各查一次；缺失明细时 pnl 会明确标为限价估算。
+        fill_map={}
+        if items:
+            for fill in db.scalars(select(TradeFill).where(TradeFill.intent_id.in_([x.id for x in items]))):
+                fill_map.setdefault(fill.intent_id,[]).append({'size':fill.size,'price':fill.price,'status':fill.status})
+        return ok(request,{'items':[as_data(x,db,fill_map.get(x.id,[])) for x in items],'next_cursor':cursor_encode([items[-1].created_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
 
 
 @router.get('/trade-intents/{intent_id}')

@@ -38,9 +38,18 @@ def apply_combo(db,job,payload,error=None):
                 if target!=row.state:record(db,row,target)
                 if target=='confirmed':
                     if getattr(payload,'tx_hash',None):row.tx_hash=str(payload.tx_hash)
+                    from .combo_fills import confirm_combo_fill
+                    confirm_combo_fill(db,row,now)
                     from .result_binding import request_binding_for_accepted_order
                     game_ids=set(db.scalars(select(ComboLeg.game_id).where(ComboLeg.rfq_id==row.id)))
                     for game_id in sorted(game_ids,key=str): request_binding_for_accepted_order(db,game_id)
+                elif target in ('failed','expired','rejected'):
+                    from .combo_fills import void_combo_fill
+                    void_combo_fill(db,row)
+            elif row.state=='confirmed':
+                # 迁移之外的兜底：历史组合已确认但尚未回填明细时，按签名报价补齐。
+                from .combo_fills import confirm_combo_fill
+                confirm_combo_fill(db,row,now)
     if error:
         finish_attempt(db,job,now,'failed',error);job.status='pending';job.due_at=now+timedelta(minutes=2)
     elif row.state in ('confirmed','failed','expired','rejected'):

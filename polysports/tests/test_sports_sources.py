@@ -15,18 +15,29 @@ def mock_nba(ident=1, when='2026-01-02T03:00:00Z'):
     return {'id':ident,'datetime':when,'status_state':'scheduled','home_team':{'id':11,'full_name':'Mock Home'},'visitor_team':{'id':22,'full_name':'Mock Away'},'home_team_score':0,'visitor_team_score':0}
 
 
-def test_football_pagination_and_utc_window():
+def test_football_daily_pagination_and_utc_window():
     calls=[]
+    times={
+        ('2026-01-01',1):'2026-01-01T12:00:00Z',
+        ('2026-01-01',2):'2026-01-01T13:00:00Z',
+        ('2026-01-02',1):'2026-01-02T12:00:00Z',
+        ('2026-01-02',2):'2026-01-02T13:00:00Z',
+        ('2026-01-03',1):'2026-01-03T00:00:00Z',
+    }
     def handler(request):
         calls.append(request)
+        date=request.url.params['date']
         page=int(request.url.params.get('page','1'))
-        return httpx.Response(200,json={'errors':[],'paging':{'current':page,'total':2},'response':[mock_football(page, '2026-01-01T12:00:00Z' if page==1 else '2026-01-03T00:00:00Z')]})
+        total=1 if date=='2026-01-03' else 2
+        return httpx.Response(200,json={'errors':[],'results':total,'paging':{'current':page,'total':total},'response':[mock_football(len(calls),times[(date,page)])]})
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         games,pages,received=fetch_schedule('api_football','mock-api-key',START,client)
-    assert (len(games),pages,received)==(1,2,2)
+    assert ([game.external_id for game in games],pages,received)==(['1','2','3','4'],5,5)
+    assert [call.url.params['date'] for call in calls]==['2026-01-01','2026-01-01','2026-01-02','2026-01-02','2026-01-03']
+    assert [call.url.params.get('page') for call in calls]==[None,'2',None,'2',None]
+    assert all('from' not in call.url.params and 'to' not in call.url.params for call in calls)
     assert calls[0].headers['x-apisports-key']=='mock-api-key'
-    assert calls[0].url.params['timezone']=='UTC'
-    assert calls[1].url.params['page']=='2'
+    assert all(call.url.params['timezone']=='UTC' for call in calls)
 
 
 def test_nba_cursor_and_no_fabricated_scores():
@@ -52,6 +63,7 @@ def test_source_errors_are_safe(response,code):
 @pytest.mark.parametrize('key,code',[
     ('token','token'),
     ('access','access'),
+    ('plan','plan'),
     ('requests','requests'),
     ('rateLimit','rate_limit'),
     ('from','from'),

@@ -132,6 +132,7 @@ def nba_game(item: Any) -> SourceGame:
 _FOOTBALL_PROVIDER_ERROR_CODES = {
     'token': 'token',
     'access': 'access',
+    'plan': 'plan',
     'requests': 'requests',
     'rateLimit': 'rate_limit',
     'from': 'from',
@@ -161,8 +162,16 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
     end = start + timedelta(hours=36)
     if provider not in ('api_football','balldontlie'):
         raise ValueError('unknown provider')
-    # NBA 的比赛日期可能按美国本地赛历划分，扩展一天再精确过滤 UTC 窗口。
-    params = {'from':start.date().isoformat(),'to':end.date().isoformat(),'timezone':'UTC'} if provider == 'api_football' else {'start_date':(start-timedelta(days=1)).date().isoformat(),'end_date':(end+timedelta(days=1)).date().isoformat(),'per_page':100}
+    football_dates = []
+    if provider == 'api_football':
+        day = start.date()
+        while day <= end.date():
+            football_dates.append(day.isoformat())
+            day += timedelta(days=1)
+        params = {'date':football_dates[0],'timezone':'UTC'}
+    else:
+        # NBA 的比赛日期可能按美国本地赛历划分，扩展一天再精确过滤 UTC 窗口。
+        params = {'start_date':(start-timedelta(days=1)).date().isoformat(),'end_date':(end+timedelta(days=1)).date().isoformat(),'per_page':100}
     if season_type is not None:
         if provider != 'balldontlie' or season_type != 'preseason':
             raise ValueError('unsupported season type')
@@ -170,7 +179,7 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
     url = 'https://v3.football.api-sports.io/fixtures' if provider == 'api_football' else 'https://api.balldontlie.io/v1/games'
     headers = {'x-apisports-key':key} if provider == 'api_football' else {'Authorization':key}
     seen, output, pages, received = set(), [], 0, 0
-    football_total = None
+    football_date_index, football_page, football_total = 0, 0, None
     while True:
         try:
             response = client.get(url, params=params, headers=headers, timeout=20.0, follow_redirects=False)
@@ -187,16 +196,17 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
         if pages > 1000:
             raise SourceError('pagination_limit')
         if provider == 'api_football':
+            football_page += 1
             check_football_provider_errors(body)
             rows, paging = body.get('response'), body.get('paging')
-            if not isinstance(rows,list) or not isinstance(paging,dict) or type(paging.get('current')) is not int or type(paging.get('total')) is not int or paging['current'] != pages or paging['total'] < pages:
+            if not isinstance(rows,list) or not isinstance(paging,dict) or type(paging.get('current')) is not int or type(paging.get('total')) is not int or paging['current'] != football_page or paging['total'] < football_page:
                 raise SourceError('invalid_pagination')
             if football_total is not None and football_total != paging['total']:
                 raise SourceError('invalid_pagination')
             football_total = paging['total']
-            if 'results' in body and (type(body['results']) is not int or body['results'] != len(rows)):
+            if 'results' in body and (type(body['results']) is not int or body['results'] < len(rows)):
                 raise SourceError('invalid_pagination')
-            next_value = pages + 1 if pages < paging['total'] else None
+            next_value = football_page + 1 if football_page < paging['total'] else None
         else:
             rows, meta = body.get('data'), body.get('meta')
             if not isinstance(rows,list) or not isinstance(meta,dict):
@@ -210,6 +220,13 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
             if start <= game.starts_at < end:
                 output.append(game)
         if next_value is None:
+            if provider == 'api_football' and football_date_index + 1 < len(football_dates):
+                football_date_index += 1
+                football_page, football_total = 0, None
+                seen.clear()
+                params['date'] = football_dates[football_date_index]
+                params.pop('page',None)
+                continue
             return output, pages, received
         if next_value in seen:
             raise SourceError('pagination_loop')

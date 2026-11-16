@@ -23,6 +23,26 @@ def test_strict_order_time_and_no_duplicates():
     assert [x.external_id for x in match_fixture_candidates('football',START,'Mock Home','Mock Away',rows)]==['1']
 
 
+def test_football_directory_alias_matches_api_name_without_breaking_strict_rules():
+    api=[fixture('1545662','FYR Macedonia','Slovenia')]
+    assert [x.external_id for x in match_fixture_candidates(
+        'football',START,'North Macedonia','Slovenia',api)]==['1545662']
+    reverse=[fixture('1545662','North Macedonia','Slovenia')]
+    assert [x.external_id for x in match_fixture_candidates(
+        'football',START,'FYR Macedonia','Slovenia',reverse)]==['1545662']
+    swapped=[fixture('1545662','Slovenia','FYR Macedonia')]
+    assert match_fixture_candidates('football',START,'North Macedonia','Slovenia',swapped)==[]
+    delayed=[fixture('1545662','FYR Macedonia','Slovenia',offset=121)]
+    assert match_fixture_candidates('football',START,'North Macedonia','Slovenia',delayed)==[]
+
+
+def test_verified_database_aliases_expand_football_matching():
+    rows=[fixture('1','Mock Alias','Mock Away')]
+    assert match_fixture_candidates('football',START,'Mock Home','Mock Away',rows)==[]
+    assert [x.external_id for x in match_fixture_candidates(
+        'football',START,'Mock Home','Mock Away',rows,home_aliases={'Mock Alias'})]==['1']
+
+
 def test_nba_explicit_alias_and_ambiguity_remain_visible():
     rows=[fixture('1','New Orleans Pelicans','Denver Nuggets',sport='nba'),
           fixture('2','New Orleans Pelicans','Denver Nuggets',sport='nba',offset=30)]
@@ -73,9 +93,41 @@ def test_worker_autobind_and_conflict_with_mocked_db(monkeypatch,initial,matches
     monkeypatch.setattr(module,'Session',Db)
     monkeypatch.setattr(module,'db_now',lambda db:START)
     rows=[fixture(ident,'New Orleans Pelicans','Denver Nuggets',sport='nba') for ident in matches]
-    monkeypatch.setattr(module,'find_fixture_candidates',lambda *args:rows)
+    monkeypatch.setattr(module,'find_fixture_candidates',lambda *args,**kwargs:rows)
     settings=S(api_football_key=None,balldontlie_key=None)
     assert module.process_pending_binding(None,settings,None)
     assert request.state==expected
     assert request.fixture_id==('42' if expected=='bound' else None)
     if occupied:assert request.last_error_code=='fixture_already_bound'
+
+
+def test_worker_football_passes_verified_aliases(monkeypatch):
+    from backend import result_binding as module
+    request=S(id='mock-binding',game_id='mock-game',provider='api_football',state='pending',
+              fixture_id=None,candidates=[],last_error_code='no_matching_fixture',
+              next_attempt_at=START,updated_at=START)
+    game=S(id='mock-game',sport='football',starts_at=START,home_team_id='home',away_team_id='away')
+    teams={'home':S(id='home',source_name='North Macedonia',name_zh=None,translation_status='missing'),
+           'away':S(id='away',source_name='Slovenia',name_zh=None,translation_status='missing')}
+    captured={}
+    class Db:
+        def __init__(self,*args):pass
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def begin(self):return nullcontext()
+        def scalar(self,query):return request
+        def scalars(self,query):return iter([])
+        def get(self,model,ident):return game if ident=='mock-game' else teams[ident]
+        def execute(self,*args,**kwargs):return None
+        def flush(self):pass
+    def find(*args,**kwargs):
+        captured.update(kwargs)
+        return [fixture('1545662','FYR Macedonia','Slovenia')]
+    monkeypatch.setattr(module,'Session',Db)
+    monkeypatch.setattr(module,'db_now',lambda db:START)
+    monkeypatch.setattr(module,'find_fixture_candidates',find)
+    settings=S(api_football_key=S(get_secret_value=lambda:'mock-key'),balldontlie_key=None)
+    assert module.process_pending_binding(None,settings,None)
+    assert request.state=='needs_review' and request.last_error_code is None
+    assert captured['home_aliases']=={'North Macedonia'}
+    assert captured['away_aliases']=={'Slovenia'}

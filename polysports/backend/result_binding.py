@@ -7,9 +7,9 @@ from sqlalchemy import select, text, or_, and_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .models import Game, ResultBindingRequest, Team
+from .models import Game, ResultBindingRequest, Team, TeamAlias
 from .gamma import normal
-from .team_directory import NBA_SHORT_NAMES
+from .team_directory import NBA_SHORT_NAMES, football_name_variants
 from .sports_sources import SourceError, fetch_schedule
 from .scheduler import db_now, watch_game
 
@@ -24,19 +24,34 @@ def request_binding_for_accepted_order(db, game_id):
     watch_game(db,game.id)
 
 
-def _team_names(sport, name):
+def verified_team_names(db, team):
+    names={team.source_name}
+    if team.name_zh and team.translation_status=='verified':
+        names.add(team.name_zh)
+    names.update(db.scalars(select(TeamAlias.alias).where(
+        TeamAlias.team_id==team.id,TeamAlias.verified.is_(True))))
+    return {value for value in names if isinstance(value,str) and value.strip()}
+
+
+def _team_names(sport, name, verified_names=None):
     names={normal(name)}
+    if verified_names:
+        names.update(normal(value) for value in verified_names if isinstance(value,str) and value.strip())
+    if sport=='football':
+        names.update(football_name_variants(name))
     if sport=='nba':
         full=next((value for short,value in NBA_SHORT_NAMES.items() if normal(short)==normal(name)),None)
         if full: names.add(normal(full))
     return names
 
 
-def match_fixture_candidates(sport, starts_at, home_name, away_name, fixtures):
+def match_fixture_candidates(sport, starts_at, home_name, away_name, fixtures, *,
+                             home_aliases=None, away_aliases=None):
     """匹配结果仅作为候选，不能据此自动认定最终比分或市场结算。"""
     if sport not in ('football','nba'): raise ValueError('unsupported sport')
-    home_names,away_names=_team_names(sport,home_name),_team_names(sport,away_name)
-    if not all(home_names) or not all(away_names): return []
+    home_names=_team_names(sport,home_name,home_aliases)
+    away_names=_team_names(sport,away_name,away_aliases)
+    if not home_names or not away_names: return []
     matches=[]; seen={}
     for fixture in fixtures:
         if fixture.sport!=sport or fixture.provider!=('api_football' if sport=='football' else 'balldontlie'): continue
@@ -50,12 +65,14 @@ def match_fixture_candidates(sport, starts_at, home_name, away_name, fixtures):
     return sorted(matches,key=lambda item:(item.starts_at,item.external_id))
 
 
-def find_fixture_candidates(client, key, sport, starts_at, home_name, away_name):
+def find_fixture_candidates(client, key, sport, starts_at, home_name, away_name, *,
+                            home_aliases=None, away_aliases=None):
     """在包含比赛时间的 36 小时窗口查询外部数据，不使用推测结果。"""
     provider='api_football' if sport=='football' else 'balldontlie' if sport=='nba' else None
     if not provider: raise ValueError('unsupported sport')
     fixtures,_,_=fetch_schedule(provider,key,starts_at-timedelta(hours=18),client)
-    return match_fixture_candidates(sport,starts_at,home_name,away_name,fixtures)
+    return match_fixture_candidates(sport,starts_at,home_name,away_name,fixtures,
+                                    home_aliases=home_aliases,away_aliases=away_aliases)
 
 
 def unique_nba_fixture_id(sport, matches):
@@ -78,9 +95,12 @@ def process_pending_binding(engine, settings, client):
         game=db.get(Game,request.game_id)
         home=db.get(Team,game.home_team_id);away=db.get(Team,game.away_team_id)
         secret=settings.api_football_key if request.provider=='api_football' else settings.balldontlie_key
+        home_aliases=verified_team_names(db,home) if game.sport=='football' else None
+        away_aliases=verified_team_names(db,away) if game.sport=='football' else None
         try:
             matches=find_fixture_candidates(client,secret.get_secret_value() if secret else '',game.sport,
-                                           game.starts_at,home.source_name,away.source_name)
+                                           game.starts_at,home.source_name,away.source_name,
+                                           home_aliases=home_aliases,away_aliases=away_aliases)
             request.candidates=[{'id':item.external_id,'starts_at':item.starts_at.isoformat(),
                 'home':item.home.name,'away':item.away.name,'league':item.league_name} for item in matches]
             request.last_error_code=None if matches else 'no_matching_fixture'

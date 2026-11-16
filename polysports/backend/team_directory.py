@@ -1,4 +1,4 @@
-"""仅用于显示的用户维护球队资料；不参与赛事或交易身份验证。"""
+"""用户维护的球队资料：用于显示和赛果候选的精确别名扩展，不参与交易身份自动确认。"""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -25,6 +25,52 @@ def _normal(value: str) -> str:
     return ' '.join(unicodedata.normalize('NFKC', value).casefold().split())
 
 
+def _match_normal(value: str) -> str:
+    return ' '.join(''.join(c if c.isalnum() else ' ' for c in unicodedata.normalize('NFKC', value).casefold()).split())
+
+
+@lru_cache(maxsize=1)
+def _football_records():
+    root = Path(__file__).parent / 'team_data'
+    return json.loads((root / 'football.json').read_text(encoding='utf-8'))
+
+
+@lru_cache(maxsize=1)
+def _football_alias_indexes():
+    variants_by_name: dict[str, frozenset[str] | None] = {}
+    alias_targets: dict[str, str | None] = {}
+    for item in _football_records().values():
+        if not isinstance(item, dict): continue
+        name = item.get('name_en')
+        if not isinstance(name, str) or not name.strip(): continue
+        primary = _match_normal(name)
+        raw_aliases = item.get('aliases')
+        aliases = raw_aliases if isinstance(raw_aliases, list) else []
+        variants = frozenset(
+            value for candidate in [name, *aliases]
+            if isinstance(candidate, str) and (value := _match_normal(candidate))
+        )
+        if primary in variants_by_name and variants_by_name[primary] != variants:
+            variants_by_name[primary] = None
+        else:
+            variants_by_name[primary] = variants
+        for key in variants:
+            if key in alias_targets and alias_targets[key] != primary:
+                alias_targets[key] = None
+            else:
+                alias_targets[key] = primary
+    return variants_by_name, alias_targets
+
+
+def football_name_variants(name: str) -> set[str]:
+    """Return exact normalized aliases for one unambiguous football team."""
+    variants_by_name, alias_targets = _football_alias_indexes()
+    target = alias_targets.get(_match_normal(name))
+    if target is None: return set()
+    variants = variants_by_name.get(target)
+    return set(variants) if variants else set()
+
+
 def build_index(sport: str, records) -> dict[str, dict | None]:
     index: dict[str, dict | None] = {}
     for item in records:
@@ -44,13 +90,12 @@ def build_index(sport: str, records) -> dict[str, dict | None]:
 @lru_cache(maxsize=1)
 def _directories():
     root = Path(__file__).parent / 'team_data'
-    football = json.loads((root / 'football.json').read_text(encoding='utf-8'))
     basketball = json.loads((root / 'basketball.json').read_text(encoding='utf-8'))
     nba=build_index('nba', basketball)
     for short, full in NBA_SHORT_NAMES.items():
         key,full_key=_normal(short),_normal(full)
         if key not in nba and nba.get(full_key): nba[key]=nba[full_key]
-    return {'football': build_index('football', football.values()), 'nba': nba}
+    return {'football': build_index('football', _football_records().values()), 'nba': nba}
 
 
 def display_team(team) -> dict:

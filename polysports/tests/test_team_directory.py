@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-from backend.team_directory import NBA_SHORT_NAMES, build_index, display_team
+from backend.team_directory import NBA_SHORT_NAMES, build_index, display_team, football_name_variants
 
 
 def team(name, sport='football', name_zh=None, logo_url=None, translation_status='missing'):
@@ -34,6 +34,12 @@ def test_unknown_ambiguous_and_cross_sport_never_guess():
     assert display_team(team('Minnesota Lynx',sport='nba'))['name_zh'] is None
     index=build_index('football',[{'name_en':'Mock Club','name_zh':'模拟甲'}, {'name_en':'  MOCK  CLUB ','name_zh':'模拟乙'}])
     assert index['mock club'] is None
+
+
+def test_football_directory_exact_aliases_are_bidirectional():
+    assert football_name_variants('North Macedonia') >= {'north macedonia','fyr macedonia','macedonia'}
+    assert 'north macedonia' in football_name_variants('FYR Macedonia')
+    assert football_name_variants('Unknown National Team') == set()
 
 
 def test_polymarket_nba_short_names_have_chinese_and_keep_source_icon():

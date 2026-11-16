@@ -270,6 +270,52 @@ def test_authenticated_combo_api_and_accept_flow(sample,monkeypatch):
     assert client.get('/api/v1/combo-rfqs/'+data['id']+'/events').status_code==200
 
 
+def test_authenticated_combo_api_auto_accept_places_in_one_step(sample,monkeypatch):
+    from backend import combo_api
+    engine,client,headers,body=sample;settings=client.app.state.settings
+    monkeypatch.setattr(settings,'combo_execution_enabled',True)
+    monkeypatch.setattr(combo_api,'COMBO_EXECUTION_READY',True)
+    monkeypatch.setattr(combo_service,'credential_fingerprint',lambda s,w:b'mock-credential-fingerprint')
+    monkeypatch.setattr(combo_api,'request_quote',lambda e,s,b,k:combo_service.request_quote(e,s,b,k,gateway_cls=FakeGateway,catalog=catalog))
+    monkeypatch.setattr(combo_api,'accept_quote',lambda e,s,i,q:combo_service.accept_quote(e,s,i,q,gateway_cls=FakeGateway,catalog=catalog))
+    signed=[]
+    monkeypatch.setattr(combo_service,'accept_once',lambda *args:(signed.append(1) or S(status='executing',rfq_id='mock-rfq')))
+    payload=body.model_dump(mode='json');payload['auto_accept']=True
+    request_headers={**headers,'Idempotency-Key':str(uuid.uuid4())}
+    result=client.post('/api/v1/combo-rfqs',json=payload,headers=request_headers)
+    assert result.status_code==202,result.text
+    data=result.json()['data'];assert data['state']=='executing' and data['quote']['id']
+    with Session(engine) as db:
+        row=db.get(ComboRFQ,uuid.UUID(data['id']))
+        assert row.state=='executing' and row.accept_started_at is not None
+    replay=client.post('/api/v1/combo-rfqs',json=payload,headers=request_headers)
+    assert replay.status_code==200 and replay.json()['data']['state']=='executing'
+    assert len(signed)==1  # 幂等重放不得再次签名下单
+
+
+def test_auto_accept_failure_closes_quote_without_sending(sample,monkeypatch):
+    from backend import combo_api
+    engine,client,headers,body=sample;settings=client.app.state.settings
+    monkeypatch.setattr(settings,'combo_execution_enabled',True)
+    monkeypatch.setattr(combo_api,'COMBO_EXECUTION_READY',True)
+    monkeypatch.setattr(combo_service,'credential_fingerprint',lambda s,w:b'mock-credential-fingerprint')
+    monkeypatch.setattr(combo_api,'request_quote',lambda e,s,b,k:combo_service.request_quote(e,s,b,k,gateway_cls=FakeGateway,catalog=catalog))
+    def fail(*args):raise TradingError('allowance_insufficient','组合交易授权不足')
+    monkeypatch.setattr(combo_api,'accept_quote',fail)
+    sent=[]
+    monkeypatch.setattr(combo_service,'accept_once',lambda *args:(sent.append(1) or S(status='executing',rfq_id='mock-rfq')))
+    payload=body.model_dump(mode='json');payload['auto_accept']=True
+    result=client.post('/api/v1/combo-rfqs',json=payload,headers={**headers,'Idempotency-Key':str(uuid.uuid4())})
+    assert result.status_code==503,result.text
+    assert result.json()['error']['code']=='ALLOWANCE_INSUFFICIENT'
+    assert not sent
+    with Session(engine) as db:
+        row=db.scalar(select(ComboRFQ).order_by(ComboRFQ.created_at.desc()).limit(1))
+        assert row.state=='failed' and row.error_code=='allowance_insufficient'
+        ident=row.id
+    assert ident not in combo_service._quotes
+
+
 def test_old_expiry_timer_cannot_delete_newer_quote():
     from backend.combo_service import _quotes, expire_cached_quote
     ident=uuid.uuid4();old=uuid.uuid4();new=uuid.uuid4()

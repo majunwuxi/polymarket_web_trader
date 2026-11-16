@@ -175,18 +175,20 @@
 
 `POST /single-orders` 的 `201` 资源是已持久化的意图，不隐含任何上游成交或获利。`202` 同样返回意图 ID，前端轮询详情；订单确认成功、失败及未知都保留审计历史。明确的 `425` 和 post-only 限制采用第 1.2 节错误形式，绝不改写成凭证问题或自动转换订单类型。
 
-## 6. Combo 组合询价与接受
+## 6. Combo 组合询价与一步下单
 
 Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_position_ids` 请求组合，`BUY` 使用金额、`SELL` 使用份额，支持情况取决于真实账户与市场；不得将 CLOB asset ID 未验证地作为 Combo 腿标识，也不得把多笔单场订单假装为 Combo。报价可能没有返回、被撤销或在接受前过期。`expires_at` 使用上游报价实际截止时间，不假定固定 10 秒。
 
+**组合页面默认一步下单（`auto_accept:true`）**：官方 Combo 没有独立于 RFQ 的 CLOB 市价单，网关报价就是当前可成交的组合市场价；因此用户填好投注金额后一次提交，服务端在同一请求内完成「取得实时报价 → 校验 → 立即签名接受」，报价不再展示给用户等待二次确认，也不会因人工确认耗时而过期。有效期、预算上限、余额/授权、钱包凭证指纹、腿身份与单次发送保护全部沿用原 `accept_quote`；在发送接受请求之前失败（如 `BALANCE_INSUFFICIENT`、`ALLOWANCE_INSUFFICIENT`、`COMBO_QUOTE_EXPIRED`）时返回对应错误，并把仍停在 `quoted` 的记录收口为 `failed`、销毁内存报价对象，避免留下无法接受的待确认记录。幂等重放不再签名下单。`auto_accept` 缺省或为 `false` 时保留原「仅询价、由 `POST /combo-rfqs/{rfq_id}/accept` 二次确认」语义，用于兼容旧调用方与自动化测试。
+
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
-| `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 首次 `201`：已得到报价或明确无报价的 `ComboRFQ` ；`202`：仍在请求或结果未知；同键重复且结果明确为 `200` | 创建 Combo 草稿与 RFQ 记录，不触发接受或资金成交；至少两腿、不能重复 outcome；BUY 开仓要求所有映射已确认且真实 Combo 能力已核实，带 `parent_combo_id` 的 SELL 平仓不要求映射确认，改为核验原组合成交记录、原组合腿与官方 Combo 目录持仓标识；`quantity` 最多六位小数 |
+| `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "auto_accept":true, "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 一步下单 `202`：已提交执行中或结果未知；`200` / `201`：明确未成交或同键重放；缺省 `auto_accept` 时沿用原「仅询价」语义 | `auto_accept:true` 时在同一请求内取得官方实时报价后立即签名接受，不等待二次确认；报价即当前组合市场价，页面不再展示倒计时。发送前校验失败会返回明确错误并把记录收口为 `failed`，绝不留下无法接受的 `quoted` 记录。幂等重放（`created=false`）不再签名下单。至少两腿、不能重复 outcome；BUY 开仓要求所有映射已确认且真实 Combo 能力已核实，带 `parent_combo_id` 的 SELL 平仓不要求映射确认，改为核验原组合成交记录、原组合腿与官方 Combo 目录持仓标识；`quantity` 最多六位小数 |
 | `GET /combo-rfqs` | `limit`, `cursor`, `state`, `game_id` | `200` 分页组合记录 | 按创建时间及 ID 倒序；每腿附带纯本地、只读的 `result_won`/`result_basis`/`score_verified`/`game_finished`，组合附带 `by_score`/`judged_legs`/`leg_count`/`score_reason`，组合附带 `close_blocked` / `close_block_reason`（任一腿赛果已确认或停单即禁止平仓）、只读 `fill`（已确认成交明细，见 5.1.1c）、卡片盈亏 `pnl`（有 `confirmed` 明细则为不带「约」的确定金额，见 5.1.1b）与买入三项摘要 `buy_summary`（见 5.1.1d）；列表一次取出本页 `combo_fills`，不查询 Polymarket 上游，市场终态需另调 `/resolution` |
 | `GET /combo-rfqs/by-key/{key}` | 本地幂等键与 `wallet_id` | `200` 现有组合请求 | 用于查询不确定的本地请求，404 不证明外部未收到 |
 | `GET /combo-legs/{link_id}/{outcome_id}` | 已确认映射和选项 ID | `200` 目录 position ID | 仅读取目录身份；不代表账户获交易授权 |
 | `GET /combo-rfqs/{rfq_id}` | 本地 RFQ UUID | `200`：`ComboRFQ` | 返回本地状态和已核实的外部 RFQ ID；外部结果未知不能当作无报价或失败 |
-| `POST /combo-rfqs/{rfq_id}/accept` | `{ "quote_id":"uuid" }`；会话 + CSRF | `200`：明确拒绝或已确认执行的 RFQ；`202`：执行中或未知的 RFQ | 此请求表示用户确认报价及全部腿。锁定 RFQ 与意图，核对有效期、报价、账户和市场；平仓不要求赛事映射确认，但仍核验组合腿市场身份、原组合持仓与报价资产；先原子持久化确认、所有赛事关注及接受开始状态，再调用 SDK。重复请求只返回已存在状态，不再次接受 |
+| `POST /combo-rfqs/{rfq_id}/accept` | `{ "quote_id":"uuid" }`；会话 + CSRF | `200`：明确拒绝或已确认执行的 RFQ；`202`：执行中或未知的 RFQ | 此请求表示用户确认报价及全部腿。锁定 RFQ 与意图，核对有效期、报价、账户和市场；平仓不要求赛事映射确认，但仍核验组合腿市场身份、原组合持仓与报价资产；先原子持久化确认、所有赛事关注及接受开始状态，再调用 SDK。重复请求只返回已存在状态，不再次接受；一步下单（`auto_accept:true`）在 `POST /combo-rfqs` 内自动完成此步骤，本端点仅保留兼容 |
 | `GET /combo-rfqs/{rfq_id}/events` | `limit`, `cursor` | `200` 分页脱敏 RFQ 状态事件 | 按 `created_at,id` 排序；`executing` 不等于成交 |
 | `GET /combo-rfqs/{rfq_id}/resolution` | 本地 RFQ UUID | `200`：`{ "id", "direction", "state", "legs", "leg_count", "judged_legs", "resolved_legs", "by_score", "by_market", "agreement", "reason", "notice", "applicable" }` | 只读核对组合胜负：逐腿返回赛事终态（`score_verified`/`game_finished`/`home_score`/`away_score`）、按赛果判断（`result_judgment`，含 `basis`）、该腿底层市场 condition 的 Polymarket 终态结算（`market`，含 `market_status`/`market_status_text`/`resolved_at`/`market_error`）及单腿 `leg_agreement`（`consistent`/`conflict`/`partial`/`unavailable`）；组合层按串关全中口径汇总 `by_score` 与 `by_market`（bool 或 `null`，`null` 表示不能确认而非输），`agreement` 为 `consistent`/`conflict`/`market_only`/`result_only`/`unavailable`/`not_applicable`（SELL）。任一腿无法判断或尚未终态则不确认整单结论；单次最多串行查询 20 条腿的市场终态。该接口只读核对胜负，**不计算组合结算金额**；已落库成交明细用于卡片盈亏（见 5.1.1b / 5.1.1c），实际赔付以官方组合仓位终态为准 |
 
@@ -231,7 +233,7 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 ## 9. 关键事务和时序
 
 1. **单场预览 → 提交**：查询真实盘口 → 返回短期预览与规范化值 → 管理员确认 → 验证 token 和新盘口 → 在数据库事务内写意图、腿、关注、任务与提交状态 → 提交事务 → SDK 签名并发送 → 保存明确响应或未知状态 → 只读对账。禁止将上游 HTTP 200、订单 ID 或 `pending` 当作成交。
-2. **Combo 询价 → 接受**：确认所有腿与能力 → 幂等创建草稿并请求 RFQ → 返回真实报价及有效期 → 管理员确认特定本地 quote ID → 行锁/租约和事务持久化接受意图与关注 → 接受原报价 → 记录 `executing` / 拒绝 / 未知 → 依据 RFQ ID 跟踪状态。不能保证外部事务和本地事务原子，故未知状态不可盲目重发。
+2. **Combo 一步下单**：确认所有腿与能力 → 幂等创建草稿并请求 RFQ 取得实时报价 → 同一请求内立即行锁/租约和事务持久化接受意图与关注 → 接受原报价 → 记录 `executing` / 拒绝 / 未知 → 依据 RFQ ID 跟踪状态；发送接受请求之前失败则收口为 `failed`。兼容模式（不传 `auto_accept`）仍保留「询价 → 管理员确认本地 quote ID → 接受」两步。不能保证外部事务和本地事务原子，故未知状态不可盲目重发。
 3. **赛事同步和恢复**：API 只创建/更新配置或排队任务；worker 以数据库时间、到期条件、锁和租约领取。重启后未到期任务保持等待。足球与 NBA 的首次和后续时间如第 4 节，完赛才停止常规轮询。
 4. **顺序与并发**：提交/接受操作在状态变更前锁定对应意图与唯一活动尝试；相同请求返回已存结果，参数改变导致冲突。异步回调、对账结果、审计事件及关注状态须在事务中更新，旧租约不可覆盖新结果。
 
@@ -245,7 +247,7 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 - 两种运动的时间、日期边界、数据为空与失败、游标和中文名缺失；重复同步及任务重启不提前执行。
 - 未确认/歧义映射、盘口变更、预览过期、精度与最小订单量、同键重放/冲突及并发。
 - 单场提交与撤单的明确接受、拒绝、部分成交、网络超时和对账；不得重复下单或虚构成交。
-- Combo 无报价、真实报价截止、对象丢失、重复接受、Last Look 拒绝、执行中、结果未知与 RFQ 对账；不得把单场批量下单当作 Combo。
+- Combo 一步下单、无报价、发送前校验失败、幂等重放不重复签名、真实报价截止、对象丢失、重复接受、Last Look 拒绝、执行中、结果未知与 RFQ 对账；不得把单场批量下单当作 Combo。
 - 425、post-only、第三方故障和授权缺失；日志、状态、统计、CSV/XLSX 口径和公式防护。
 
 6F 已实现单场订单预览、提交、撤单、历史、只读对账、候选订单人工关联与成交证据查询；具体接口和配置见 [PolySports 运行说明](polysports/README.md) 与运行中的 OpenAPI。6G 增加组合询价、接受、状态和事件接口；6H 增加历史、统计、导出和系统状态接口。组合交易默认关闭，模拟测试不能证明真实资金交易已通过。官方参考：[单场下单](https://docs.polymarket.com/trading/place-orders)、[Combo Builder](https://docs.polymarket.com/trading/combos/builders)、[撮合重启](https://docs.polymarket.com/trading/matching-engine)。

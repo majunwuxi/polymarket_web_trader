@@ -1,4 +1,4 @@
-"""组合腿只读检查，以及组合询价与接受入口（由组合执行开关控制）。"""
+"""组合腿只读检查，以及组合一步下单入口（兼容原两步询价/接受，由组合执行开关控制）。"""
 from __future__ import annotations
 
 import uuid
@@ -48,7 +48,7 @@ from pydantic import BaseModel, Field, StrictStr
 from sqlalchemy import select, tuple_
 from datetime import datetime
 from .sports_api import cursor_decode, cursor_encode
-from .combo_service import request_quote, accept_quote
+from .combo_service import request_quote, accept_quote, discard_unaccepted_quote
 from .models import ComboRFQ, ComboLeg, ComboEvent, ComboFill, Game, Team, WatchedGame, ResultBindingRequest, Job
 
 
@@ -63,6 +63,8 @@ class ComboBody(BaseModel):
     quantity: StrictStr = Field(min_length=1,max_length=64)
     legs: list[ComboLegBody] = Field(min_length=2,max_length=50)
     parent_combo_id: uuid.UUID | None = None
+    # 一步下单：拿到当前官方组合报价后立即在同一请求内签名接受，不等待二次确认。
+    auto_accept: bool = False
 
 
 class AcceptBody(BaseModel):
@@ -122,15 +124,36 @@ def failure(request,exc):
     return auth.error(request,status,exc.code.upper(),exc.message)
 
 
-@router.post('/combo-rfqs',responses={201:{'description':'已记录询价'},202:{'description':'询价中或结果未知'}})
+def auto_accept_current_quote(request,ident,created):
+    """一步下单的核心编排：官方 Combo 只能经 RFQ 网关成交，报价即当前市场价。
+
+    request_quote 保存状态并取得报价后，立刻在同一请求内执行原本需要用户
+    二次点击的 accept_quote，避免报价在等待确认期间过期。有效期、余额、
+    授权、钱包指纹、腿身份与单次发送保护全部沿用原校验，没有绕过。
+    幂等重放（created=False）绝不再签名下单。
+    """
+    if not created:return
+    with Session(request.app.state.engine) as db:
+        row=db.get(ComboRFQ,ident)
+        quote_id=row.quote_id if row is not None and row.state=='quoted' else None
+    if quote_id is None:return
+    try:
+        accept_quote(request.app.state.engine,request.app.state.settings,ident,quote_id)
+    except TradingError as exc:
+        discard_unaccepted_quote(request.app.state.engine,ident,exc.code)
+        raise
+
+
+@router.post('/combo-rfqs',responses={201:{'description':'已记录组合请求'},202:{'description':'已提交执行中或结果未知'}})
 def create_combo(request: Request,body:ComboBody,idempotency_key:str=Header(...,alias='Idempotency-Key')):
     if not COMBO_EXECUTION_READY or not request.app.state.settings.combo_execution_enabled:return auth.error(request,503,'COMBO_DISABLED','组合交易尚未启用')
     try:
         try:key=uuid.UUID(idempotency_key)
         except ValueError:raise TradingError('invalid_amount','幂等键必须为 UUID')
         ident,created=request_quote(request.app.state.engine,request.app.state.settings,body,key)
+        if body.auto_accept:auto_accept_current_quote(request,ident,created)
         with Session(request.app.state.engine) as db:
-            row=db.get(ComboRFQ,ident);status=202 if row.state in ('requesting','unknown') else 201 if created else 200
+            row=db.get(ComboRFQ,ident);status=202 if row.state in ('requesting','unknown','accepting','executing') else 201 if created else 200
             return JSONResponse(status_code=status,content={'data':combo_data(db,row),'request_id':request.state.request_id})
     except TradingError as exc:return failure(request,exc)
 

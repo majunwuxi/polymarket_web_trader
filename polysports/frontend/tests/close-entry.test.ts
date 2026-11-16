@@ -79,8 +79,8 @@ it('组合平仓沿用原组合腿和钱包，明确关联原组合',async()=>{
   vi.stubGlobal('fetch',mock)
   const view=mount(Combos,{global:{plugins:[router]}});await flushPromises()
   expect(view.text()).toContain('组合平仓')
-  await view.findAll('button').find(button=>button.text()==='请求真实卖出报价')!.trigger('click');await flushPromises()
+  await view.findAll('button').find(button=>button.text()==='按当前市价直接平仓')!.trigger('click');await flushPromises()
   const call=mock.mock.calls.find(([url,options])=>url.endsWith('/combo-rfqs')&&options?.method==='POST')!
-  expect(JSON.parse(String(call[1]?.body))).toMatchObject({wallet_id:'mock-wallet',direction:'SELL',quantity:'3.45',parent_combo_id:'mock-combo',legs:[{market_link_id:'l1',outcome_id:'o1'},{market_link_id:'l2',outcome_id:'o2'}]})
+  expect(JSON.parse(String(call[1]?.body))).toMatchObject({wallet_id:'mock-wallet',direction:'SELL',quantity:'3.45',auto_accept:true,parent_combo_id:'mock-combo',legs:[{market_link_id:'l1',outcome_id:'o1'},{market_link_id:'l2',outcome_id:'o2'}]})
   view.unmount()
 })

@@ -267,3 +267,18 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
                 if job.status=='pending':
                     if state=='rejected':job.status='done'
                     else:job.due_at=db_now(tx)+timedelta(seconds=30)
+
+
+def discard_unaccepted_quote(engine,ident,code):
+    """一步下单在发送接受请求之前失败时，收口仍停在 quoted 的记录。
+
+    没有这一步，界面会挂着一张已经不可能被接受的报价，直到后台按
+    expires_at 把它判为过期；同时内存报价对象也要立即销毁。
+    """
+    with Session(engine) as tx,tx.begin():
+        job=tx.scalar(select(Job).where(Job.combo_rfq_id==ident).with_for_update())
+        row=tx.scalar(select(ComboRFQ).where(ComboRFQ.id==ident).with_for_update())
+        if row is not None and row.state=='quoted':
+            record(tx,row,'failed',code)
+            if job is not None and job.status=='pending':job.status='done'
+    with _quote_lock:_quotes.pop(ident,None)

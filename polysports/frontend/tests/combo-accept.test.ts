@@ -6,62 +6,75 @@ import Combos from '../src/views/Combos.vue'
 // 全部为模拟数据，fetch 不连接真实交易服务。
 const json=(body:unknown,status=200)=>({ok:status>=200&&status<300,status,json:async()=>body}) as Response
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/',component:Combos}]})
-const row=(expires:number)=>({id:'mock-rfq',state:'quoted',direction:'BUY',quantity:'1',wallet_address:'mock',legs:[],quote:{id:'mock-quote',expires_at:new Date(expires).toISOString(),price:'0.5',total_required:'1',net_receive:'2'}})
+const wallet={id:'mock-wallet',label:'模拟钱包',wallet_address:'mock'}
+const placed=(state:string,extra:Record<string,unknown>={})=>({id:'mock-rfq',state,direction:'BUY',quantity:'1',wallet_address:'mock',error_code:null,legs:[],quote:{id:'mock-quote',expires_at:new Date(Date.now()+60_000).toISOString(),price:'0.5',total_required:'1',net_receive:'2'},...extra})
 
-beforeEach(async()=>{localStorage.clear();await router.push('/');await router.isReady()})
+beforeEach(async()=>{
+  localStorage.clear()
+  vi.stubGlobal('crypto',{randomUUID:()=> 'mock-id'})
+  await router.push('/');await router.isReady()
+})
 afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers()})
 
-function setup(response:()=>Promise<Response>,expires=Date.now()+60_000){
-  const fetchMock=vi.fn((url:string)=>{
-    if(url.endsWith('/accept'))return response()
-    if(url.endsWith('/wallets'))return Promise.resolve(json({data:{items:[]}}))
-    return Promise.resolve(json({data:{items:[row(expires)]}}))
+function twoLegs(){localStorage.setItem('polysports_combo_legs',JSON.stringify([{label:'模拟一',market_link_id:'m1',outcome_id:'o1'},{label:'模拟二',market_link_id:'m2',outcome_id:'o2'}]))}
+function setup(response:()=>Promise<Response>,list:any[]=[]){
+  const fetchMock=vi.fn((url:string,options?:RequestInit)=>{
+    if(options?.method==='POST')return response()
+    if(url.endsWith('/wallets'))return Promise.resolve(json({data:{items:[wallet]}}))
+    return Promise.resolve(json({data:{items:list}}))
   })
   vi.stubGlobal('fetch',fetchMock)
   return {view:mount(Combos,{global:{plugins:[router]}}),fetchMock}
 }
+async function submit(view:any){
+  await view.get('input[inputmode="decimal"]').setValue('1')
+  await view.findAll('button').find(button=>button.text()==='按当前市价直接下单')!.trigger('click')
+  await flushPromises()
+}
+const posts=(mock:any)=>mock.mock.calls.filter(([,options]:any[])=>options?.method==='POST')
 
-describe('组合接受反馈（模拟接口）',()=>{
-  it('询价返回后立即显示报价，无需等待历史记录刷新',async()=>{
-    localStorage.setItem('polysports_combo_legs',JSON.stringify([{label:'模拟一',market_link_id:'m1',outcome_id:'o1'},{label:'模拟二',market_link_id:'m2',outcome_id:'o2'}]))
-    const quote=row(Date.now()+60_000);quote.legs=[]
-    let recordReads=0
-    vi.stubGlobal('crypto',{randomUUID:()=> 'mock-id'})
-    vi.stubGlobal('fetch',vi.fn((url:string,options?:RequestInit)=>{
-      if(url.endsWith('/wallets'))return Promise.resolve(json({data:{items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'mock'}]}}))
-      if(options?.method==='POST')return Promise.resolve(json({data:quote}))
-      recordReads++
-      return Promise.resolve(json({data:{items:[]}}))
-    }))
-    const view=mount(Combos,{global:{plugins:[router]}})
+describe('组合一键下单反馈（模拟接口）',()=>{
+  it('填金额后按当前市场价一次提交，不再出现报价卡片和二次确认',async()=>{
+    twoLegs()
+    const {view,fetchMock}=setup(()=>Promise.resolve(json({data:placed('executing')})))
     await flushPromises()
-    await view.get('input[inputmode="decimal"]').setValue('1')
-    await view.findAll('button').find(button=>button.text()==='请求真实报价')!.trigger('click')
-    await flushPromises()
-    expect(view.get('[aria-label="最新组合报价"]').text()).toContain('确认接受真实资金报价')
-    expect(recordReads).toBe(1)
+    await submit(view)
+    const [url,options]=posts(fetchMock)[0] as unknown as [string,RequestInit]
+    expect(url).toBe('/api/v1/combo-rfqs')
+    expect(JSON.parse(String(options.body))).toMatchObject({wallet_id:'mock-wallet',direction:'BUY',quantity:'1',auto_accept:true})
+    expect(view.text()).toContain('已按当前市场价提交')
+    expect(view.text()).not.toContain('确认接受真实资金报价')
+    expect(view.find('[aria-label="最新组合报价"]').exists()).toBe(false)
+    expect(fetchMock.mock.calls.filter(([path])=>String(path).endsWith('/accept'))).toHaveLength(0)
     view.unmount()
   })
-  it('明确的发送前失败显示具体原因',async()=>{
-    const {view}=setup(()=>Promise.resolve(json({error:{code:'ALLOWANCE_INSUFFICIENT',message:'组合交易授权不足'}},503)))
-    await flushPromises();await view.get('.market-card button').trigger('click');await flushPromises()
-    expect(view.text()).toContain('组合交易授权不足（本次未发送接受请求）')
-    view.unmount()
-  })
-  it('网络异常后禁止对同一报价重复接受',async()=>{
-    const {view,fetchMock}=setup(()=>Promise.reject(new Error('mock network error')))
-    await flushPromises();await view.get('.market-card button').trigger('click');await flushPromises()
-    expect(view.text()).toContain('确认结果未核实')
-    expect((view.get('.market-card button').element as HTMLButtonElement).disabled).toBe(true)
-    expect(fetchMock.mock.calls.filter(([url])=>url.endsWith('/accept'))).toHaveLength(1)
-    view.unmount()
-  })
-  it('过期报价不能接受',async()=>{
-    const {view,fetchMock}=setup(()=>Promise.resolve(json({data:{}})),Date.now()-1000)
+  it('发送前校验失败显示具体原因，清除待查记录后允许重试',async()=>{
+    twoLegs()
+    const {view,fetchMock}=setup(()=>Promise.resolve(json({error:{code:'ALLOWANCE_INSUFFICIENT',message:'组合交易授权不足'}},503)))
     await flushPromises()
-    expect(view.text()).toContain('报价已过期')
-    expect((view.get('.market-card button').element as HTMLButtonElement).disabled).toBe(true)
-    expect(fetchMock.mock.calls.filter(([url])=>url.endsWith('/accept'))).toHaveLength(0)
+    await submit(view)
+    expect(view.text()).toContain('组合交易授权不足（本次未发送下单请求）')
+    await submit(view)
+    expect(posts(fetchMock)).toHaveLength(2)
+    view.unmount()
+  })
+  it('下单结果未知时保留待查记录并阻止重复提交',async()=>{
+    twoLegs()
+    const {view,fetchMock}=setup(()=>Promise.resolve(json({data:placed('unknown')})))
+    await flushPromises()
+    await submit(view)
+    expect(view.text()).toContain('下单结果未确认')
+    expect(view.text()).toContain('查询原请求')
+    await submit(view)
+    expect(posts(fetchMock)).toHaveLength(1)
+    view.unmount()
+  })
+  it('历史待确认报价不再提供接受入口',async()=>{
+    twoLegs()
+    const {view}=setup(()=>Promise.resolve(json({data:placed('executing')})),[placed('quoted',{id:'old-rfq'})])
+    await flushPromises()
+    expect(view.text()).toContain('旧流程的待确认报价')
+    expect(view.text()).not.toContain('确认接受真实资金报价')
     view.unmount()
   })
 })

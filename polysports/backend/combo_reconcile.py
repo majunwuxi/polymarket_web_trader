@@ -2,7 +2,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .combo_gateway import ComboGateway
-from .combo_service import record
+from .combo_service import record, rfq_failure_code
 from .models import ComboRFQ, ComboLeg
 from .scheduler import db_now, finish_attempt
 from .trading import wallet_for
@@ -35,7 +35,9 @@ def apply_combo(db,job,payload,error=None):
             target={'CONFIRMED':'confirmed','FILLED':'confirmed','FAILED':'failed','EXPIRED':'expired','CANCELED':'rejected','AWAITING_MAKER_CONFIRMATION':'executing','EXECUTING':'executing','MINED':'executing','RETRYING':'executing'}.get(status)
             if not target:error='rfq_status_unknown'
             elif row.state not in ('confirmed','failed','expired','rejected'):
-                if target!=row.state:record(db,row,target)
+                if target!=row.state:
+                    code=rfq_failure_code(payload,fallback='rfq_'+target) if target in ('failed','expired','rejected') else None
+                    record(db,row,target,code)
                 if target=='confirmed':
                     if getattr(payload,'tx_hash',None):row.tx_hash=str(payload.tx_hash)
                     from .combo_fills import confirm_combo_fill

@@ -111,7 +111,7 @@ def combo_data(db,row,fill=_MISSING):
     fill_data=fill_payload(fill)
     pnl=combo_pnl(direction=row.direction,by_score=score_summary['by_score'],
                   quantity=row.quantity,quote=quote,fill=fill_data)
-    return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'tx_hash':row.tx_hash,'parent_combo_id':str(row.parent_combo_id) if row.parent_combo_id else None,'combo_position_id':row.combo_position_id,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details,
+    return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'error_text':combo_error_text(row.error_code),'tx_hash':row.tx_hash,'parent_combo_id':str(row.parent_combo_id) if row.parent_combo_id else None,'combo_position_id':row.combo_position_id,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details,
             'by_score':score_summary['by_score'],'judged_legs':score_summary['judged_legs'],
             'leg_count':score_summary['leg_count'],'score_reason':score_summary['reason'],
             'close_blocked':close_reason is not None,'close_block_reason':close_reason,
@@ -122,6 +122,62 @@ def combo_data(db,row,fill=_MISSING):
 def failure(request,exc):
     status=404 if exc.code=='not_found' else 409 if exc.code in ('mapping_invalid','idempotency_conflict','duplicate_unresolved','quote_expired','quote_unavailable','combo_quote_expired','position_settled') else 422 if exc.code in ('invalid_amount','combo_legs_invalid') else 403 if exc.code=='geoblock_blocked' else 503
     return auth.error(request,status,exc.code.upper(),exc.message)
+
+
+# 上游 Combo RFQ 拒绝/失败原因的中文说明。上游可能返回 SDK 尚未枚举的新码，
+# 未命中时页面原样显示错误码，不把未知原因改写成笼统的「账户权限」提示。
+COMBO_ERROR_TEXT = {
+    'maker_declined': '做市商拒绝本次接受（Last Look），报价方未确认成交',
+    'maker_already_responded': '做市商已响应过该报价请求',
+    'maker_quote_limited': '做市商报价额度受限',
+    'acceptance_window_expired': '上游接受窗口已过期，报价未能成交',
+    'expired_rfq': '上游报价已过期，未能成交',
+    'submission_window_closed': '上游提交窗口已关闭，未能成交',
+    'execution_failed': '上游执行失败，未能成交',
+    'contradictory_legs': '组合腿互相矛盾，上游拒绝',
+    'leg_metadata_unavailable': '组合腿元数据不可用，上游无法核验',
+    'balance_validation_failed': '上游校验余额不足，未能成交',
+    'allowance_validation_failed': '上游校验授权不足，未能成交',
+    'pre_execution_balance_reservation_failed': '上游预执行余额预留失败，未能成交',
+    'trade_submission_failed': '上游交易提交失败，未能成交',
+    'no_quotes': '上游暂无可用报价',
+    'size_too_large': '下单金额超出上游报价上限',
+    'invalid_quote': '上游判定报价无效',
+    'quote_mismatch': '上游判定报价与请求不匹配',
+    'invalid_rfq': '上游判定报价请求无效',
+    'unknown_rfq': '上游找不到该报价请求',
+    'invalid_rfq_state': '上游报价状态已不允许接受',
+    'invalid_acceptance': '上游判定接受请求无效',
+    'invalid_confirmation': '上游确认信息无效',
+    'invalid_execution_result': '上游执行结果无效',
+    'invalid_signature': '上游判定签名无效',
+    'invalid_signature_type': '上游判定签名类型无效',
+    'invalid_identity': '上游身份校验未通过',
+    'address_mismatch': '钱包地址与上游记录不一致',
+    'invalid_order_side': '上游判定买卖方向无效',
+    'order_side_or_token_does_not_match_request': '订单方向或资产与请求不匹配',
+    'invalid_role': '账户角色不符合上游要求',
+    'unauthorized_role': '账户角色未获授权',
+    'unauthenticated': '上游认证失败，请检查 CLOB 凭证',
+    'invalid_json': '上游判定请求格式无效',
+    'invalid_message': '上游判定签名消息无效',
+    'service_unavailable': '上游服务暂不可用',
+    'internal_error': '上游内部错误',
+    'request_failed': '上游请求失败',
+    'rfq_failed': '上游报价请求失败，未能成交',
+    'rfq_expired': '上游报价已过期，未能成交',
+    'rfq_canceled': '上游取消了该报价请求',
+    'rfq_rejected': '上游拒绝本次询价',
+    'accept_failed': '上游拒绝本次接受，未能成交',
+    'accept_unknown': '接受结果未知，请勿重复提交',
+    'request_unknown': '询价结果未知，请勿重复提交',
+    'no_quote': '本次没有收到报价，未成交',
+    'quote_expired': '报价已过期，未成交',
+}
+
+
+def combo_error_text(code):
+    return COMBO_ERROR_TEXT.get(str(code).lower()) if code else None
 
 
 def auto_accept_current_quote(request,ident,created):

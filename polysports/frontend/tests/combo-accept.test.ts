@@ -77,4 +77,16 @@ describe('组合一键下单反馈（模拟接口）',()=>{
     expect(view.text()).not.toContain('确认接受真实资金报价')
     view.unmount()
   })
+  it('上游拒绝时显示具体原因，报价标签不再写成成交',async()=>{
+    twoLegs()
+    const reason='做市商拒绝本次接受（Last Look），报价方未确认成交'
+    const {view}=setup(()=>Promise.resolve(json({data:placed('rejected',{error_code:'maker_declined',error_text:reason})})))
+    await flushPromises()
+    await submit(view)
+    expect(view.text()).toContain('下单未成交：'+reason)
+    expect(view.text()).not.toContain('请检查账户权限')
+    expect(view.text()).toContain('组合报价')
+    expect(view.text()).not.toContain('成交报价')
+    view.unmount()
+  })
 })

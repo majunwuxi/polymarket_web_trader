@@ -316,6 +316,27 @@ def test_auto_accept_failure_closes_quote_without_sending(sample,monkeypatch):
     assert ident not in combo_service._quotes
 
 
+def test_auto_accept_records_upstream_reason_and_voids_pending_fill(sample,monkeypatch):
+    from backend import combo_api
+    from backend.models import ComboFill
+    engine,client,headers,body=sample;settings=client.app.state.settings
+    monkeypatch.setattr(settings,'combo_execution_enabled',True)
+    monkeypatch.setattr(combo_api,'COMBO_EXECUTION_READY',True)
+    monkeypatch.setattr(combo_service,'credential_fingerprint',lambda s,w:b'mock-credential-fingerprint')
+    monkeypatch.setattr(combo_api,'request_quote',lambda e,s,b,k:combo_service.request_quote(e,s,b,k,gateway_cls=FakeGateway,catalog=catalog))
+    monkeypatch.setattr(combo_api,'accept_quote',lambda e,s,i,q:combo_service.accept_quote(e,s,i,q,gateway_cls=FakeGateway,catalog=catalog))
+    monkeypatch.setattr(combo_service,'accept_once',lambda *args:S(status='failed',rfq_id='mock-rfq',reason='ACCEPTANCE_WINDOW_EXPIRED',error=S(code='EXPIRED_RFQ')))
+    payload=body.model_dump(mode='json');payload['auto_accept']=True
+    result=client.post('/api/v1/combo-rfqs',json=payload,headers={**headers,'Idempotency-Key':str(uuid.uuid4())})
+    assert result.status_code==201,result.text
+    data=result.json()['data']
+    assert data['state']=='rejected' and data['error_code']=='expired_rfq'
+    assert data['error_text'] and '过期' in data['error_text']
+    with Session(engine) as db:
+        fill=db.scalar(select(ComboFill).where(ComboFill.rfq_id==uuid.UUID(data['id'])))
+        assert fill is not None and fill.state=='void'
+
+
 def test_old_expiry_timer_cannot_delete_newer_quote():
     from backend.combo_service import _quotes, expire_cached_quote
     ident=uuid.uuid4();old=uuid.uuid4();new=uuid.uuid4()

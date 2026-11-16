@@ -181,6 +181,8 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 
 **组合页面默认一步下单（`auto_accept:true`）**：官方 Combo 没有独立于 RFQ 的 CLOB 市价单，网关报价就是当前可成交的组合市场价；因此用户填好投注金额后一次提交，服务端在同一请求内完成「取得实时报价 → 校验 → 立即签名接受」，报价不再展示给用户等待二次确认，也不会因人工确认耗时而过期。有效期、预算上限、余额/授权、钱包凭证指纹、腿身份与单次发送保护全部沿用原 `accept_quote`；在发送接受请求之前失败（如 `BALANCE_INSUFFICIENT`、`ALLOWANCE_INSUFFICIENT`、`COMBO_QUOTE_EXPIRED`）时返回对应错误，并把仍停在 `quoted` 的记录收口为 `failed`、销毁内存报价对象，避免留下无法接受的待确认记录。幂等重放不再签名下单。`auto_accept` 缺省或为 `false` 时保留原「仅询价、由 `POST /combo-rfqs/{rfq_id}/accept` 二次确认」语义，用于兼容旧调用方与自动化测试。
 
+**失败原因可核验**：上游接受报价返回 `FAILED / EXPIRED / CANCELED` 时，`combo_rfqs.error_code` 保存上游最具体的错误码——优先 `error.code`（如 `maker_declined`、`expired_rfq`、`contradictory_legs`、`balance_validation_failed`），其次 SDK 归纳的 `reason`（如 `acceptance_window_expired`、`execution_failed`），上游未来新增的未知码也原样保留，不再统一写成 `accept_failed`。列表与详情接口同时返回只读的中文 `error_text`（未收录的新码为 `null`，页面回退显示原始错误码），便于区分做市商 Last Look 拒绝、接受窗口过期与账户/组合腿问题。明确拒绝属于终态失败：接受阶段预写的 `pending` 成交明细同步作废，结果未知则必须保留给后台对账。
+
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
 | `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "auto_accept":true, "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 一步下单 `202`：已提交执行中或结果未知；`200` / `201`：明确未成交或同键重放；缺省 `auto_accept` 时沿用原「仅询价」语义 | `auto_accept:true` 时在同一请求内取得官方实时报价后立即签名接受，不等待二次确认；报价即当前组合市场价，页面不再展示倒计时。发送前校验失败会返回明确错误并把记录收口为 `failed`，绝不留下无法接受的 `quoted` 记录。幂等重放（`created=false`）不再签名下单。至少两腿、不能重复 outcome；BUY 开仓要求所有映射已确认且真实 Combo 能力已核实，带 `parent_combo_id` 的 SELL 平仓不要求映射确认，改为核验原组合成交记录、原组合腿与官方 Combo 目录持仓标识；`quantity` 最多六位小数 |

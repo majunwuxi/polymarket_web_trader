@@ -106,6 +106,29 @@ def record(db,rfq,state,code=None):
     db.add(ComboEvent(id=uuid.uuid4(),rfq_id=rfq.id,state=state,code=code))
 
 
+def rfq_failure_code(result,fallback='accept_failed'):
+    """把上游 RFQ 失败原因规整成可持久化的小写错误码。
+
+    优先取上游最具体的 ``error.code``（如 MAKER_DECLINED、EXPIRED_RFQ、
+    CONTRADICTORY_LEGS），其次取 SDK 归纳的 ``reason``，最后才按状态兜底。
+    上游可能返回 SDK 尚未枚举的新码，因此未知值同样原样保留，不吞掉信息。
+    """
+    detail=getattr(result,'error',None)
+    code=getattr(detail,'code',None)
+    if code is not None:
+        text=str(getattr(code,'value',code)).strip().lower()
+        if text:return text[:80]
+    reason=getattr(result,'reason',None)
+    if reason is not None:
+        text=str(getattr(reason,'value',reason)).strip().lower()
+        if text:return text[:80]
+    status=getattr(result,'status',None)
+    if status is not None:
+        name=str(getattr(status,'value',status)).upper().split('.')[-1]
+        if name in ('FAILED','EXPIRED','CANCELED'):return 'rfq_'+name.lower()
+    return fallback
+
+
 def get_existing(db,wallet_id,key,fp):
     row=db.scalar(select(ComboRFQ).where(ComboRFQ.wallet_id==wallet_id,ComboRFQ.client_request_id==key))
     if row and row.fingerprint!=fp: raise TradingError('idempotency_conflict','幂等键对应其他组合请求')
@@ -257,13 +280,18 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
         try:
             result=accept_once(gateway.client,quote)
             state='executing' if result.status=='executing' and str(result.rfq_id)==external_id else 'rejected' if result.status=='failed' and str(result.rfq_id)==external_id else 'unknown'
-            code=None if state=='executing' else 'accept_failed' if state=='rejected' else 'accept_unknown'
+            code=None if state=='executing' else rfq_failure_code(result) if state=='rejected' else 'accept_unknown'
         except Exception:state='unknown';code='accept_unknown'
         with Session(engine) as tx,tx.begin():
             job=tx.scalar(select(Job).where(Job.combo_rfq_id==ident).with_for_update())
             row=tx.scalar(select(ComboRFQ).where(ComboRFQ.id==ident).with_for_update())
             if row.state=='accepting':
                 record(tx,row,state,code)
+                # 上游明确拒绝（非结果未知）时，同步作废接受阶段预写的待确认明细，
+                # 不留孤儿 pending 记录；结果未知必须保留给后台对账判定。
+                if state=='rejected':
+                    from .combo_fills import void_combo_fill
+                    void_combo_fill(tx,row)
                 if job.status=='pending':
                     if state=='rejected':job.status='done'
                     else:job.due_at=db_now(tx)+timedelta(seconds=30)

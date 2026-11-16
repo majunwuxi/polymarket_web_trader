@@ -75,3 +75,27 @@ def test_combo_body_auto_accept_defaults_off():
     body=combo_api.ComboBody(wallet_id=uuid.uuid4(),direction='BUY',quantity='10',legs=legs)
     assert body.auto_accept is False
     assert body.model_copy(update={'auto_accept':True}).auto_accept is True
+
+
+def test_rfq_failure_code_keeps_the_specific_upstream_reason():
+    from backend.combo_service import rfq_failure_code
+    # 上游 error.code 最具体，优先于 SDK 归纳的 reason。
+    assert rfq_failure_code(S(status='failed',reason='EXECUTION_FAILED',error=S(code='MAKER_DECLINED')))=='maker_declined'
+    assert rfq_failure_code(S(status='failed',reason=None,error=S(code='EXPIRED_RFQ')))=='expired_rfq'
+    # 没有 error.code 时退回 reason；再没有才按状态兜底。
+    assert rfq_failure_code(S(status='failed',reason='ACCEPTANCE_WINDOW_EXPIRED',error=None))=='acceptance_window_expired'
+    assert rfq_failure_code(S(status='failed',reason='EXECUTION_FAILED',error=None))=='execution_failed'
+    assert rfq_failure_code(S(status='FAILED',reason=None,error=None))=='rfq_failed'
+    assert rfq_failure_code(S(status='executing',reason=None,error=None))=='accept_failed'
+    # SDK 枚举对象与上游未来新增的错误码都要能原样保留，不能吞掉。
+    class EnumLike:
+        value='BRAND_NEW_REASON'
+    assert rfq_failure_code(S(status='failed',reason=None,error=S(code=EnumLike())))=='brand_new_reason'
+
+
+def test_combo_error_text_explains_known_reasons_without_inventing_unknown_ones():
+    assert '做市商' in combo_api.combo_error_text('maker_declined')
+    assert '过期' in combo_api.combo_error_text('acceptance_window_expired')
+    assert '组合腿' in combo_api.combo_error_text('contradictory_legs')
+    assert combo_api.combo_error_text('some_future_upstream_code') is None
+    assert combo_api.combo_error_text(None) is None

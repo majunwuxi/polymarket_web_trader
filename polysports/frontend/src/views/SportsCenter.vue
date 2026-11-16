@@ -15,7 +15,9 @@ const bindingSummary=ref<any>(null),bindingSummaryLoading=ref(false),bindingSumm
 let summaryRequest=0
 const matchSingle=ref<any[]>([]),matchCombo=ref<any[]>([]),singleCursor=ref<string|null>(null),comboCursor=ref<string|null>(null)
 const singleError=ref(''),comboError=ref(''),singleLoading=ref(false),comboLoading=ref(false)
-const marketGroups=computed(()=>{const defs=[{type:'moneyline',football:'全场胜平负',nba:'胜负'},{type:'totals',football:'全场总进球大小',nba:'总分大小'}];return defs.map(def=>({...def,label:sport()==='football'?def.football:def.nba,events:(liveData.value?.events||[]).map((event:any)=>({...event,markets:event.markets.filter((market:any)=>market.type===def.type)})).filter((event:any)=>event.markets.length)}))})
+const totalLine=(market:any)=>{const text=String(market.group||market.question||''),match=text.match(/-?\d+(?:\.\d+)?/);return match?Number.parseFloat(match[0]):null}
+const compareTotals=(a:any,b:any)=>{const left=totalLine(a),right=totalLine(b);if(left===null&&right===null)return String(a.id).localeCompare(String(b.id));if(left===null)return 1;if(right===null)return -1;return left-right||String(a.id).localeCompare(String(b.id))}
+const marketGroups=computed(()=>{const defs=[{type:'moneyline',football:'全场胜平负',nba:'胜负'},{type:'totals',football:'全场总进球大小',nba:'总分大小'}];return defs.map(def=>({...def,label:sport()==='football'?def.football:def.nba,events:(liveData.value?.events||[]).map((event:any)=>{const markets=event.markets.filter((market:any)=>market.type===def.type);if(def.type==='totals')markets.sort(compareTotals);return {...event,markets}}).filter((event:any)=>event.markets.length)}))})
 let detailRequest=0
 const sport=()=>String(route.params.sport)
 const title=()=>sport()==='football'?'足球赛事中心':'NBA 赛事中心'

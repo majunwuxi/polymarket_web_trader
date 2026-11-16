@@ -6,7 +6,7 @@ import { session } from '../src/auth'
 
 const json=(data:unknown,status=200)=>({ok:status>=200&&status<300,status,json:async()=>status>=200&&status<300?{data}:{error:{message:'模拟错误'}}}) as Response
 const team=(id:string)=>({id,source_name:id,name_zh:null,translation_status:'missing',logo_url:null})
-const game={id:'g1',provider:'polymarket',external_id:'90108495',starts_at:'2026-11-17T03:45:00Z',status:'scheduled',home_team:team('瑞士'),away_team:team('苏格兰'),home_score:null,away_score:null,league:{name:'欧国联'},last_synced_at:null,result_binding_state:'needs_review',has_matched_order:false}
+const game={id:'g1',provider:'polymarket',external_id:'90108495',starts_at:'2026-11-17T03:45:00Z',status:'scheduled',home_team:team('瑞士'),away_team:team('苏格兰'),home_score:null,away_score:null,league:{name:'欧国联'},last_synced_at:null,result_binding_state:'needs_review',has_matched_order:false,recent_revisions:[]}
 const summary={sport:'football',as_of:'2026-11-16T08:00:00Z',totals:{total:3,bound:1,pending:1,needs_review:1,unbound:2,ready_to_confirm:1},items:[{game_id:'g1',external_id:'90108495',starts_at:'2026-11-17T03:45:00Z',game_status:'scheduled',home:'瑞士',away:'苏格兰',league:'欧国联',state:'needs_review',provider:'api_football',fixture_id:null,candidates:[{id:'123456',starts_at:'2026-11-17T03:45:00Z',home:'Switzerland',away:'Scotland',league:'UEFA Nations League'}],error_code:null,updated_at:'2026-11-16T08:00:00Z',next_attempt_at:'2026-11-16T08:10:00Z',can_quick_confirm:true}],has_more:false}
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/sports/:sport',component:SportsCenter}]})
 
@@ -58,6 +58,23 @@ it('多候选球队链接先展开，再由用户选择具体候选',async()=>{
   await candidates[1].trigger('click');await flushPromises()
   const request=fetchMock.mock.calls.find(([url])=>String(url).endsWith('/games/g1/result-binding/confirm'))
   expect(JSON.parse(String((request![1] as RequestInit).body))).toEqual({fixture_id:'654321'})
+  view.unmount()
+})
+
+it('赛事卡合并重复的队名提示，并把球队维护移入详情',async()=>{
+  const {view}=setup();await flushPromises()
+  const card=view.get('.game-card')
+  expect(view.findAll('.game-name-note')).toHaveLength(1)
+  expect(view.get('.game-name-note').text()).toBe('中文名待补充')
+  expect(card.text()).not.toContain('维护球队')
+  expect(card.text()).not.toContain('确认订单后开始绑定赛果')
+  expect(card.get('.game-meta').text()).not.toContain('UTC+8')
+  expect(card.get('.game-meta').text().match(/赛果待确认/g)).toHaveLength(1)
+  await card.findAll('button').find(button=>button.text()==='查看详情')!.trigger('click');await flushPromises()
+  const summaryInfo=view.get('[aria-label="比赛信息"]')
+  expect(summaryInfo.findAll('button').filter(button=>button.text()==='维护名称')).toHaveLength(2)
+  await summaryInfo.findAll('button').find(button=>button.text()==='维护名称')!.trigger('click');await flushPromises()
+  expect(view.text()).toContain('维护球队：瑞士')
   view.unmount()
 })
 

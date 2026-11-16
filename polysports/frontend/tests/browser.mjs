@@ -82,7 +82,7 @@ try {
     await page.getByRole('heading', { name: '足球赛事中心' }).waitFor()
     await page.getByRole('heading', { name: '足球赛果绑定状态' }).waitFor()
     await page.getByText('Mock Home').waitFor()
-    assert.equal(await page.getByText('中文名待补充').count(), 2)
+    assert.equal(await page.getByText('中文名待补充').count(), 1)
     assert.equal(await page.getByText('队徽待补充').count(), 2)
     assert.match(await page.locator('.game-meta').innerText(), /2026\/01\/02.*02:00/)
     await page.getByRole('button', {name:'关注赛事'}).click()

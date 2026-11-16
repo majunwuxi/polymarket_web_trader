@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
-from backend.sports_sources import SourceError, fetch_schedule
+from backend.sports_sources import SourceError, fetch_game, fetch_schedule
 
 START=datetime(2026,1,1,12,tzinfo=timezone.utc)
 
@@ -43,10 +43,33 @@ def test_nba_cursor_and_no_fabricated_scores():
     assert calls[0].headers['authorization']=='mock-api-key'
 
 
-@pytest.mark.parametrize('response,code',[(httpx.Response(401),'http_401'),(httpx.Response(403),'http_403'),(httpx.Response(429),'http_429'),(httpx.Response(200,json={'errors':{'token':'bad'},'paging':{'current':1,'total':1},'response':[]}), 'provider_error'),(httpx.Response(200,json={'errors':[],'response':[]}), 'invalid_pagination')])
+@pytest.mark.parametrize('response,code',[(httpx.Response(401),'http_401'),(httpx.Response(403),'http_403'),(httpx.Response(429),'http_429'),(httpx.Response(200,json={'errors':{'unknown':'bad'},'paging':{'current':1,'total':1},'response':[]}), 'provider_error'),(httpx.Response(200,json={'errors':[],'response':[]}), 'invalid_pagination')])
 def test_source_errors_are_safe(response,code):
     with httpx.Client(transport=httpx.MockTransport(lambda req:response)) as client:
         with pytest.raises(SourceError,match=code): fetch_schedule('api_football','mock-secret-key',START,client)
+
+
+@pytest.mark.parametrize('key,code',[
+    ('token','token'),
+    ('access','access'),
+    ('requests','requests'),
+    ('rateLimit','rate_limit'),
+    ('from','from'),
+    ('to','to'),
+    ('date','date'),
+    ('timezone','timezone'),
+])
+def test_football_provider_errors_are_classified_without_response_content(key,code):
+    def handler(request):
+        return httpx.Response(200,json={'errors':{key:'sensitive upstream detail'}})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(SourceError) as schedule_error:
+            fetch_schedule('api_football','mock-secret-key',START,client)
+        with pytest.raises(SourceError) as game_error:
+            fetch_game('api_football','mock-secret-key','123',client)
+    assert schedule_error.value.code==game_error.value.code=='provider_error_'+code
+    assert 'sensitive upstream detail' not in str(schedule_error.value)
+    assert 'sensitive upstream detail' not in str(game_error.value)
 
 
 def test_later_page_failure_and_repeated_cursor_fail():

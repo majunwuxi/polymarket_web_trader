@@ -129,6 +129,29 @@ def nba_game(item: Any) -> SourceGame:
         raise SourceError('invalid_fixture') from exc
 
 
+_FOOTBALL_PROVIDER_ERROR_CODES = {
+    'token': 'token',
+    'access': 'access',
+    'requests': 'requests',
+    'rateLimit': 'rate_limit',
+    'from': 'from',
+    'to': 'to',
+    'date': 'date',
+    'timezone': 'timezone',
+}
+
+
+def check_football_provider_errors(body: dict) -> None:
+    errors = body.get('errors')
+    if errors in ([], {}, None):
+        return
+    if isinstance(errors, dict):
+        for key, code in _FOOTBALL_PROVIDER_ERROR_CODES.items():
+            if key in errors:
+                raise SourceError('provider_error_' + code)
+    raise SourceError('provider_error')
+
+
 def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Client, *, season_type: str | None = None) -> tuple[list[SourceGame], int, int]:
     if not key or key.startswith('CHANGE_ME'):
         raise SourceError('missing_api_key')
@@ -164,8 +187,7 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
         if pages > 1000:
             raise SourceError('pagination_limit')
         if provider == 'api_football':
-            if body.get('errors') not in ([], {}, None):
-                raise SourceError('provider_error')
+            check_football_provider_errors(body)
             rows, paging = body.get('response'), body.get('paging')
             if not isinstance(rows,list) or not isinstance(paging,dict) or type(paging.get('current')) is not int or type(paging.get('total')) is not int or paging['current'] != pages or paging['total'] < pages:
                 raise SourceError('invalid_pagination')
@@ -220,7 +242,7 @@ def fetch_game(provider: str, key: str, external_id: str, client: httpx.Client) 
         raise SourceError('network_or_invalid_json') from exc
     if not isinstance(body,dict): raise SourceError('invalid_response')
     if provider=='api_football':
-        if body.get('errors') not in ([],{},None): raise SourceError('provider_error')
+        check_football_provider_errors(body)
         rows=body.get('response')
         if not isinstance(rows,list) or len(rows)!=1: raise SourceError('fixture_unavailable')
         result=football_game(rows[0])

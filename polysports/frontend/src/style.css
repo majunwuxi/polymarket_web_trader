@@ -82,8 +82,8 @@
 .buy-metric{display:grid;gap:3px;padding:10px 12px;background:#f7faf8;border:1px solid #e3ece5;border-radius:10px;min-width:0}
 .buy-metric-label{font-size:11px;color:#7d9085;letter-spacing:.02em}
 .buy-metric-value{font-size:15px;color:#244638;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
-.buy-metric-hint{font-size:10px;color:#9aaba1;overflow-wrap:anywhere}
-@media(max-width:600px){.buy-metrics{grid-template-columns:1fr;gap:8px}.buy-metric{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.buy-metric-label{flex:0 0 auto}.buy-metric-hint{margin-left:auto}}
+.buy-note{margin:-6px 0 10px;color:#8a9a91;font-size:11px;line-height:1.5}
+@media(max-width:600px){.buy-metrics{grid-template-columns:1fr;gap:8px}.buy-metric{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.buy-metric-label{flex:0 0 auto}}
 /* 详情分层：小节标题 + 一组等宽小卡片 + 卡片内标签/值对齐 */
 .order-history .leg-chip{margin:5px 0;padding:6px 10px;background:#f5f8f6;border:1px solid #e9f0eb;border-radius:8px;font-size:12px;line-height:1.5}
 .detail-box .detail-section-title{margin:14px 0 8px;font-size:12px;font-weight:700;color:#397b62;letter-spacing:.02em}

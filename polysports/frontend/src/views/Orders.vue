@@ -90,20 +90,20 @@ const comboResolutionId=ref<string|null>(null),comboResolution=ref<any>(null)
 async function loadComboResolution(id:string){try{const data=await api('/combo-rfqs/'+id+'/resolution');comboResolution.value=data;comboResolutionId.value=id;if(data?.resolved_legs===data?.leg_count&&data?.leg_count>0){const row=combos.value.find((c:any)=>c.id===id);if(row){row.close_blocked=true;row.close_block_reason='各腿市场均已终态结算，不能平仓'}}}catch(e){message.value=e instanceof Error?e.message:'组合胜负核对失败'}}
 const legWinner=(won:any,fallback:string)=>won===true?'选项获胜':won===false?'选项未获胜':fallback
 const comboWinner=(won:any)=>won===true?'全部腿命中，组合获胜':won===false?'已有腿未命中，组合未获胜':'暂不能确认组合胜负'
+const comboResult=(won:any)=>won===true?'获胜':won===false?'未获胜':'未确认'
 const comboAgreement=(a:string)=>({consistent:'一致，组合胜负已确认',conflict:'不一致，请人工核实，不确认组合胜负',market_only:'仅有各腿市场终态，按市场结果核对，建议人工核实',result_only:'仅有赛果判断，市场终态未齐，组合结果仅为预计值',unavailable:'两个结果均不可用，暂不能确认',not_applicable:'组合卖出不适用终态胜负核对'} as Record<string,string>)[a]||'暂不能确认'
 const legCheck=(a:string)=>({consistent:'两个结果一致',conflict:'两个结果不一致，需人工核实',partial:'仅有一个结果，暂不确认',unavailable:'两个结果均不可用'} as Record<string,string>)[a]||'暂不确认'
 // 组合买入三项摘要只消费后端 buy_summary：不把 quantity（预算）当份额，也不把
 // total_required（接受报价所需余额）当买入金额。缺数据时明确写「待核实」。
 const buyMetrics=(c:any)=>{
   const s=c?.buy_summary
-  const hint=s?.basis==='combo_fill'?'已落库成交明细':s?.basis==='quote_rebuilt'?'按签名报价重建 · 约值':s?.basis==='quote_partial'?'报价不完整，金额待核实':'缺少可核实数据'
-  const detail=s?.detail||'接口未提供可核实的组合买入数据。'
   return [
-    {label:'份额总额',value:s?.size?s.size+' 份':'待核实',hint,detail},
-    {label:'买入价格',value:s?.price?s.price+' pUSD/份':'待核实',hint,detail},
-    {label:'买入金额',value:s?.cost?(s.estimated?'约':'')+s.cost+' pUSD':'待核实',hint:s?.cost?hint:'金额不猜测',detail}
+    {label:'份额总额',value:s?.size?s.size+' 份':'待核实'},
+    {label:'买入价格',value:s?.price?s.price+' pUSD/份':'待核实'},
+    {label:'买入金额',value:s?.cost?(s.estimated?'约':'')+s.cost+' pUSD':'待核实'}
   ]
 }
+const buyNote=(c:any)=>({quote_rebuilt:'金额按签名报价重建，标「约」为估算值。',quote_partial:'报价字段不完整，金额待核实。',unavailable:'缺少可核实数据，金额不做猜测。'} as Record<string,string>)[c?.buy_summary?.basis]||''
 const buySource=(c:any)=>({combo_fill:'已落库 CONFIRMED 成交明细（签名接受订单的 makerAmount / takerAmount）',quote_rebuilt:'官方签名报价按 micro-USDC 精度重建',quote_partial:'签名报价字段不完整，金额未核实',unavailable:'暂无可核实的成交明细或报价'} as Record<string,string>)[c?.buy_summary?.basis]||'暂无可核实的成交明细或报价'
 const legTone=(leg:any)=>leg.leg_agreement==='conflict'?'mini-tag-warn':leg.result_won===true?'mini-tag-ok':'mini-tag-neutral'
 onMounted(refreshAll)
@@ -115,14 +115,14 @@ onMounted(refreshAll)
   <aside id="primary-nav" class="sidebar" :class="{open:menuOpen}"><div class="brand sidebar-brand"><span class="brand-mark">P</span> PolySports</div><p class="nav-label">工作台</p><nav aria-label="主导航"><RouterLink to="/">总览</RouterLink><RouterLink to="/sports/football">足球赛事</RouterLink><RouterLink to="/sports/nba">NBA 赛事</RouterLink><RouterLink to="/combos">组合交易</RouterLink><RouterLink to="/orders">交易记录</RouterLink><RouterLink to="/history">历史与导出</RouterLink><RouterLink to="/wallets">钱包状态</RouterLink><RouterLink to="/system">系统管理</RouterLink></nav></aside>
   <main class="workspace order-history">
     <div class="workspace-top"><span class="breadcrumb">工作台 / 交易记录</span><div class="account"><span>{{session.username}}</span><button class="text-button" @click="signOut">退出</button></div></div>
-    <div class="page-heading"><div><p class="eyebrow">ORDER STATUS</p><h1>交易记录</h1><p class="muted">已接受不等于已成交；未知状态须对账，不能重复提交。开赛超过 24 小时且已结算的历史记录不再显示。</p></div></div>
+    <div class="page-heading"><div><p class="eyebrow">ORDER STATUS</p><h1>交易记录</h1><p class="muted">已接受不等于成交；未知状态请对账，不要重复提交。开赛超过 24 小时且已结算的历史记录不再显示。</p></div></div>
     <p role="status" class="form-message">{{message}}</p>
     <button class="text-button" @click="refreshAll">刷新订单</button>
 
     <div class="order-columns">
     <section class="welcome-card" aria-label="单场交易记录">
       <h2>单场订单</h2>
-      <p class="scope-note">赛果判断与 Polymarket 终态结算一致才确认金额；金额按已确认成交份额计算，不等于链上赎回或实际到账。已结算或赛果已确认的订单不再提供平仓。粉色卡片表示当前钱包存在可整仓赎回的赢家份额；赎回会领取该市场下的全部可赎回份额并进入现金余额。卡片盈亏标签：黑底为亏损、红底为盈利；有完整 CONFIRMED 成交明细时用真实成本，缺失时按限价估算并标「约」，悬停可看口径。</p>
+      <p class="scope-note">金额以赛果判断与 Polymarket 终态结算一致为准；粉色卡片可整仓赎回。</p>
       <p v-if="loaded && !orders.length">暂无已记录订单。</p>
       <article v-for="order in orders" :key="order.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('single',order.id)}]">
         <h2 class="card-title"><span>{{order.side==='BUY'?'买入':'卖出'}} · {{stateName(order.state)}}<span v-if="resultBadge(order.result_won)" class="result-badge" :class="resultBadge(order.result_won)?.cls">{{resultBadge(order.result_won)?.text}}</span></span><span class="pnl-badge" :class="pnlBadge(order).cls" :title="pnlBadge(order).hint">{{pnlBadge(order).text}}</span></h2>
@@ -186,17 +186,18 @@ onMounted(refreshAll)
 
     <section class="welcome-card" aria-label="组合交易记录">
       <h2>组合交易</h2>
-      <p class="scope-note">这里只显示已确认的组合交易；组合按全中口径核对。已落库 CONFIRMED 成交明细的卡片按签名订单实际支出与份额显示确定盈亏（不带「约」）；未回填的历史组合仍按报价估算并标「约」。粉色卡片表示该组合仓位可以整仓赎回，赎回后资金进入现金余额。</p>
+      <p class="scope-note">仅显示已确认组合；全部腿命中才算组合获胜；粉色卡片可整仓赎回。</p>
       <button class="text-button" :disabled="comboBusy" @click="loadCombos().then(loadRedeemEligibility)">刷新组合记录</button>
       <p v-if="comboError" role="alert">{{comboError}}</p>
       <p v-else-if="comboLoaded && !combos.length">暂无已确认组合交易。</p>
       <article v-for="combo in combos" :key="combo.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('combo',combo.id)}]">
-        <h3 class="card-title"><span>组合{{combo.direction==='BUY'?'买入':'卖出'}} · {{comboState(combo.state)}}<span v-if="combo.by_score!==null&&combo.by_score!==undefined"> · {{comboWinner(combo.by_score)}}</span></span><span class="pnl-badge" :class="pnlBadge(combo).cls" :title="pnlBadge(combo).hint">{{pnlBadge(combo).text}}</span></h3>
+        <h3 class="card-title"><span>组合{{combo.direction==='BUY'?'买入':'卖出'}} · {{comboState(combo.state)}}</span><span class="pnl-badge" :class="pnlBadge(combo).cls" :title="pnlBadge(combo).hint">{{pnlBadge(combo).text}}</span></h3>
         <div v-if="combo.direction==='BUY'" class="buy-metrics" aria-label="组合买入摘要">
-          <div v-for="m in buyMetrics(combo)" :key="m.label" class="buy-metric" :title="m.detail"><span class="buy-metric-label">{{m.label}}</span><strong class="buy-metric-value">{{m.value}}</strong><span class="buy-metric-hint">{{m.hint}}</span></div>
+          <div v-for="m in buyMetrics(combo)" :key="m.label" class="buy-metric"><span class="buy-metric-label">{{m.label}}</span><strong class="buy-metric-value">{{m.value}}</strong></div>
         </div>
+        <p v-if="buyNote(combo)" class="buy-note">{{buyNote(combo)}}</p>
         <p v-for="leg in combo.legs" :key="leg.outcome_id" class="leg-chip" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span><span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span><span v-else> · 无法判断</span></p>
-        <p class="summary-line"><span>按赛果判断：{{comboWinner(combo.by_score)}} · 已判断 {{combo.judged_legs ?? 0}}/{{combo.leg_count ?? combo.legs.length}} 腿<template v-if="combo.score_reason"> · {{combo.score_reason}}</template></span><span class="id-compact">{{shortId(combo.external_rfq_id)}}</span></p>
+        <p class="summary-line" :title="combo.score_reason || ''"><span>组合结果：{{comboResult(combo.by_score)}} · {{combo.judged_legs ?? 0}}/{{combo.leg_count ?? combo.legs.length}} 腿</span><span class="id-compact">{{shortId(combo.external_rfq_id)}}</span></p>
         <div class="order-actions">
           <button v-if="canRedeem('combo',combo.id)" class="text-button redeem-button" :disabled="redeemBusy===redeemKey('combo',combo.id)" title="整仓赎回该组合的全部可赎回份额" @click="redeem('combo',combo.id)">赎回</button>
           <span v-else-if="redeemInfo('combo',combo.id)?.state==='confirmed'" class="redeem-state">已赎回</span>

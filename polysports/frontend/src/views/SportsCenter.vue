@@ -15,7 +15,7 @@ const bindingSummary=ref<any>(null),bindingSummaryLoading=ref(false),bindingSumm
 let summaryRequest=0
 const matchSingle=ref<any[]>([]),matchCombo=ref<any[]>([]),singleCursor=ref<string|null>(null),comboCursor=ref<string|null>(null)
 const singleError=ref(''),comboError=ref(''),singleLoading=ref(false),comboLoading=ref(false)
-const marketGroups=computed(()=>{const defs=[{type:'moneyline',football:'全场胜平负',nba:'胜负'},{type:'spreads',football:'全场让球',nba:'让分'},{type:'totals',football:'全场总进球大小',nba:'总分大小'}];return defs.map(def=>({...def,label:sport()==='football'?def.football:def.nba,events:(liveData.value?.events||[]).map((event:any)=>({...event,markets:event.markets.filter((market:any)=>market.type===def.type)})).filter((event:any)=>event.markets.length)}))})
+const marketGroups=computed(()=>{const defs=[{type:'moneyline',football:'全场胜平负',nba:'胜负'},{type:'totals',football:'全场总进球大小',nba:'总分大小'}];return defs.map(def=>({...def,label:sport()==='football'?def.football:def.nba,events:(liveData.value?.events||[]).map((event:any)=>({...event,markets:event.markets.filter((market:any)=>market.type===def.type)})).filter((event:any)=>event.markets.length)}))})
 let detailRequest=0
 const sport=()=>String(route.params.sport)
 const title=()=>sport()==='football'?'足球赛事中心':'NBA 赛事中心'

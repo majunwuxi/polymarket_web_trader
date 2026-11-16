@@ -34,6 +34,30 @@ it('只显示本场单场订单和组合腿',async()=>{
   view.unmount()
 })
 
+it('赛事详情不展示 spread 让分市场',async()=>{
+  const live={events:[{id:'event-1',title:'Mock Event',slug:'mock-event',markets:[
+    {id:'money',type:'moneyline',question:'Mock Home vs Mock Away',group:'胜负',closed:false,accepting_orders:true,outcomes:[{label:'Mock Home',price:'0.55'}]},
+    {id:'spread',type:'spreads',question:'Mock Home spread',group:'让分 -1.5',closed:false,accepting_orders:true,outcomes:[{label:'Mock Home -1.5',price:'0.5'}]},
+    {id:'total',type:'totals',question:'Mock total',group:'总分 220.5',closed:false,accepting_orders:true,outcomes:[{label:'Over',price:'0.5'}]},
+  ]}],observed_at:'2026-11-14T00:00:00Z',match_status:'source_identity'}
+  vi.stubGlobal('fetch',vi.fn((url:string)=>{
+    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[game],next_cursor:null}))
+    if(url.includes('/sync-runs'))return Promise.resolve(json({items:[]}))
+    if(url.includes('/live-markets'))return Promise.resolve(json(live))
+    if(url.includes('/result-binding'))return Promise.resolve(json(null))
+    if(url.includes('/trade-intents?')||url.includes('/combo-rfqs?'))return Promise.resolve(json({items:[],next_cursor:null}))
+    return Promise.resolve(json(game))
+  }))
+  const view=mount(SportsCenter,{global:{plugins:[router]}});await flushPromises()
+  await view.findAll('button').find(button=>button.text()==='查看详情')!.trigger('click');await flushPromises()
+  const panel=view.get('[aria-label="Polymarket 市场信息"]')
+  expect(panel.findAll('.market-category-heading h4').map(item=>item.text())).toEqual(['胜负','总分大小'])
+  expect(panel.text()).toContain('Mock total')
+  expect(panel.text()).not.toContain('让分')
+  expect(panel.text()).not.toContain('Mock Home spread')
+  view.unmount()
+})
+
 it('接口失败不会被显示为暂无订单',async()=>{
   vi.stubGlobal('fetch',vi.fn((url:string)=>{
     if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[game],next_cursor:null}))

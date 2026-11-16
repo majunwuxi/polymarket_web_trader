@@ -21,7 +21,7 @@ const sport=()=>String(route.params.sport)
 const title=()=>sport()==='football'?'足球赛事中心':'NBA 赛事中心'
 const dateFormat=(value:string)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value))
 const name=(team:Team)=>team.name_zh || team.source_name
-const teamNameNote=(game:Game)=>{const teams=[game.home_team,game.away_team],missing=teams.some(team=>!team.name_zh),review=teams.some(team=>team.name_zh_source==='sportsmatch');return missing&&review?'队名待完善':missing?'中文名待补充':review?'队名待核对':''}
+const teamNameNote=(game:Game)=>[game.home_team,game.away_team].some(team=>!team.name_zh)?'中文名待补充':''
 const bindingName=(state:string|null)=>({bound:'赛果已绑定',pending:'赛果匹配中',needs_review:'赛果待确认'} as Record<string,string>)[state || ''] || '赛果未绑定'
 const statusName=(status:string)=>({scheduled:'未开始',live:'进行中',finished:'已完赛',postponed:'已延期',cancelled:'已取消',interrupted:'已中断',unknown:'状态未知'} as Record<string,string>)[status] || '状态未知'
 const orderState=(state:string)=>({submitting:'提交中',pending:'已接受，待核对',partially_filled:'部分成交',filled:'全部成交',rejected:'已拒绝',cancelled:'已撤单',unknown:'结果未知'} as Record<string,string>)[state]||'状态未知'

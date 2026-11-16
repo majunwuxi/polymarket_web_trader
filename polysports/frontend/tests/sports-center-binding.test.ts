@@ -13,11 +13,11 @@ const router=createRouter({history:createMemoryHistory(),routes:[{path:'/sports/
 beforeEach(async()=>{session.csrf='mock-csrf';HTMLDialogElement.prototype.showModal=function(){this.open=true};HTMLDialogElement.prototype.close=function(){this.open=false};await router.push('/sports/football');await router.isReady()})
 afterEach(()=>vi.unstubAllGlobals())
 
-function setup(summaryResponse:()=>Promise<Response>=()=>Promise.resolve(json(summary))){
+function setup(summaryResponse:()=>Promise<Response>=()=>Promise.resolve(json(summary)),games=[game]){
   const fetchMock=vi.fn((url:string,options?:RequestInit)=>{
     if(url.startsWith('/api/v1/result-bindings/summary'))return summaryResponse()
     if(url.endsWith('/result-binding/confirm'))return Promise.resolve(json({state:'bound'}))
-    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[game],next_cursor:null}))
+    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:games,next_cursor:null}))
     if(url.includes('/sync-runs'))return Promise.resolve(json({items:[]}))
     return Promise.resolve(json(null))
   })
@@ -75,6 +75,17 @@ it('赛事卡合并重复的队名提示，并把球队维护移入详情',async
   expect(summaryInfo.findAll('button').filter(button=>button.text()==='维护名称')).toHaveLength(2)
   await summaryInfo.findAll('button').find(button=>button.text()==='维护名称')!.trigger('click');await flushPromises()
   expect(view.text()).toContain('维护球队：瑞士')
+  view.unmount()
+})
+
+it('有中文名时不因目录来源标记队名待核对',async()=>{
+  const directoryTeam=(id:string,zh:string)=>({...team(id),name_zh:zh,name_zh_source:'sportsmatch'})
+  const directoryGame={...game,home_team:directoryTeam('Lithuania','立陶宛'),away_team:directoryTeam('Liechtenstein','列支敦士登')}
+  const {view}=setup(undefined,[directoryGame]);await flushPromises()
+  expect(view.text()).toContain('立陶宛')
+  expect(view.text()).toContain('列支敦士登')
+  expect(view.find('.game-name-note').exists()).toBe(false)
+  expect(view.text()).not.toContain('队名待核对')
   view.unmount()
 })
 

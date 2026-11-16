@@ -12,6 +12,42 @@ from backend.main import create_app
 from test_z_auth_integration import pg, log_in, ORIGIN  # noqa: F401
 
 
+def test_default_game_windows_and_explicit_history_range(monkeypatch):
+    from types import SimpleNamespace
+    from backend import sports_api
+
+    fixed=datetime(2026,11,16,4,tzinfo=timezone.utc)
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            assert tz is timezone.utc
+            return fixed
+
+    class FakeSession:
+        statement=None
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+        def scalars(self,statement):
+            self.statement=statement
+            return iter([])
+
+    monkeypatch.setattr(sports_api,'datetime',FixedDateTime)
+    request=SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(engine=None)),state=SimpleNamespace(request_id='test'))
+    for sport,lookback in (('football',timedelta(hours=2,minutes=30)),('nba',timedelta(hours=3))):
+        session=FakeSession()
+        monkeypatch.setattr(sports_api,'Session',lambda engine:session)
+        result=sports_api.games(request,sport=sport,start=None,end=None,limit=20)
+        bounds=[value for value in session.statement.compile().params.values() if isinstance(value,datetime)]
+        assert bounds==[fixed-lookback,fixed+timedelta(hours=36)]
+        assert result['data']['items']==[]
+
+    session=FakeSession()
+    monkeypatch.setattr(sports_api,'Session',lambda engine:session)
+    sports_api.games(request,sport='nba',start=fixed-timedelta(days=1),end=fixed,limit=20)
+    bounds=[value for value in session.statement.compile().params.values() if isinstance(value,datetime)]
+    assert bounds==[fixed-timedelta(days=1),fixed]
+
+
 def test_mock_repeated_sync_and_failed_sync_preserve_history(pg):
     start = datetime.now(timezone.utc)
     kickoff = (start + timedelta(hours=1)).isoformat()

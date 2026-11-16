@@ -49,7 +49,8 @@ def game_data(db, game):
 def games(request: Request, sport: Literal['football','nba'], start: datetime | None = Query(None,alias='from'), end: datetime | None = Query(None,alias='to'), status: str | None = None, watched: bool | None = None, limit: int = Query(30,ge=1,le=100), cursor: str | None = None):
     now = datetime.now(timezone.utc)
     upcoming = start is None
-    start, end = start or now, end or (now + timedelta(hours=36))
+    lookback = timedelta(hours=2,minutes=30) if sport == 'football' else timedelta(hours=3)
+    start, end = start or (now - lookback), end or (now + timedelta(hours=36))
     if start.tzinfo is None or end.tzinfo is None or end <= start:
         return auth.error(request,422,'VALIDATION_ERROR','时间范围必须包含时区且结束时间晚于开始时间')
     query = select(Game).where(Game.sport==sport,Game.starts_at>=start,Game.starts_at<end)

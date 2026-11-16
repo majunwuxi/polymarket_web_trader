@@ -98,3 +98,20 @@ it('切换比赛后旧订单响应不能覆盖当前比赛',async()=>{
   expect(view.get('[aria-label="本场订单明细"]').text()).toContain('暂无本场订单')
   view.unmount()
 })
+
+it('按运动类型显示默认回溯范围',async()=>{
+  const fetchMock=vi.fn((url:string)=>{
+    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[],next_cursor:null}))
+    if(url.includes('/sync-runs'))return Promise.resolve(json({items:[]}))
+    return Promise.resolve(json(null))
+  })
+  vi.stubGlobal('fetch',fetchMock)
+  const view=mount(SportsCenter,{global:{plugins:[router]}});await flushPromises()
+  expect(view.get('#range').text()).toContain('过去 3 小时至未来 36 小时')
+  await router.push('/sports/football');await flushPromises()
+  expect(view.get('#range').text()).toContain('过去 2 小时 30 分至未来 36 小时')
+  const requests=fetchMock.mock.calls.map(([url])=>url).filter(url=>url.startsWith('/api/v1/games?'))
+  expect(requests).toHaveLength(2)
+  expect(requests.every(url=>!url.includes('from=')&&!url.includes('to='))).toBe(true)
+  view.unmount()
+})

@@ -7,8 +7,10 @@ import { clearSession, session } from '../src/auth'
 
 // 本文件所有 API 返回值均为模拟测试数据，不访问真实服务。
 const json = (body: unknown, status = 200) => ({ status, ok: status >= 200 && status < 300, json: async () => body }) as Response
+const Blank = { template: '<div />' }
 const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/login', component: Login }, { path: '/', component: Dashboard },
+  { path: '/sports/football', component: Blank }, { path: '/sports/nba', component: Blank }, { path: '/orders', component: Blank },
 ] })
 
 beforeEach(async () => { clearSession(); await router.push('/login'); await router.isReady() })
@@ -35,6 +37,14 @@ describe('管理员页面（模拟接口）', () => {
     await view.get('form').trigger('submit.prevent'); await flushPromises()
     expect(view.text()).toContain('30 秒')
     expect((view.get('#password').element as HTMLInputElement).value).toBe('')
+  })
+  it('首页三张入口卡分别进入足球、NBA 和交易记录', async () => {
+    session.username = 'mock-admin'; session.csrf = 'mock-session-csrf'; session.authenticated = true
+    const view = mount(Dashboard, { global: { plugins: [router] } })
+    const entries = view.findAll('a.home-entry')
+    expect(entries.map(entry => entry.attributes('href'))).toEqual(['/sports/football', '/sports/nba', '/orders'])
+    await entries[1].trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/sports/nba')
   })
   it('退出失败保留会话，移动菜单可切换，未完成功能不可点击', async () => {
     session.username = 'mock-admin'; session.csrf = 'mock-session-csrf'; session.authenticated = true

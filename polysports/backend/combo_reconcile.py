@@ -8,6 +8,8 @@ from .scheduler import db_now, finish_attempt, retry_or_fail
 from .trading import wallet_for
 from .trading_gateway import TradingError
 
+MAX_COMBO_PENDING_CHECKS = 120
+
 
 def fetch_combo(engine,ident,settings,gateway_cls=ComboGateway):
     with Session(engine) as db:
@@ -57,4 +59,11 @@ def apply_combo(db,job,payload,error=None):
     elif row.state in ('confirmed','failed','expired','rejected'):
         finish_attempt(db,job,now,'succeeded');job.status='done'
     else:
-        finish_attempt(db,job,now,'succeeded');job.status='pending';job.due_at=now+timedelta(minutes=2)
+        finish_attempt(db,job,now,'succeeded',reset_failures=False)
+        job.failure_count=(job.failure_count or 0)+1
+        if job.failure_count>=MAX_COMBO_PENDING_CHECKS:
+            job.status='failed'
+            job.last_error_code='reconcile_stale'
+            job.last_error_summary=f'组合对账 {job.failure_count} 次仍未到终态，已停止自动重试'
+        else:
+            job.status='pending';job.due_at=now+timedelta(minutes=2)

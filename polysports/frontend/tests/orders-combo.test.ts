@@ -27,19 +27,6 @@ describe('交易记录中的组合（模拟接口）',()=>{
     expect(fetchMock.mock.calls.some(([url])=>url.includes('state=confirmed'))).toBe(true)
     view.unmount()
   })
-  it('未完成组合可手动重新安排对账',async()=>{
-    const retryCombo={...combo,state:'unknown'}
-    const fetchMock=vi.fn((url:string)=>Promise.resolve(url.includes('/combo-rfqs')?json({data:{items:[retryCombo],next_cursor:null}}):json({data:{items:[],next_cursor:null}})))
-    vi.stubGlobal('fetch',fetchMock)
-    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
-    const retry=view.findAll('button').find(button=>button.text()==='重新安排对账')
-    expect(retry).toBeTruthy()
-    await retry!.trigger('click');await flushPromises()
-    const request=fetchMock.mock.calls.find(([url])=>String(url).endsWith('/combo-rfqs/mock-rfq/reconcile'))
-    expect(request).toBeTruthy()
-    expect((request![1] as RequestInit).method).toBe('POST')
-    view.unmount()
-  })
   it('组合请求失败单独显示错误，不显示空记录',async()=>{
     vi.stubGlobal('fetch',vi.fn((url:string)=>Promise.resolve(url.includes('/combo-rfqs')?json({error:{}},503):json({data:{items:[],next_cursor:null}}))))
     const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()

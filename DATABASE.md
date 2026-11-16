@@ -137,8 +137,8 @@ erDiagram
 | `lease_until` | timestamptz 可空 | 租约过期时间 |
 | `lease_token` | uuid 可空 | 每次领取生成的新令牌，防止过期执行者写回 |
 | `attempt_count` | integer 必填默认 0 且非负 | 本任务累计领取次数，包含成功后的周期重排 |
-| `failure_count` | integer 必填默认 0 且非负 | 连续失败次数；成功时清零，交易/组合对账连续失败 10 次后停止自动重试 |
-| `last_error_code`, `last_error_summary` | varchar(80), text 可空 | 脱敏错误；达到上限时错误码为 `retry_exhausted` |
+| `failure_count` | integer 必填默认 0 且非负 | 连续失败/未决次数；正常成功时清零，交易/组合对账连续失败 10 次或组合连续 120 次未终态后停止自动重试 |
+| `last_error_code`, `last_error_summary` | varchar(80), text 可空 | 脱敏错误；达到失败上限为 `retry_exhausted`，组合持续未终态上限为 `reconcile_stale` |
 | `created_at`, `updated_at` | timestamptz 必填 | 审计时间 |
 
 约束：`result_poll`、`trade_reconcile` 的目标外键互斥且分别必填；`sync` 不关联关注或交易意图，且必须关联一个同步运行；其他任务不得设置 `sync_run_id`；`status='leased'` 当且仅当 `lease_owner`、`lease_until`、`lease_token` 均非空。索引：`(due_at, id) WHERE status='pending'`、`(lease_until, id) WHERE status='leased'`、`(watched_game_id)`、`(trade_intent_id)`；`UNIQUE(sync_run_id) WHERE sync_run_id IS NOT NULL`。同一关注赛事仅一条长期复用的常规轮询任务，`dedupe_key` 唯一保证不会重复排队。
@@ -147,7 +147,7 @@ erDiagram
 
 **领取协议**：在短事务内先把到期且租约过期的 `leased` 任务释放或标记恢复；按 `status='pending' AND due_at <= now()` 查询，`ORDER BY due_at,id FOR UPDATE SKIP LOCKED`，设置新的 `lease_token`、owner、到期时间，递增次数并新增 `job_runs`，然后提交事务。外部 HTTP 在事务外执行；续租及完成时必须 `WHERE id=:id AND status='leased' AND lease_token=:token AND lease_until > now()`，受影响行数为 0 代表租约失效，旧 worker 不得写回业务结果。必要时按同一条件与业务更新放入一个事务。时钟以数据库 `now()` 为准，应用时钟不用于领取判断。
 
-足球赛果首次查询截止时间为有效开赛时间后 120 分钟，未完赛后每 10 分钟查询；NBA 首次为开赛后 159 分钟，未完赛后每 3 分钟查询。一次查询完成后，在同一事务中将该长期任务重置为 `pending` 并设置新的 `due_at`，清除租约字段；新截止时间不得早于当前时间加对应间隔。来源确认完赛时将其置为 `done`，不再安排常规查询。若赛事已完赛且比分已确认，队列中残留的 `result_poll` 直接结束，不再调用结果来源。交易/组合对账的连续失败达到 10 次时任务置为 `failed` 并停止自动重排；手动重新对账会清零失败计数。
+足球赛果首次查询截止时间为有效开赛时间后 120 分钟，未完赛后每 10 分钟查询；NBA 首次为开赛后 159 分钟，未完赛后每 3 分钟查询。一次查询完成后，在同一事务中将该长期任务重置为 `pending` 并设置新的 `due_at`，清除租约字段；新截止时间不得早于当前时间加对应间隔。来源确认完赛时将其置为 `done`，不再安排常规查询。若赛事已完赛且比分已确认，队列中残留的 `result_poll` 直接结束，不再调用结果来源。交易/组合对账的连续失败达到 10 次时任务置为 `failed` 并停止自动重排；组合对账即使查询成功，但连续 120 次仍未到终态时置为 `failed`（`reconcile_stale`）。手动重新对账会清零失败/未决计数。
 
 重启恢复只处理 `due_at <= now()` 且可领取的任务；未到期任务保持待执行。来源失败后按来源限流和配置设置新的 `due_at`，不提前重试；确认完赛时事务内更新赛事与关注状态、将轮询任务置 `done`。对外交易不能依赖任务租约实现恰好一次：已发送/可能已发送的交易须保持未知并对账。
 

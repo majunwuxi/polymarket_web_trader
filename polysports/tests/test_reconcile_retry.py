@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as S
 import uuid
 
+from backend.combo_reconcile import MAX_COMBO_PENDING_CHECKS, apply_combo
 from backend.scheduler import MAX_CONSECUTIVE_FAILURES, finish_attempt, retry_or_fail
 
 
@@ -46,3 +47,29 @@ def test_success_resets_failure_streak():
     finish_attempt(Db(attempt()), row, datetime.now(timezone.utc), 'succeeded')
     assert row.failure_count == 0
     assert row.status == 'leased'
+
+
+def test_nonterminal_success_can_preserve_pending_streak():
+    row = job(failures=4)
+    finish_attempt(Db(attempt()), row, datetime.now(timezone.utc), 'succeeded', reset_failures=False)
+    assert row.failure_count == 4
+
+
+def test_combo_reconcile_stops_after_pending_limit():
+    class SequenceDb:
+        def __init__(self, *values):
+            self.values = iter(values)
+
+        def scalar(self, query):
+            return next(self.values)
+
+    now = datetime.now(timezone.utc)
+    combo = S(id=uuid.uuid4(), state='executing', external_rfq_id='ext', quote_expires_at=None)
+    row = job(failures=MAX_COMBO_PENDING_CHECKS - 1)
+    row.combo_rfq_id = combo.id
+    db = SequenceDb(combo, now, attempt())
+    apply_combo(db, row, S(rfq_id='ext', status='EXECUTING'))
+    assert row.status == 'failed'
+    assert row.failure_count == MAX_COMBO_PENDING_CHECKS
+    assert row.last_error_code == 'reconcile_stale'
+    assert '停止自动重试' in row.last_error_summary

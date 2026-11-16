@@ -112,13 +112,13 @@ def locked_valid_job(db: Session, job_id: uuid.UUID, token: uuid.UUID) -> Job | 
     return job
 
 
-def finish_attempt(db: Session, job: Job, now: datetime, result: str, error: str | None = None) -> None:
+def finish_attempt(db: Session, job: Job, now: datetime, result: str, error: str | None = None, reset_failures: bool = True) -> None:
     attempt=db.scalar(select(JobRun).where(JobRun.job_id==job.id,JobRun.attempt_no==job.attempt_count,JobRun.lease_token==job.lease_token).with_for_update())
     if not attempt or attempt.result!='running': raise RuntimeError('missing active attempt')
     attempt.result=result; attempt.finished_at=now; attempt.error_code=error; attempt.error_summary='来源暂不可用' if error else None
     job.last_error_code=error; job.last_error_summary='来源暂不可用' if error else None; job.updated_at=now
     if result=='failed': job.failure_count=(job.failure_count or 0)+1
-    elif result=='succeeded': job.failure_count=0
+    elif result=='succeeded' and reset_failures: job.failure_count=0
     job.lease_owner=job.lease_until=job.lease_token=None
 
 

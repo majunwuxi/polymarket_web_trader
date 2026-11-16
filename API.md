@@ -104,7 +104,7 @@
 
 关注任务由 worker 自动恢复：足球首次开赛后 120 分钟、随后每 10 分钟；NBA 首次开赛后 159 分钟、随后每 3 分钟。`next_due_at` 从持久化的待执行任务获取；暂停或完赛时为 null。仅上游明确完赛才设置 `completed`。赛事已完赛且比分已确认时，队列中残留的 `result_poll` 即使尚未到期也会直接结束，不再请求结果来源。
 
-交易与组合对账任务失败后最多连续重试 10 次；达到上限后状态置为 `failed`，错误码为 `retry_exhausted`，不再自动安排。手动 `POST /trade-intents/{intent_id}/reconcile` 或 `POST /combo-rfqs/{combo_id}/reconcile` 会将失败计数清零并把任务重新排队。
+交易与组合对账任务失败后最多连续重试 10 次；达到上限后状态置为 `failed`，错误码为 `retry_exhausted`，不再自动安排。组合对账即使每次都成功查询，但连续 120 次仍未进入终态（约 4 小时）时也会停止，错误码为 `reconcile_stale`。手动 `POST /trade-intents/{intent_id}/reconcile` 或 `POST /combo-rfqs/{combo_id}/reconcile` 会将失败/未决计数清零并把任务重新排队。
 
 ## 5. 行情、钱包和单场交易
 

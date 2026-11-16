@@ -39,11 +39,11 @@ function checkLine(r:any){
   return {tone:'muted',text:'— 两个结果均不可用，暂不能确认金额'}
 }
 
-async function loadCombos(append=false){if(comboBusy.value)return;comboBusy.value=true;comboError.value='';try{const q=new URLSearchParams({limit:'20',state:'confirmed'});if(append&&comboCursor.value)q.set('cursor',comboCursor.value);const data=await api('/combo-rfqs?'+q);combos.value=append?[...combos.value,...data.items]:data.items;comboCursor.value=data.next_cursor||null;comboLoaded.value=true}catch{comboError.value='组合记录加载失败，请重试。'}finally{comboBusy.value=false}}
+async function loadCombos(append=false){if(comboBusy.value)return;comboBusy.value=true;comboError.value='';try{const q=new URLSearchParams({limit:'20',state:'confirmed',hide_settled:'true'});if(append&&comboCursor.value)q.set('cursor',comboCursor.value);const data=await api('/combo-rfqs?'+q);combos.value=append?[...combos.value,...data.items]:data.items;comboCursor.value=data.next_cursor||null;comboLoaded.value=true}catch{comboError.value='组合记录加载失败，请重试。'}finally{comboBusy.value=false}}
 const comboState=(s:string)=>({requesting:'询价中',quoted:'已报价，未确认成交',accepting:'确认中',executing:'执行中，未确认成交',confirmed:'已确认',expired:'报价已过期',rejected:'已拒绝',failed:'未成交',unknown:'结果未知'} as Record<string,string>)[s]||'状态未知'
 const watchName=(s:string|null)=>({active:'已关注',completed:'已完赛，停止查询'} as Record<string,string>)[s||'']||'未关注'
 const bindingName=(s:string|null)=>({pending:'等待匹配',needs_review:'待确认绑定',bound:'已绑定',failed:'绑定失败'} as Record<string,string>)[s||'']||'未绑定'
-async function load(append=false){try{const q=new URLSearchParams({limit:'20'});if(append && nextCursor.value)q.set('cursor',nextCursor.value);const data=await api('/trade-intents?'+q);orders.value=append?[...orders.value,...data.items]:data.items;nextCursor.value=data.next_cursor;loaded.value=true}catch{message.value='订单状态加载失败。'}}
+async function load(append=false){try{const q=new URLSearchParams({limit:'20',hide_settled:'true'});if(append && nextCursor.value)q.set('cursor',nextCursor.value);const data=await api('/trade-intents?'+q);orders.value=append?[...orders.value,...data.items]:data.items;nextCursor.value=data.next_cursor;loaded.value=true}catch{message.value='订单状态加载失败。'}}
 const stateName=(s:string)=>({submitting:'提交中',pending:'已接受，待核对',partially_filled:'部分成交',filled:'全部成交',rejected:'已拒绝',cancelled:'已撤单',unknown:'结果未知'} as Record<string,string>)[s]||'未知'
 const cancelName=(s:string)=>({submitting:'撤单中',unknown:'撤单结果未知',confirmed:'已确认撤单',rejected:'撤单被拒绝'} as Record<string,string>)[s]||'未知'
 async function action(id:string,kind:'cancel'|'reconcile'){try{await api(kind==='cancel'?'/single-orders/'+id+'/cancel':'/trade-intents/'+id+'/reconcile',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:'{}'});pendingCancel.value=null;message.value=kind==='cancel'?'撤单请求已处理，请查看状态。':'已安排只读对账。';await load()}catch{message.value='请求结果未确认，请刷新或安排只读对账。'}}
@@ -82,11 +82,12 @@ onMounted(()=>{load();loadCombos()})
   <aside id="primary-nav" class="sidebar" :class="{open:menuOpen}"><div class="brand sidebar-brand"><span class="brand-mark">P</span> PolySports</div><p class="nav-label">工作台</p><nav aria-label="主导航"><RouterLink to="/">总览</RouterLink><RouterLink to="/sports/football">足球赛事</RouterLink><RouterLink to="/sports/nba">NBA 赛事</RouterLink><RouterLink to="/combos">组合交易</RouterLink><RouterLink to="/orders">交易记录</RouterLink><RouterLink to="/history">历史与导出</RouterLink><RouterLink to="/wallets">钱包状态</RouterLink><RouterLink to="/system">系统管理</RouterLink></nav></aside>
   <main class="workspace order-history">
     <div class="workspace-top"><span class="breadcrumb">工作台 / 交易记录</span><div class="account"><span>{{session.username}}</span><button class="text-button" @click="signOut">退出</button></div></div>
-    <div class="page-heading"><div><p class="eyebrow">ORDER STATUS</p><h1>交易记录</h1><p class="muted">已接受不等于已成交；未知状态须对账，不能重复提交。</p></div></div>
+    <div class="page-heading"><div><p class="eyebrow">ORDER STATUS</p><h1>交易记录</h1><p class="muted">已接受不等于已成交；未知状态须对账，不能重复提交。开赛超过 24 小时且已结算的历史记录不再显示。</p></div></div>
     <p role="status" class="form-message">{{message}}</p>
     <button class="text-button" @click="load()">刷新订单</button>
 
-    <section class="welcome-card">
+    <div class="order-columns">
+    <section class="welcome-card" aria-label="单场交易记录">
       <h2>单场订单</h2>
       <p class="scope-note">赛果判断与 Polymarket 终态结算一致才确认金额；金额按已确认成交份额计算，不等于链上赎回或实际到账。已结算或赛果已确认的订单不再提供平仓。卡片盈亏标签：黑底为亏损、红底为盈利；有完整 CONFIRMED 成交明细时用真实成本，缺失时按限价估算并标「约」，悬停可看口径。</p>
       <p v-if="loaded && !orders.length">暂无已记录订单。</p>
@@ -236,6 +237,7 @@ onMounted(()=>{load();loadCombos()})
       </article>
       <button v-if="comboCursor" class="text-button" :disabled="comboBusy" @click="loadCombos(true)">加载更多组合</button>
     </section>
+    </div>
   </main>
 </div>
 </template>

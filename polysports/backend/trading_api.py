@@ -5,10 +5,11 @@ from typing import Literal
 from fastapi import APIRouter,Header,Query,Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel,Field,StrictStr
-from sqlalchemy import select,tuple_
+from sqlalchemy import and_,or_,select,tuple_
 from sqlalchemy.orm import Session
 from . import auth
-from .models import Job,MarketLink,TradeFill,TradeIntent,TradeStateEvent,TradeSubmission
+from .close_policy import score_verified_clause,settled_visibility_cutoff
+from .models import Game,Job,MarketLink,PolyMarket,TradeFill,TradeIntent,TradeStateEvent,TradeSubmission
 from .scheduler import db_now
 from .sports_api import cursor_decode,cursor_encode
 from .trading import as_data,execute,prepare,wallet_for
@@ -67,8 +68,22 @@ def by_key(request:Request,request_id:uuid.UUID,wallet_id:uuid.UUID):
         return ok(request,as_data(intent,db))
 
 
+def hide_old_settled_intents(query,cutoff=None):
+    """交易记录视图：在分页前排除「开赛超过 24 小时且已结算」的单场订单。
+
+    已结算沿用列表的 close_blocked 口径（外部赛果已绑定核实，或市场已停单）；
+    未结算的老订单仍保留，避免把待核对的交易藏起来。
+    """
+    cutoff=cutoff or settled_visibility_cutoff()
+    query=query.join(Game,Game.id==TradeIntent.game_id)
+    query=query.join(MarketLink,MarketLink.id==TradeIntent.market_link_id)
+    query=query.join(PolyMarket,PolyMarket.id==MarketLink.market_id)
+    settled=or_(score_verified_clause(Game),PolyMarket.accepting_orders.is_(False))
+    return query.where(~and_(Game.starts_at<cutoff,settled))
+
+
 @router.get('/trade-intents')
-def list_intents(request:Request,limit:int=50,wallet_id:uuid.UUID | None=None,game_id:uuid.UUID | None=None,state:str | None=None,kind:Literal['single'] | None=None,cursor:str | None=None,start:datetime | None=Query(None,alias='from'),end:datetime | None=Query(None,alias='to')):
+def list_intents(request:Request,limit:int=50,wallet_id:uuid.UUID | None=None,game_id:uuid.UUID | None=None,state:str | None=None,kind:Literal['single'] | None=None,cursor:str | None=None,start:datetime | None=Query(None,alias='from'),end:datetime | None=Query(None,alias='to'),hide_settled:bool=False):
     if (start and start.tzinfo is None) or (end and end.tzinfo is None) or (start and end and end<=start):return auth.error(request,422,'VALIDATION_ERROR','时间范围无效')
     if limit<1 or limit>100:return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     query=select(TradeIntent)
@@ -77,6 +92,7 @@ def list_intents(request:Request,limit:int=50,wallet_id:uuid.UUID | None=None,ga
     if state:query=query.where(TradeIntent.state==state)
     if start:query=query.where(TradeIntent.created_at>=start)
     if end:query=query.where(TradeIntent.created_at<end)
+    if hide_settled:query=hide_old_settled_intents(query)
     try:
         if cursor:
             date,ident=cursor_decode(cursor);date=datetime.fromisoformat(date)

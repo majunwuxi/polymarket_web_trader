@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy.orm import Session
 
 from . import auth
-from .close_policy import MARKET_CLOSED_REASON, RESULT_CONFIRMED_REASON
+from .close_policy import MARKET_CLOSED_REASON, RESULT_CONFIRMED_REASON, score_verified_clause, settled_visibility_cutoff
 from .combo_catalog import fetch_positions
 from .combo_fills import buy_summary as combo_buy_summary, fill_payload
 from .combo_resolution import summarize_combo
@@ -45,7 +45,7 @@ from typing import Literal
 from fastapi import Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StrictStr
-from sqlalchemy import select, tuple_
+from sqlalchemy import and_,or_,select,tuple_
 from datetime import datetime
 from .sports_api import cursor_decode, cursor_encode
 from .combo_service import request_quote, accept_quote, discard_unaccepted_quote
@@ -214,12 +214,33 @@ def create_combo(request: Request,body:ComboBody,idempotency_key:str=Header(...,
     except TradingError as exc:return failure(request,exc)
 
 
+def hide_old_settled_combos(query,cutoff=None):
+    """交易记录视图：在分页前排除「最后一场比赛开赛超过 24 小时且已结算」的组合。
+
+    「最后一场」是各腿开赛时间的最大值：只有不存在任何一条腿在阈值之后开赛，
+    才说明整组比赛都已开赛超过 24 小时。已结算沿用组合列表 close_blocked 口径：
+    任一腿赛果已绑定核实或该腿市场已停单，串关胜负即已定，不允许再平仓。
+    过滤写成相关子查询，不改动外层的 (created_at,id) 游标与 LIMIT 分页。
+    """
+    cutoff=cutoff or settled_visibility_cutoff()
+    any_recent=select(ComboLeg.id).join(Game,Game.id==ComboLeg.game_id).where(
+        ComboLeg.rfq_id==ComboRFQ.id,Game.starts_at>=cutoff).exists()
+    any_settled=select(ComboLeg.id).join(Game,Game.id==ComboLeg.game_id).join(
+        MarketLink,MarketLink.id==ComboLeg.market_link_id).join(
+        PolyMarket,PolyMarket.id==MarketLink.market_id).where(
+        ComboLeg.rfq_id==ComboRFQ.id,
+        or_(score_verified_clause(Game),PolyMarket.accepting_orders.is_(False))).exists()
+    return query.where(~and_(~any_recent,any_settled))
+
+
 @router.get('/combo-rfqs')
-def list_combos(request:Request,limit:int=50,cursor:str | None=None,state:Literal['confirmed']|None=None,game_id:uuid.UUID|None=None):
+def list_combos(request:Request,limit:int=50,cursor:str | None=None,state:Literal['confirmed']|None=None,game_id:uuid.UUID|None=None,hide_settled:bool=False):
     if not 1<=limit<=100:return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     query=select(ComboRFQ)
     if state:query=query.where(ComboRFQ.state==state)
     if game_id:query=query.where(select(ComboLeg.id).where(ComboLeg.rfq_id==ComboRFQ.id,ComboLeg.game_id==game_id).exists())
+    # 交易记录页专用；默认不带参数时保持原列表语义，其它调用方不受影响。
+    if hide_settled:query=hide_old_settled_combos(query)
     try:
         if cursor:
             stamp,ident=cursor_decode(cursor);stamp=datetime.fromisoformat(stamp)

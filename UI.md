@@ -126,6 +126,10 @@
 
 交易记录可按钱包、单场/组合、赛事、状态和日期筛选。每条记录显示创建时间、所选钱包、赛事腿、方向、金额/份额、状态、订单或 RFQ 标识；列表状态来自服务端，不根据响应码猜测。详情展示状态事件时间线、已确认成交数量/价格/费用、订单或组合执行状态、关联赛事、错误类别与最近对账时间；未提供的数据为“未知”。单场已知订单可发起撤单，弹窗说明仅撤销未成交部分；撤单已确认、拒绝和结果未知分别展示。Combo 按 API 支持的真实状态展示，不提供未经定义的撤单行为。
 
+**「单场订单」与「组合交易」左右并列**：桌面把两个区块放进同一个两列网格容器（各自 `minmax(0,1fr)`、顶部对齐），不再上下堆叠；窄屏（≤1180px）自动回退为上下单列，卡片内长 ID、题目与金额仍可换行，不允许溢出挤坏另一列。两列各自保留标题、口径说明、刷新与「加载更多」入口，翻页只影响本列。
+
+**只展示仍需关注的交易**：交易记录页对 `GET /trade-intents` 和 `GET /combo-rfqs` 都带 `hide_settled=true`。单场隐藏「本场比赛开赛超过 24 小时且已结算」的记录；组合隐藏「最后一场（最晚开赛）比赛开赛超过 24 小时且已结算」的记录。已结算判据与卡片 `close_blocked` 一致（外部赛果已绑定核实，或该腿市场已停止接单）；未结算的老记录、开赛未满 24 小时的已结算记录仍显示，避免把待核对的交易藏起来。过滤由服务端在分页前完成，前端不做二次过滤，也不因隐藏记录产生空页或漏页；页面在标题下写一次该口径，不逐卡重复。历史与导出页仍可查全部记录。
+
 **交易记录采用三层显示，避免长段落妨碍阅读**：① 卡片摘要常显——标题直接带胜负结论、比赛与盘口（题目里重复的对阵前缀省略）、价格与成交份额合并、订单编号缩略（点「全文」展开）、操作按钮收成一行；② 点「核对赛果和市场结算」后只出现一行核对结论条——一致时写「两个结果一致 · 胜负 · 结算金额」，冲突时并列两个金额并用警示色，仅有单一结果时标注为预计值；③ 证据与免责说明全部收进「详情」折叠面板，点开才显示赛事终态、两个结果的完整描述、判断依据算式、Polymarket 结算阶段与时间、成交覆盖说明及口径说明。全站性口径（结算金额不等于链上实际到账等）只在板块标题下写一次，不在每张卡片重复；「待核实 / 未知」等无值占位不显示。组合卡片同构：逐腿只留一行紧凑结论，比分追踪、下次查询、报价与 RFQ 编号、逐腿结算证据放进折叠面板。
 
 **每张卡片标题右侧直接显示盈亏金额徽标**，不必点开核对即可看到结果：亏损为**黑底白字**、盈利为**红底白字**、持平为灰底白字；盈亏未确认或平仓不适用只用中性浅色小标签，绝不误用黑/红。徽标金额来自列表接口的只读 `pnl` 字段：单场 BUY 有完整 `CONFIRMED` 成交明细时按真实成本计算，缺失时按「限价 × 份额」估算并在文案前加「约」；组合 BUY 有 `combo_fills` 的 CONFIRMED 成交明细时按签名接受订单的实际支出与份额给出确定金额（**不带「约」**）；未回填明细的历史组合仍按已确认报价估算并加「约」。悬停徽标可查看成本、终态收入、明细来源与完整口径。该金额是卡片速览，**不等于**「核对赛果和市场结算」里由两个结果一致后才确认的结算金额，也不代表链上赎回或实际到账；赛果未确认、命题无法判断或数据不足时只显示「盈亏待确认」，SELL 平仓显示「平仓不适用」。
@@ -178,7 +182,7 @@
 | 钱包/盘口 | `GET /wallets`, `GET /wallets/{wallet_id}/status`, `GET /outcomes/{outcome_id}/book` |
 | 单场交易 | `POST /single-orders/preview`, `POST /single-orders`, `GET /trade-intents/by-key/{idempotency_key}`, `GET /trade-intents/{intent_id}`, `POST /single-orders/{intent_id}/cancel`, `POST /trade-intents/{intent_id}/reconcile` |
 | Combo | `POST /combo-rfqs`（`auto_accept:true` 一步下单）, `GET /combo-rfqs`, `GET /combo-rfqs/by-key/{key}`, `GET /combo-rfqs/{rfq_id}/events`；`POST /combo-rfqs/{rfq_id}/accept` 仅保留兼容 |
-| 交易记录 | `GET /trade-intents`, `GET /trade-intents/{intent_id}` |
+| 交易记录 | `GET /trade-intents?hide_settled=true`, `GET /trade-intents/{intent_id}`, `GET /combo-rfqs?state=confirmed&hide_settled=true` |
 | 球队维护 | `GET /teams`, `PATCH /teams/{team_id}`, `POST /teams/{team_id}/aliases` |
 | 系统配置/日志 | `GET /sync-schedules`, `PUT /sync-schedules`, `POST /sync-runs`, `GET /sync-runs`, `GET /sync-runs/{run_id}`, `GET /jobs`, `GET /jobs/{job_id}/runs`, `GET /audit-events` |
 | 历史与导出 | `GET /history/games`, `GET /history/trades`, `GET /statistics`, `GET /exports/games.csv`, `GET /exports/games.xlsx`, `GET /exports/trades.csv`, `GET /exports/trades.xlsx` |
@@ -187,7 +191,7 @@
 
 Vue 3 页面、Vitest 单元测试与 Playwright 浏览器测试均已实现，执行结果见 [ACCEPTANCE.md](ACCEPTANCE.md)；浏览器测试拦截 API 并使用明确标注的模拟数据，不访问真实服务，也不证明真实资金交易可用。以下是实现应覆盖的验收点：
 
-1. 桌面和窄屏布局、键盘操作、焦点与状态播报；队徽缺失、中文名缺失、UTC+8 与日期边界。
+1. 桌面和窄屏布局（含交易记录左右两列与窄屏回退单列）、键盘操作、焦点与状态播报；队徽缺失、中文名缺失、UTC+8 与日期边界。
 2. 足球/NBA 各自筛选、关注、分页、延期/完赛、来源空结果与失败，以及重启后查询时间显示。
 3. 登录/退出、过期、CSRF、限流和无秘密泄露；钱包切换后清除失效预览。
 4. 单场预览、价格/数量规则、确认前变化、显式真实交易提示、幂等、防重复提交、超时未知和对账；挂单不能呈现为成交。

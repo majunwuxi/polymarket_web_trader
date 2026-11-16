@@ -6,7 +6,8 @@
 """
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import and_, exists, select
 from sqlalchemy.orm import Session
 
 from .models import Game, ResultBindingRequest
@@ -14,6 +15,29 @@ from .trading_gateway import TradingError
 
 RESULT_CONFIRMED_REASON = '比赛结果已确认，持仓已进入结算，不能平仓'
 MARKET_CLOSED_REASON = '市场已停止接单或进入结算，不能平仓'
+# 交易记录只隐藏「开赛超过这个小时数且已进入结算」的历史记录；
+# 未结算或开赛不久的记录必须保留，避免把待核对的交易藏起来。
+SETTLED_VISIBILITY_HOURS = 24
+
+
+def settled_visibility_cutoff(now=None):
+    """返回带时区的隐藏阈值；同一请求只算一次，避免翻页时阈值漂移。"""
+    return (now or datetime.now(timezone.utc)) - timedelta(hours=SETTLED_VISIBILITY_HOURS)
+
+
+def score_verified_clause(game=Game):
+    """SQL 表达式：外部赛果已绑定核实，与 ``game_result_state`` 的 verified 同口径。
+
+    单场与组合列表都用它做「已结算」判定，避免两份内联实现再次漂移。
+    """
+    return and_(
+        game.status == 'finished',
+        game.home_score.is_not(None),
+        game.away_score.is_not(None),
+        exists(select(ResultBindingRequest.id).where(
+            ResultBindingRequest.game_id == game.id,
+            ResultBindingRequest.state == 'bound')),
+    )
 
 
 def game_result_state(db: Session, game: Game | None):

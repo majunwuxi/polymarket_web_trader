@@ -168,12 +168,14 @@
 | --- | --- | --- | --- |
 | `POST /single-orders` | 上述请求 | 首次 `201`：已记录且上游明确接受或拒绝的 `{ "intent": TradeIntent, "submission": Submission }`；仍在处理或结果不明为 `202`；同键重复且结果明确为 `200` | 接受、拒绝与成交严格区分；`201` 不表示成交；有效拒绝 `state=rejected` 并包含脱敏错误。下游暂时不可用但能证明未发送时可返回相应 4xx/5xx |
 | `GET /trade-intents/by-key/{idempotency_key}` | 查询参数 `wallet_id` 必填 | `200`：`TradeIntent`，不存在 `404` | 请求超时后用于查找同一个意图；只有在可证明从未创建意图时才能决定下一步 |
-| `GET /trade-intents` | 可选 `kind=single`, `state`, `wallet_id`, `game_id`, `from`, `to`, `limit`, `cursor` | `200` 分页单场 `TradeIntent` | 按 `created_at DESC,id DESC`；每条附带纯本地只读的 `game_finished` / `score_verified` / `result_won` / `result_basis`，以及平仓准入 `close_blocked` / `close_block_reason` 与卡片盈亏 `pnl`（见 5.1.1b）；组合记录见 `/combo-rfqs` 或 `/history/trades`；无隐式真实交易重试 |
+| `GET /trade-intents` | 可选 `kind=single`, `state`, `wallet_id`, `game_id`, `from`, `to`, `hide_settled`, `limit`, `cursor` | `200` 分页单场 `TradeIntent` | 按 `created_at DESC,id DESC`；`hide_settled=true` 时按开赛时间与结算状态在 SQL 层、分页前隐藏历史记录（见下文「交易记录视图」）；每条附带纯本地只读的 `game_finished` / `score_verified` / `result_won` / `result_basis`，以及平仓准入 `close_blocked` / `close_block_reason` 与卡片盈亏 `pnl`（见 5.1.1b）；组合记录见 `/combo-rfqs` 或 `/history/trades`；无隐式真实交易重试 |
 | `GET /trade-intents/{intent_id}` | UUID | `200`：`{ "intent": TradeIntent, "submissions": [...], "rfqs": [...], "state_events": [...] }` | 成交仅以真实交易/订单记录为准，未知保持 null |
 | `POST /single-orders/{intent_id}/cancel` | `{}` | `200`：撤单已确认；`202`：结果未知 | 只对已知订单提交撤单；检查 `canceled` 和 `not_canceled`；超时后对账，不误报成功，不影响已成交份额 |
 | `POST /trade-intents/{intent_id}/reconcile` | `{}` | `202`：`{ "intent_id":"...", "job_id":"..." }` | 幂等调度只读对账，不重新发送下单或重新接受报价 |
 
 `POST /single-orders` 的 `201` 资源是已持久化的意图，不隐含任何上游成交或获利。`202` 同样返回意图 ID，前端轮询详情；订单确认成功、失败及未知都保留审计历史。明确的 `425` 和 post-only 限制采用第 1.2 节错误形式，绝不改写成凭证问题或自动转换订单类型。
+
+**交易记录视图的隐藏参数**：交易记录页对 `GET /trade-intents` 与 `GET /combo-rfqs` 都传 `hide_settled=true`。过滤必须在数据库 SQL 层、`(created_at,id)` 游标与 `LIMIT` 分页**之前**完成；不得先取一页再在 payload 构造后删除，否则会产生短页、空页、游标错位与 `items[-1]` 越界。单场隐藏条件为 `games.starts_at < now - 24h` 且已结算；组合隐藏条件为「不存在任何一条腿的开赛时间 `>= now - 24h`」（等价于最晚一场比赛开赛超过 24 小时）且任一腿已结算——不能用最早一场比赛代替。已结算与列表 `close_blocked` 同口径：外部赛果已绑定核实（`games.status='finished'`、主客比分非空、`result_binding_requests.state='bound'`），或该腿市场 `poly_markets.accepting_orders IS false`；串关任一腿赛果已定即整组胜负已定。未结算的老记录、开赛未满 24 小时的已结算记录都保留。参数缺省或 `false` 时两个接口保持原语义，历史导出、赛事详情、对账等其他调用方不受影响；该参数只影响列表展示，不删除任何数据，也不影响单条详情接口。
 
 ## 6. Combo 组合询价与一步下单
 
@@ -186,7 +188,7 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
 | `POST /combo-rfqs` | 幂等头 `Idempotency-Key: <UUID>`；`{ "wallet_id":"uuid", "direction":"BUY", "quantity":"10.00", "auto_accept":true, "legs":[{"market_link_id":"uuid","outcome_id":"uuid"},{"market_link_id":"uuid","outcome_id":"uuid"}] }`；BUY 的 `quantity` 为预算，SELL 的 `quantity` 为份额 | 一步下单 `202`：已提交执行中或结果未知；`200` / `201`：明确未成交或同键重放；缺省 `auto_accept` 时沿用原「仅询价」语义 | `auto_accept:true` 时在同一请求内取得官方实时报价后立即签名接受，不等待二次确认；报价即当前组合市场价，页面不再展示倒计时。发送前校验失败会返回明确错误并把记录收口为 `failed`，绝不留下无法接受的 `quoted` 记录。幂等重放（`created=false`）不再签名下单。至少两腿、不能重复 outcome；BUY 开仓要求所有映射已确认且真实 Combo 能力已核实，带 `parent_combo_id` 的 SELL 平仓不要求映射确认，改为核验原组合成交记录、原组合腿与官方 Combo 目录持仓标识；`quantity` 最多六位小数 |
-| `GET /combo-rfqs` | `limit`, `cursor`, `state`, `game_id` | `200` 分页组合记录 | 按创建时间及 ID 倒序；每腿附带纯本地、只读的 `result_won`/`result_basis`/`score_verified`/`game_finished`，组合附带 `by_score`/`judged_legs`/`leg_count`/`score_reason`，组合附带 `close_blocked` / `close_block_reason`（任一腿赛果已确认或停单即禁止平仓）、只读 `fill`（已确认成交明细，见 5.1.1c）、卡片盈亏 `pnl`（有 `confirmed` 明细则为不带「约」的确定金额，见 5.1.1b）与买入三项摘要 `buy_summary`（见 5.1.1d）；列表一次取出本页 `combo_fills`，不查询 Polymarket 上游，市场终态需另调 `/resolution` |
+| `GET /combo-rfqs` | `limit`, `cursor`, `state`, `game_id`, `hide_settled` | `200` 分页组合记录 | 按创建时间及 ID 倒序；`hide_settled=true` 时按最晚一场腿开赛时间与结算状态在 SQL 层、分页前隐藏历史记录（见第 5 节「交易记录视图的隐藏参数」）；每腿附带纯本地、只读的 `result_won`/`result_basis`/`score_verified`/`game_finished`，组合附带 `by_score`/`judged_legs`/`leg_count`/`score_reason`，组合附带 `close_blocked` / `close_block_reason`（任一腿赛果已确认或停单即禁止平仓）、只读 `fill`（已确认成交明细，见 5.1.1c）、卡片盈亏 `pnl`（有 `confirmed` 明细则为不带「约」的确定金额，见 5.1.1b）与买入三项摘要 `buy_summary`（见 5.1.1d）；列表一次取出本页 `combo_fills`，不查询 Polymarket 上游，市场终态需另调 `/resolution` |
 | `GET /combo-rfqs/by-key/{key}` | 本地幂等键与 `wallet_id` | `200` 现有组合请求 | 用于查询不确定的本地请求，404 不证明外部未收到 |
 | `GET /combo-legs/{link_id}/{outcome_id}` | 已确认映射和选项 ID | `200` 目录 position ID | 仅读取目录身份；不代表账户获交易授权 |
 | `GET /combo-rfqs/{rfq_id}` | 本地 RFQ UUID | `200`：`ComboRFQ` | 返回本地状态和已核实的外部 RFQ ID；外部结果未知不能当作无报价或失败 |
@@ -250,6 +252,7 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 - 未确认/歧义映射、盘口变更、预览过期、精度与最小订单量、同键重放/冲突及并发。
 - 单场提交与撤单的明确接受、拒绝、部分成交、网络超时和对账；不得重复下单或虚构成交。
 - Combo 一步下单、无报价、发送前校验失败、幂等重放不重复签名、真实报价截止、对象丢失、重复接受、Last Look 拒绝、执行中、结果未知与 RFQ 对账；不得把单场批量下单当作 Combo。
+- `hide_settled` 两个列表：过滤在分页前的 SQL 里生效、组合按最晚开赛的腿判定、未结算老记录保留、不带参数时列表语义不变、翻页游标保持一致。
 - 425、post-only、第三方故障和授权缺失；日志、状态、统计、CSV/XLSX 口径和公式防护。
 
 6F 已实现单场订单预览、提交、撤单、历史、只读对账、候选订单人工关联与成交证据查询；具体接口和配置见 [PolySports 运行说明](polysports/README.md) 与运行中的 OpenAPI。6G 增加组合询价、接受、状态和事件接口；6H 增加历史、统计、导出和系统状态接口。组合交易默认关闭，模拟测试不能证明真实资金交易已通过。官方参考：[单场下单](https://docs.polymarket.com/trading/place-orders)、[Combo Builder](https://docs.polymarket.com/trading/combos/builders)、[撮合重启](https://docs.polymarket.com/trading/matching-engine)。

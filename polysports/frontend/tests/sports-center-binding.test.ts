@@ -25,19 +25,39 @@ function setup(summaryResponse:()=>Promise<Response>=()=>Promise.resolve(json(su
   return {view:mount(SportsCenter,{global:{plugins:[router]}}),fetchMock}
 }
 
-it('足球赛事中心显示未绑定统计并可直接确认候选',async()=>{
+it('足球赛事中心用球队链接展示未绑定，单候选点击直接绑定',async()=>{
   const {view,fetchMock}=setup();await flushPromises()
   expect(view.get('[aria-label="足球赛果绑定状态"]').exists()).toBe(true)
-  expect(view.findAll('.binding-metrics strong').map(item=>item.text())).toEqual(['2','1','1','1'])
-  expect(view.text()).toContain('Switzerland 对 Scotland')
-  const button=view.findAll('button').find(item=>item.text()==='确认绑定')
-  expect(button).toBeTruthy()
-  await button!.trigger('click');await flushPromises()
+  expect(view.findAll('.binding-metrics strong').map(item=>item.text())).toEqual(['1','1','1'])
+  expect(view.text()).toContain('未绑定球队')
+  expect(view.text()).not.toContain('Switzerland 对 Scotland')
+  const link=view.findAll('button').find(item=>item.text().includes('瑞士 对 苏格兰'))
+  expect(link).toBeTruthy()
+  await link!.trigger('click');await flushPromises()
   const request=fetchMock.mock.calls.find(([url])=>String(url).endsWith('/games/g1/result-binding/confirm'))
   expect(request).toBeTruthy()
   expect((request![1] as RequestInit).method).toBe('POST')
   expect(((request![1] as RequestInit).headers as Record<string,string>)['X-CSRF-Token']).toBe('mock-csrf')
+  expect(JSON.parse(String((request![1] as RequestInit).body))).toEqual({fixture_id:'123456'})
   await vi.waitFor(()=>expect(view.text()).toContain('已绑定 瑞士 对 苏格兰'))
+  view.unmount()
+})
+
+it('多候选球队链接先展开，再由用户选择具体候选',async()=>{
+  const multi={...summary,items:[{...summary.items[0],candidates:[
+    summary.items[0].candidates[0],
+    {id:'654321',starts_at:'2026-11-17T03:45:00Z',home:'Macedonia','away':'Slovenia',league:'UEFA Nations League'},
+  ]}],totals:{...summary.totals,ready_to_confirm:1}}
+  const {view,fetchMock}=setup(()=>Promise.resolve(json(multi)));await flushPromises()
+  const link=view.findAll('button').find(item=>item.text().includes('瑞士 对 苏格兰'))
+  expect(link?.text()).toContain('2 个候选')
+  await link!.trigger('click');await flushPromises()
+  expect(fetchMock.mock.calls.some(([url])=>String(url).endsWith('/result-binding/confirm'))).toBe(false)
+  const candidates=view.findAll('button').filter(item=>item.text()==='确认绑定')
+  expect(candidates).toHaveLength(2)
+  await candidates[1].trigger('click');await flushPromises()
+  const request=fetchMock.mock.calls.find(([url])=>String(url).endsWith('/games/g1/result-binding/confirm'))
+  expect(JSON.parse(String((request![1] as RequestInit).body))).toEqual({fixture_id:'654321'})
   view.unmount()
 })
 
@@ -52,9 +72,10 @@ it('NBA 赛事中心不请求也不显示赛果绑定统计',async()=>{
 it('自动匹配中的赛事只显示数量，不提供确认按钮',async()=>{
   const pending={...summary,totals:{total:1,bound:0,pending:1,needs_review:0,unbound:1,ready_to_confirm:0},items:[]}
   const {view}=setup(()=>Promise.resolve(json(pending)));await flushPromises()
-  expect(view.text()).toContain('等待后台自动匹配候选')
+  expect(view.text()).toContain('自动匹配中的赛事找到候选后会显示为链接')
   expect(view.findAll('button').some(item=>item.text()==='确认绑定')).toBe(false)
-  expect(view.findAll('.binding-metrics strong').map(item=>item.text())).toEqual(['1','0','1','0'])
+  expect(view.findAll('button').some(item=>item.classes().includes('binding-team-link'))).toBe(false)
+  expect(view.findAll('.binding-metrics strong').map(item=>item.text())).toEqual(['0','1','0'])
   view.unmount()
 })
 

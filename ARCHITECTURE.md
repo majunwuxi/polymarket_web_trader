@@ -83,7 +83,7 @@ Combo 不是多笔单场订单的简单批量提交。系统需检查每一腿�
 
 标准赎回没有“按订单部分赎回”参数：同一钱包同一 condition 的全部结果份额一起处理，因此 `redeem_requests` 以 `(wallet_id,target_type,target_ref)` 为整仓幂等键，而不是挂在单笔 `trade_intents` 下。赎回先短事务写 `submitting`，事务外发送并等待官方 SDK 交易句柄；成功写 `confirmed` 和真实交易哈希，发送后任何不确定异常写 `unknown`，禁止自动重发。
 
-赎回前只读检查 PositionManager 对 Router 的 operator 授权，或 CTF 对相应 Collateral Adapter 的授权；不自动 `approve` / `setApprovalForAll`、不部署钱包。智能钱包复用 Builder 凭据走官方交易通道；EOA 直接签名并承担 Polygon gas。`POLYSPORTS_REDEEM_EXECUTION_ENABLED` 默认关闭，启用前须完成链上授权和目标账户验证。
+赎回前只读检查 PositionManager 对 Router 的 operator 授权，或 CTF 对相应 Collateral Adapter 的授权；不自动 `approve` / `setApprovalForAll`、不部署钱包。智能钱包使用完整 Builder 凭据或官方 Relayer API Key 走 gasless 通道；EOA 直接签名并承担 Polygon gas。`POLYSPORTS_REDEEM_EXECUTION_ENABLED` 默认关闭，启用前须完成链上授权和目标账户验证。
 
 ## 6. 管理、统计与安全访问
 

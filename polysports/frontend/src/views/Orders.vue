@@ -5,7 +5,7 @@ import {session,logout,clearSession,ApiError} from '../auth'
 const router=useRouter(),menuOpen=ref(false),orders=ref<any[]>([]),nextCursor=ref<string|null>(null),loaded=ref(false),message=ref(''),pendingCancel=ref<string|null>(null),recoveryId=ref<string|null>(null),candidates=ref<any[]>([]),fillOrder=ref<string|null>(null),fills=ref<any[]>([]),fillsTruncated=ref(false),attachId=ref(''),ack=ref(false)
 const combos=ref<any[]>([]),comboCursor=ref<string|null>(null),comboLoaded=ref(false),comboError=ref(''),comboBusy=ref(false)
 const fullId=ref<string|null>(null)
-const redeemMap=ref<Record<string,any>>({}),redeemEnabled=ref(false),redeemBusy=ref<string|null>(null)
+const redeemMap=ref<Record<string,any>>({}),redeemEnabled=ref(false),redeemBusy=ref<string|null>(null),redeemErrors=ref<Record<string,string>>({})
 
 async function api(path:string,options:RequestInit={}){const r=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options});const b=await r.json();if(!r.ok)throw new Error(b?.error?.message||'请求失败');return b.data}
 
@@ -65,7 +65,7 @@ async function loadRedeemEligibility(){
 async function refreshAll(){await Promise.all([load(),loadCombos()]);await loadRedeemEligibility()}
 async function redeem(kind:'single'|'combo',id:string){
   if(!canRedeem(kind,id)||redeemBusy.value)return
-  const busyKey=redeemKey(kind,id);redeemBusy.value=busyKey
+  const busyKey=redeemKey(kind,id);redeemBusy.value=busyKey;delete redeemErrors.value[busyKey]
   message.value=kind==='combo'?'正在提交组合整仓赎回…':'正在提交整仓赎回…'
   try{
     const key=crypto.randomUUID()
@@ -78,7 +78,7 @@ async function redeem(kind:'single'|'combo',id:string){
     }else if(data.state==='unknown')message.value=data.message||'赎回结果未知，请勿重复操作。'
     else message.value=data.message||'赎回请求已处理。'
     await refreshAll()
-  }catch(e){message.value=e instanceof Error?e.message:'赎回请求结果未确认，请勿重复操作。'}
+  }catch(e){const text=e instanceof Error?e.message:'赎回请求结果未确认，请勿重复操作。';message.value=text;redeemErrors.value[busyKey]=text}
   finally{redeemBusy.value=null}
 }
 const resolutionOrder=ref<string|null>(null), resolution=ref<any>(null)
@@ -144,6 +144,7 @@ onMounted(refreshAll)
             <button v-if="order.external_order_id && ['pending','partially_filled','unknown'].includes(order.state) && (!order.cancel_state || order.cancel_state==='rejected')" class="text-button" @click="pendingCancel=order.id">撤单</button>
           </div></details>
         </div>
+        <p v-if="redeemErrors[redeemKey('single',order.id)]" class="redeem-error" role="alert">{{redeemErrors[redeemKey('single',order.id)]}}</p>
         <div v-if="fillOrder===order.id">
           <p>成交状态由交易所提供，未确认状态不等于结算完成。</p>
           <p v-if="!fills.length">当前查询未返回成交记录。</p>
@@ -241,6 +242,7 @@ onMounted(refreshAll)
             <RouterLink to="/combos">查看组合记录</RouterLink>
           </div></details>
         </div>
+        <p v-if="redeemErrors[redeemKey('combo',combo.id)]" class="redeem-error" role="alert">{{redeemErrors[redeemKey('combo',combo.id)]}}</p>
 
         <div v-if="comboResolutionId===combo.id" class="resolution-block">
           <p class="check-line" :class="comboResolution.agreement==='consistent'?'tone-ok':comboResolution.agreement==='conflict'?'tone-warn':'tone-info'">{{comboAgreement(comboResolution.agreement)}}</p>

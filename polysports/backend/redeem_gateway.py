@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from polymarket import BuilderApiKey, RequestRejectedError, UserInputError
+from polymarket import BuilderApiKey, RelayerApiKey, RequestRejectedError, UserInputError
 from web3 import Web3
 
 from .trading_gateway import Gateway, TradingError
@@ -34,10 +34,14 @@ class RedeemGateway(Gateway):
     def sdk_api_key(self, credential):
         if self.wallet.wallet_type == 'EOA':
             return None
-        fields = (credential.builder_api_key, credential.builder_api_secret, credential.builder_api_passphrase)
-        if any(value is None or not value.get_secret_value() for value in fields):
-            raise TradingError('redeem_credentials_missing', '智能钱包赎回需要完整的 Builder 凭证')
-        return BuilderApiKey(*(value.get_secret_value() for value in fields))
+        builder = (credential.builder_api_key, credential.builder_api_secret, credential.builder_api_passphrase)
+        if all(value is not None and value.get_secret_value() for value in builder):
+            return BuilderApiKey(*(value.get_secret_value() for value in builder))
+        if credential.relayer_api_key and credential.relayer_api_key_address:
+            return RelayerApiKey(key=credential.relayer_api_key.get_secret_value(),
+                                 address=credential.relayer_api_key_address)
+        raise TradingError('redeem_credentials_missing',
+                           '智能钱包赎回需要 Relayer API Key，或完整的 Builder 凭证')
 
     def __enter__(self):
         super().__enter__()

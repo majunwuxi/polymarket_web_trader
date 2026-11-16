@@ -65,7 +65,7 @@ sudoedit /etc/polysports/polysports.env
 - `POLYSPORTS_PUBLIC_ORIGIN=https://sports.example.com`，与实际浏览器来源完全一致，不含路径或尾部斜线。
 - `POLYSPORTS_AUTH_SECRET` 为独立生成、至少 32 字节的随机值；例如可通过 `python3 -c 'import secrets; print(secrets.token_urlsafe(48))'` 生成后安全填写。
 - 赛程同步不依赖第三方赛事密钥；仅在需要订单成交后的赛果绑定与比分核验时设置 `POLYSPORTS_API_FOOTBALL_KEY` 和 `POLYSPORTS_BALLDONTLIE_KEY`。另按需设置钱包凭据 `POLYSPORTS_WALLETS` 与 `POLYSPORTS_WALLET_CREDENTIALS`。JSON 示例请见 [polysports/README.md](polysports/README.md)；包含 JSON 的 `.env` 值可用单引号包裹，文件必须为 UTF-8。Combo 使用官方 Requester Gateway，不需要 Builder 凭据，且默认关闭；真实启用条件见 README。
-- 已结算仓位赎回默认关闭。确认钱包已具备 Router/Adapter 的 ERC-1155 operator 授权、Polygon RPC 可访问，且智能钱包已配置完整 Builder 凭据后，才设置 `POLYSPORTS_REDEEM_EXECUTION_ENABLED=true`。系统不会自动授权、部署钱包或重发结果未知的赎回请求。
+- 已结算仓位赎回默认关闭。确认钱包已具备 Router/Adapter 的 ERC-1155 operator 授权、Polygon RPC 可访问，且智能钱包已配置完整 Builder 凭据或 `relayer_api_key` + `relayer_api_key_address` 后，才设置 `POLYSPORTS_REDEEM_EXECUTION_ENABLED=true`。系统不会自动授权、部署钱包或重发结果未知的赎回请求。
 
 确认该文件为 `root:root`、权限 `0600`。生产服务通过 systemd `LoadCredential` 读取副本，密钥不通过 systemd `EnvironmentFile` 注入；设置了 systemd 凭据目录时，应用只读取凭据文件，不从环境变量或项目目录的 `.env` 回退。请单独安全备份该配置与密钥；数据库备份不包含它们。
 

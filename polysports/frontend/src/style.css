@@ -50,6 +50,7 @@
 .order-actions .redeem-button:disabled{background:#d6336c;color:#fff;opacity:.5}
 .redeem-state{display:inline-block;padding:4px 10px;border-radius:999px;background:#f8dbe7;color:#8c2f56;font-size:12px;font-weight:700}
 .redeem-state-warn{background:#fff2e2;color:#9a651a}
+.redeem-error{margin:8px 0 0;padding:9px 12px;border:1px solid #efc7d5;border-radius:9px;background:#fff7fa;color:#8c2f56;font-size:13px;font-weight:600;line-height:1.55}
 .resolution-block{margin-top:12px;padding:12px 14px;border-radius:9px;background:#f6f9f7;border:1px solid #e6eee8}
 .check-line{margin:0 0 8px;font-size:14px;font-weight:700}
 .check-line.tone-ok{color:#17694f}.check-line.tone-warn{color:#a64134}.check-line.tone-info{color:#8a6d1f}.check-line.tone-muted{color:#75857d}

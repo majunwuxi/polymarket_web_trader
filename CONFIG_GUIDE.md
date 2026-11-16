@@ -65,7 +65,7 @@ WALLET_2_SIGNATURE_TYPE=1
 
 ### PolySports 独立服务
 
-`polysports/` 使用独立的 `/etc/polysports/polysports.env` 与 `POLYSPORTS_*` 前缀，不复用上面的 Flask Dashboard 变量。已结算仓位赎回默认关闭；完成 Router/Adapter 授权、Polygon RPC 和智能钱包 Builder 凭证验证后，才设置：
+`polysports/` 使用独立的 `/etc/polysports/polysports.env` 与 `POLYSPORTS_*` 前缀，不复用上面的 Flask Dashboard 变量。已结算仓位赎回默认关闭；完成 Router/Adapter 授权、Polygon RPC，以及智能钱包 Builder 凭证或 `relayer_api_key` + `relayer_api_key_address` 验证后，才设置：
 
 ```text
 POLYSPORTS_REDEEM_EXECUTION_ENABLED=true

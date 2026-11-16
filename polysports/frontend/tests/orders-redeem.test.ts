@@ -49,6 +49,23 @@ it('标记可赎回卡片并提交整仓赎回',async()=>{
   view.unmount()
 })
 
+it('赎回失败时在卡片内显示原因',async()=>{
+  vi.stubGlobal('fetch',vi.fn((url:string)=>{
+    if(url.endsWith('/redemptions/eligibility'))return Promise.resolve(json({execution_enabled:true,items:[
+      {kind:'combo',id:'combo-1',eligible:true,state:null,shares:'4',expected_payout:'4',reason:null},
+    ]}))
+    if(url.endsWith('/combo-rfqs/combo-1/redeem'))return Promise.resolve({ok:false,status:503,json:async()=>({error:{message:'智能钱包赎回需要 Relayer API Key'}})} as Response)
+    if(url.startsWith('/api/v1/trade-intents?'))return Promise.resolve(json({items:[],next_cursor:null}))
+    if(url.startsWith('/api/v1/combo-rfqs?'))return Promise.resolve(json({items:[combo],next_cursor:null}))
+    return Promise.resolve(json([]))
+  }))
+  const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+  await view.findAll('button').find(button=>button.text()==='赎回')!.trigger('click');await flushPromises()
+  expect(view.get('article.order-card').text()).toContain('智能钱包赎回需要 Relayer API Key')
+  expect(view.get('[role="alert"]').text()).toContain('智能钱包赎回需要 Relayer API Key')
+  view.unmount()
+})
+
 it('功能关闭时不显示赎回按钮或粉色卡片',async()=>{
   vi.stubGlobal('fetch',vi.fn((url:string)=>{
     if(url.endsWith('/redemptions/eligibility'))return Promise.resolve(json({execution_enabled:false,items:[

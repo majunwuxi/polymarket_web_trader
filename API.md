@@ -161,7 +161,7 @@
 
 - 同一 `(wallet_id,target_type,target_ref)` 只有一条 `redeem_requests` 记录；`confirmed` 后幂等返回 `200`，`submitting` / `unknown` 时禁止重复操作并返回 `409`。
 - 请求一旦可能已广播，任何异常都落为 `unknown` + `202`，禁止自动重发；必须到 Polymarket 或链上独立核对。官方 SDK 明确在发送前拒绝的输入/relayer 拒绝落为 `rejected`，返回 `409 REDEEM_REJECTED`，可修正后重试。
-- 智能钱包赎回复用钱包配置中的完整 Builder 凭证；EOA 直接签名并使用 Polygon gas。未配置 RPC、Builder 凭证或 SDK 不支持时在发送前拒绝。
+- 智能钱包赎回优先使用完整 Builder 凭证，也支持 `relayer_api_key` + `relayer_api_key_address` 的官方 Relayer API Key；EOA 直接签名并使用 Polygon gas。未配置 RPC、Builder/Relayer 凭证或 SDK 不支持时在发送前拒绝。
 - `POLYSPORTS_REDEEM_EXECUTION_ENABLED` 默认 `false`；关闭时资格查询仍返回 `execution_enabled:false`，赎回端点返回 `503 REDEEM_DISABLED`。
 - `payout`/`credited_amount` 优先由赎回前后 `collateral_balance` 差值给出；无法可靠读取任一余额时为 `null`，不根据订单份额伪造到账金额。
 

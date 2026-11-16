@@ -124,6 +124,33 @@ def test_gateway_marks_pre_send_input_error_as_rejected():
         gateway.redeem(position_id='9001')
 
 
+def test_relayer_credentials_are_all_or_none_and_redacted():
+    from pydantic import ValidationError, SecretStr
+    from backend.config import WalletSecrets
+    with pytest.raises(ValidationError):
+        WalletSecrets(private_key='mock-private', relayer_api_key='mock-key')
+    credential = WalletSecrets(private_key='mock-private', relayer_api_key='mock-key',
+                               relayer_api_key_address='0x' + '3' * 40)
+    assert 'mock-key' not in repr(credential)
+    assert credential.relayer_api_key.get_secret_value() == 'mock-key'
+
+
+def test_smart_wallet_can_use_relayer_api_key():
+    from polymarket import RelayerApiKey
+    from pydantic import SecretStr
+    gateway = object.__new__(RedeemGateway)
+    gateway.wallet = SimpleNamespace(wallet_type='DEPOSIT_WALLET')
+    credential = SimpleNamespace(
+        builder_api_key=None, builder_api_secret=None, builder_api_passphrase=None,
+        relayer_api_key=SecretStr('mock-relayer-key'),
+        relayer_api_key_address='0x' + '2' * 40,
+    )
+    key = gateway.sdk_api_key(credential)
+    assert isinstance(key, RelayerApiKey)
+    assert key.key == 'mock-relayer-key'
+    assert 'mock-relayer-key' not in repr(key)
+
+
 def test_api_returns_rejected_error_envelope(monkeypatch):
     from backend import redeem_api
     request = SimpleNamespace(

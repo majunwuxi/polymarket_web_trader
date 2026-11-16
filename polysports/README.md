@@ -69,12 +69,12 @@ POLYSPORTS_WALLETS=[{"label":"示例","wallet_address":"0x1111111111111111111111
 
 ## 单场订单与凭据
 
-真实资金单场交易需要使用独立的受限 `.env` 或环境变量配置 `POLYSPORTS_WALLET_CREDENTIALS` JSON 对象，其键对应钱包的 `credential_ref`。每项包含 `private_key`；CLOB 的 `clob_api_key`、`clob_api_secret`、`clob_api_passphrase` 必须全部提供或全部省略，省略时由官方 SDK 获取。智能钱包还须配置 `POLYSPORTS_POLYGON_RPC_URL`，且钱包必须已部署在 Polygon 主网。**不要把真实私钥、凭证或带密钥的 RPC 地址提交到 Git，也不要在浏览器页面输入私钥。**
+真实资金单场交易需要使用独立的受限 `.env` 或环境变量配置 `POLYSPORTS_WALLET_CREDENTIALS` JSON 对象，其键对应钱包的 `credential_ref`。每项包含 `private_key`；CLOB 的 `clob_api_key`、`clob_api_secret`、`clob_api_passphrase` 必须全部提供或全部省略，省略时由官方 SDK 获取。智能钱包还须配置 `POLYSPORTS_POLYGON_RPC_URL`，且钱包必须已部署在 Polygon 主网。智能钱包执行赎回时还必须提供完整 Builder 凭证，或 `relayer_api_key` + `relayer_api_key_address`；Relayer API Key 可在 Polymarket 账户 Settings → API Keys 创建，address 使用该 key 对应地址。**不要把真实私钥、凭证或带密钥的 RPC 地址提交到 Git，也不要在浏览器页面输入私钥。**
 
 格式示意（尖括号为占位符，不是可用凭据）：
 
 ```dotenv
-POLYSPORTS_WALLET_CREDENTIALS={"primary":{"private_key":"<仅在本机安全配置>","clob_api_key":"<可选>","clob_api_secret":"<可选>","clob_api_passphrase":"<可选>"}}
+POLYSPORTS_WALLET_CREDENTIALS={"primary":{"private_key":"<仅在本机安全配置>","clob_api_key":"<可选>","clob_api_secret":"<可选>","clob_api_passphrase":"<可选>","relayer_api_key":"<智能钱包赎回可选>","relayer_api_key_address":"0x..."}}
 POLYSPORTS_POLYGON_RPC_URL=<仅在本机安全配置>
 ```
 
@@ -108,7 +108,7 @@ POLYSPORTS_POLYGON_RPC_URL=<仅在本机安全配置>
 
 赎回是整仓操作：单场按 `condition_id` 领取该钱包在该市场下的全部可赎回结果份额，组合按官方 `position_id` 领取该组合仓位；不能按单笔订单份额部分赎回。多张订单共享同一市场/组合时，任意一张卡片触发后，其他关联卡片同步显示已赎回。
 
-系统通过官方 `polymarket-client` 的 `redeem_positions` 执行，成功后资金直接回到 Polymarket 现金余额（pUSD），不经过外部钱包。执行前只读检查 Router/Adapter 的 ERC-1155 operator 授权，但不会自动授权、自动部署钱包或自动重发结果未知的请求。智能钱包需要完整 Builder 凭据；EOA 直接签名并支付 Polygon gas。未配置 Polygon RPC 或授权不足时会在发送前拒绝并说明原因。
+系统通过官方 `polymarket-client` 的 `redeem_positions` 执行，成功后资金直接回到 Polymarket 现金余额（pUSD），不经过外部钱包。执行前只读检查 Router/Adapter 的 ERC-1155 operator 授权，但不会自动授权、自动部署钱包或自动重发结果未知的请求。智能钱包需要完整 Builder 凭据或 Relayer API Key；EOA 直接签名并支付 Polygon gas。未配置 Polygon RPC、Relayer/Builder 凭据或授权不足时会在发送前拒绝并说明原因。
 
 赎回默认关闭。完成授权和目标环境验证后，在受限配置中设置：
 

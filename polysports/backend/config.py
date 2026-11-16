@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 import os
 from pathlib import Path
+import re
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -36,6 +37,8 @@ class WalletSecrets(BaseModel):
     builder_api_key: SecretStr | None = None
     builder_api_secret: SecretStr | None = None
     builder_api_passphrase: SecretStr | None = None
+    relayer_api_key: SecretStr | None = None
+    relayer_api_key_address: str | None = None
 
     @model_validator(mode='after')
     def complete_clob_credentials(self):
@@ -43,6 +46,10 @@ class WalletSecrets(BaseModel):
         if any(values) and not all(values): raise ValueError('CLOB credentials must all be set or all omitted')
         builder=[x.get_secret_value() if x else '' for x in (self.builder_api_key,self.builder_api_secret,self.builder_api_passphrase)]
         if any(builder) and not all(builder): raise ValueError('Builder credentials must all be set or all omitted')
+        relayer=[self.relayer_api_key.get_secret_value() if self.relayer_api_key else '',self.relayer_api_key_address or '']
+        if any(relayer) and not all(relayer): raise ValueError('Relayer credentials must all be set or all omitted')
+        if self.relayer_api_key_address and not re.fullmatch(r'0x[0-9a-fA-F]{40}',self.relayer_api_key_address):
+            raise ValueError('invalid relayer API key address')
         return self
 
 

@@ -19,6 +19,7 @@ Polymarket 官方赎回没有“按订单部分赎回”参数。标准单场按
 - 发送后任何异常视为 `unknown` 并返回 `202`，不自动重发；只有 `confirmed` 可幂等返回 `200`。
 - 赎回前后现金余额的可靠正差值作为 `payout`；余额不可读取时为 `null`。
 - 授权只读检查，缺失时返回 `409 REDEEM_APPROVAL_REQUIRED`；由用户在外部完成授权。
+- 智能钱包优先使用完整 Builder 凭据，否则使用官方 Relayer API Key；两者都没有时发送前返回 `503`。
 
 ## Risks / Trade-offs
 

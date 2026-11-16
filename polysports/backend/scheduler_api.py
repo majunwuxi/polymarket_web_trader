@@ -1,13 +1,13 @@
 from __future__ import annotations
 import uuid
-from datetime import datetime,time,timezone
+from datetime import datetime,time,timedelta,timezone
 from typing import Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.orm import Session
 from . import auth
-from .models import AuditEvent, Game, Job, JobRun, ScheduleRevision, SyncRun, SyncSchedule, WatchedGame, WorkerHeartbeat
+from .models import AuditEvent, ComboLeg, ComboRFQ, Game, Job, JobRun, MarketOutcome, ScheduleRevision, SyncRun, SyncSchedule, Team, TradeIntent, WatchedGame, WorkerHeartbeat
 from .scheduler import db_now, watch_game
 from .sports_api import cursor_decode,cursor_encode
 
@@ -17,6 +17,44 @@ router=APIRouter(prefix='/api/v1')
 def ok(request,data): return {'data':data,'request_id':request.state.request_id}
 def watch_data(watch,job):
     return {'id':str(watch.id),'game_id':str(watch.game_id),'state':watch.state,'first_due_at':watch.first_due_at.isoformat(),'last_checked_at':watch.last_checked_at.isoformat() if watch.last_checked_at else None,'completed_at':watch.completed_at.isoformat() if watch.completed_at else None,'next_due_at':job.due_at.isoformat() if job and job.status in ('pending','leased') else None,'job_status':job.status if job else None}
+
+
+def team_name(team):
+    return (team.name_zh or team.source_name) if team else '未知球队'
+
+
+def game_target(db, game_id):
+    game=db.get(Game,game_id)
+    if not game: return None
+    home=db.get(Team,game.home_team_id); away=db.get(Team,game.away_team_id)
+    return {'type':'game','game_id':str(game.id),'label':team_name(home)+' 对 '+team_name(away),
+            'starts_at':game.starts_at.isoformat(),'game_status':game.status,'sport':game.sport}
+
+
+def job_target(db, job):
+    if job.kind=='result_poll':
+        watch=db.get(WatchedGame,job.watched_game_id)
+        return game_target(db,watch.game_id) if watch else None
+    if job.kind=='trade_reconcile':
+        intent=db.get(TradeIntent,job.trade_intent_id)
+        if not intent: return None
+        target=game_target(db,intent.game_id) or {'type':'game','label':'比赛不可用'}
+        outcome=db.get(MarketOutcome,intent.outcome_id)
+        target.update({'type':'trade','intent_id':str(intent.id),'trade_state':intent.state,'side':intent.side,
+                       'label':target['label']+(' · '+outcome.label if outcome else '')})
+        return target
+    if job.kind=='combo_reconcile':
+        combo=db.get(ComboRFQ,job.combo_rfq_id)
+        if not combo: return None
+        legs=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==combo.id)))
+        targets=[x for x in (game_target(db,leg.game_id) for leg in legs) if x]
+        return {'type':'combo','combo_id':str(combo.id),'state':combo.state,
+                'label':'；'.join(x['label'] for x in targets) if targets else '组合腿不可用',
+                'starts_at':min((x['starts_at'] for x in targets),default=None),'legs':targets}
+    if job.kind=='sync':
+        run=db.get(SyncRun,job.sync_run_id)
+        return {'type':'sync','run_id':str(run.id),'state':run.status,'label':run.sport+' · '+run.provider} if run else None
+    return None
 
 
 @router.post('/games/{game_id}/watch')
@@ -119,8 +157,11 @@ def queue_sync(request: Request,body:ManualSync):
 
 
 @router.get('/jobs')
-def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','combo_reconcile'] | None=None,status:Literal['pending','leased','done','cancelled','failed'] | None=None,game_id:uuid.UUID|None=None,limit:int=Query(100,ge=1,le=100),cursor:str|None=None):
-    query=select(Job)
+def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','combo_reconcile'] | None=None,status:Literal['pending','leased','done','cancelled','failed'] | None=None,game_id:uuid.UUID|None=None,start:datetime|None=Query(None,alias='from'),end:datetime|None=Query(None,alias='to'),limit:int=Query(100,ge=1,le=100),cursor:str|None=None):
+    now=datetime.now(timezone.utc)
+    start=start or now-timedelta(hours=20);end=end or now+timedelta(hours=24)
+    if start.tzinfo is None or end.tzinfo is None or end<=start:return auth.error(request,422,'VALIDATION_ERROR','时间范围无效')
+    query=select(Job).where(Job.due_at>=start,Job.due_at<end)
     if kind: query=query.where(Job.kind==kind)
     if status: query=query.where(Job.status==status)
     if game_id:query=query.join(WatchedGame,WatchedGame.id==Job.watched_game_id).where(WatchedGame.game_id==game_id)
@@ -132,12 +173,15 @@ def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','c
     except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
         rows=list(db.scalars(query.order_by(Job.due_at,Job.id).limit(limit+1)));items=rows[:limit]
-        return ok(request,{'items':[{'id':str(x.id),'kind':x.kind,'status':x.status,'due_at':x.due_at.isoformat(),'attempt_count':x.attempt_count,'failure_count':x.failure_count,'last_error_code':x.last_error_code,'last_error_summary':x.last_error_summary,'watched_game_id':str(x.watched_game_id) if x.watched_game_id else None} for x in items],'next_cursor':cursor_encode([items[-1].due_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
+        return ok(request,{'items':[{'id':str(x.id),'kind':x.kind,'status':x.status,'due_at':x.due_at.isoformat(),'attempt_count':x.attempt_count,'failure_count':x.failure_count,'last_error_code':x.last_error_code,'last_error_summary':x.last_error_summary,'watched_game_id':str(x.watched_game_id) if x.watched_game_id else None,'target':job_target(db,x)} for x in items],'window':{'from':start.isoformat(),'to':end.isoformat()},'next_cursor':cursor_encode([items[-1].due_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
 
 
 @router.get('/jobs/{job_id}/runs')
-def job_runs(request:Request,job_id:uuid.UUID,limit:int=Query(30,ge=1,le=100),cursor:str|None=None):
-    query=select(JobRun).where(JobRun.job_id==job_id)
+def job_runs(request:Request,job_id:uuid.UUID,start:datetime|None=Query(None,alias='from'),end:datetime|None=Query(None,alias='to'),limit:int=Query(30,ge=1,le=100),cursor:str|None=None):
+    now=datetime.now(timezone.utc)
+    start=start or now-timedelta(hours=20);end=end or now+timedelta(hours=24)
+    if start.tzinfo is None or end.tzinfo is None or end<=start:return auth.error(request,422,'VALIDATION_ERROR','时间范围无效')
+    query=select(JobRun).where(JobRun.job_id==job_id,JobRun.started_at>=start,JobRun.started_at<end)
     try:
         if cursor:
             attempt,ident=cursor_decode(cursor);attempt=int(attempt);ident=uuid.UUID(ident)
@@ -147,7 +191,7 @@ def job_runs(request:Request,job_id:uuid.UUID,limit:int=Query(30,ge=1,le=100),cu
     with Session(request.app.state.engine) as db:
         if not db.get(Job,job_id): return auth.error(request,404,'NOT_FOUND','任务不存在')
         rows=list(db.scalars(query.order_by(JobRun.attempt_no.desc(),JobRun.id.desc()).limit(limit+1)));items=rows[:limit]
-        return ok(request,{'items':[{'attempt_no':x.attempt_no,'started_at':x.started_at.isoformat(),'finished_at':x.finished_at.isoformat() if x.finished_at else None,'result':x.result,'error_code':x.error_code} for x in items],'next_cursor':cursor_encode([str(items[-1].attempt_no),str(items[-1].id)]) if len(rows)>limit else None})
+        return ok(request,{'items':[{'attempt_no':x.attempt_no,'started_at':x.started_at.isoformat(),'finished_at':x.finished_at.isoformat() if x.finished_at else None,'result':x.result,'error_code':x.error_code} for x in items],'window':{'from':start.isoformat(),'to':end.isoformat()},'next_cursor':cursor_encode([str(items[-1].attempt_no),str(items[-1].id)]) if len(rows)>limit else None})
 
 
 @router.get('/worker-status')

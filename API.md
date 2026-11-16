@@ -243,8 +243,8 @@ Combo 走独立的官方 RFQ 流程。当前官方 Builder SDK 文档以 `leg_po
 | `POST /sync-runs` | `{ "sport":"football" }` | `202`：`{ "run_id":"uuid", "job_id":"uuid", "status":"queued" }` | 手动调度未来 36 小时来源同步；并发冲突返回已有运行或 `409`；不凭空生成数据 |
 | `GET /sync-runs` | 可选 `sport`, `status`, `from`, `to`, `limit`, `cursor` | `200` 分页 `SyncRun` | 按 `started_at DESC,id DESC`，未开始项排最后；日期范围按 `scheduled_for` 筛选，保留失败信息 |
 | `GET /sync-runs/{run_id}` | UUID | `200`：`SyncRun` | 失败详情为脱敏摘要，绝不包含 API key |
-| `GET /jobs` | 可选 `kind`, `status`, `game_id`, `limit`, `cursor` | `200` 分页 `Job` | 按 `due_at,id`，只读，不暴露租约令牌 |
-| `GET /jobs/{job_id}/runs` | `limit`, `cursor` | `200` 分页尝试摘要：`attempt_no`, `started_at`, `finished_at`, `result`, `error_code` | 任务重启与失败可观察；不提供提前执行未到期任务的接口 |
+| `GET /jobs` | 可选 `kind`, `status`, `game_id`, `from`, `to`, `limit`, `cursor`；默认 `[now-20h, now+24h)` | `200` 分页 `Job`，含 `target`（对应比赛/订单/组合）和 `window` | 按 `due_at,id` 升序；只读，不暴露租约令牌；目标缺失时返回 null |
+| `GET /jobs/{job_id}/runs` | 可选 `from`, `to`, `limit`, `cursor`；默认 `[now-20h, now+24h)` | `200` 分页尝试摘要：`attempt_no`, `started_at`, `finished_at`, `result`, `error_code`，含 `window` | 任务重启与失败可观察；不提供提前执行未到期任务的接口 |
 
 定时同步默认 UTC 00:00、08:00，两个来源分别执行；请求按分页完整性标记 `succeeded`、`partial` 或 `failed`。调度 API 的 `revision` 使用 `schedule_revisions` 中的非秘密版本值，计划行保存在 `sync_schedules`；更新两者的事务必须原子一致。
 

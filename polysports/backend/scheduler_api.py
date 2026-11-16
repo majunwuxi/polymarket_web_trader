@@ -132,7 +132,7 @@ def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','c
     except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
         rows=list(db.scalars(query.order_by(Job.due_at,Job.id).limit(limit+1)));items=rows[:limit]
-        return ok(request,{'items':[{'id':str(x.id),'kind':x.kind,'status':x.status,'due_at':x.due_at.isoformat(),'attempt_count':x.attempt_count,'last_error_code':x.last_error_code,'watched_game_id':str(x.watched_game_id) if x.watched_game_id else None} for x in items],'next_cursor':cursor_encode([items[-1].due_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
+        return ok(request,{'items':[{'id':str(x.id),'kind':x.kind,'status':x.status,'due_at':x.due_at.isoformat(),'attempt_count':x.attempt_count,'failure_count':x.failure_count,'last_error_code':x.last_error_code,'last_error_summary':x.last_error_summary,'watched_game_id':str(x.watched_game_id) if x.watched_game_id else None} for x in items],'next_cursor':cursor_encode([items[-1].due_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
 
 
 @router.get('/jobs/{job_id}/runs')

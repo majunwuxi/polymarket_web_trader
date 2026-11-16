@@ -215,6 +215,7 @@ class Job(Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     lease_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     attempt_count: Mapped[int] = mapped_column(Integer,nullable=False,server_default='0')
+    failure_count: Mapped[int] = mapped_column(Integer,nullable=False,server_default='0')
     last_error_code: Mapped[str | None] = mapped_column(String(80))
     last_error_summary: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())

@@ -88,6 +88,7 @@ async function attach(){if(!recoveryId.value||!ack.value)return;try{await api('/
 async function signOut(){try{await logout();await router.replace('/login')}catch(e){if(e instanceof ApiError&&e.status===401){clearSession();await router.replace('/login')}else message.value='退出请求未确认，请重试。'}}
 const comboResolutionId=ref<string|null>(null),comboResolution=ref<any>(null)
 async function loadComboResolution(id:string){try{const data=await api('/combo-rfqs/'+id+'/resolution');comboResolution.value=data;comboResolutionId.value=id;if(data?.resolved_legs===data?.leg_count&&data?.leg_count>0){const row=combos.value.find((c:any)=>c.id===id);if(row){row.close_blocked=true;row.close_block_reason='各腿市场均已终态结算，不能平仓'}}}catch(e){message.value=e instanceof Error?e.message:'组合胜负核对失败'}}
+async function retryComboReconcile(id:string){try{await api('/combo-rfqs/'+id+'/reconcile',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:'{}'});message.value='已安排组合对账。'}catch(e){message.value=e instanceof Error?e.message:'组合对账安排失败'}}
 const legWinner=(won:any,fallback:string)=>won===true?'选项获胜':won===false?'选项未获胜':fallback
 const comboWinner=(won:any)=>won===true?'全部腿命中，组合获胜':won===false?'已有腿未命中，组合未获胜':'暂不能确认组合胜负'
 const comboResult=(won:any)=>won===true?'获胜':won===false?'未获胜':'未确认'
@@ -240,6 +241,7 @@ onMounted(refreshAll)
                 </div>
               </div>
             </details>
+            <button v-if="['requesting','quoted','accepting','executing','unknown'].includes(combo.state)" class="text-button" @click="retryComboReconcile(combo.id)">重新安排对账</button>
             <RouterLink to="/combos">查看组合记录</RouterLink>
           </div></details>
         </div>

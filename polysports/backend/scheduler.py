@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from .models import Game, Job, JobRun, SyncRun, SyncSchedule, WatchedGame, WorkerHeartbeat
 
+MAX_CONSECUTIVE_FAILURES = 10
+
 
 def db_now(db: Session) -> datetime:
     return db.scalar(select(func.clock_timestamp()))
@@ -115,7 +117,20 @@ def finish_attempt(db: Session, job: Job, now: datetime, result: str, error: str
     if not attempt or attempt.result!='running': raise RuntimeError('missing active attempt')
     attempt.result=result; attempt.finished_at=now; attempt.error_code=error; attempt.error_summary='来源暂不可用' if error else None
     job.last_error_code=error; job.last_error_summary='来源暂不可用' if error else None; job.updated_at=now
+    if result=='failed': job.failure_count=(job.failure_count or 0)+1
+    elif result=='succeeded': job.failure_count=0
     job.lease_owner=job.lease_until=job.lease_token=None
+
+
+def retry_or_fail(db: Session, job: Job, now: datetime, error: str, delay: timedelta) -> None:
+    finish_attempt(db, job, now, 'failed', error)
+    if job.failure_count >= MAX_CONSECUTIVE_FAILURES:
+        job.status='failed'
+        job.last_error_code='retry_exhausted'
+        job.last_error_summary=f'{error}（连续失败 {job.failure_count} 次，已停止自动重试）'
+    else:
+        job.status='pending'
+        job.due_at=now+delay
 
 
 def heartbeat(engine, worker_id: uuid.UUID, state: str) -> None:

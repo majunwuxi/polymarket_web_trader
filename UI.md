@@ -157,7 +157,7 @@
 - **球队名称**：按运动、名称及翻译状态查找；显示来源名称、来源、当前中文名、队徽及已验证/待补充状态。可编辑可信中文名或添加别名，保存前校验非空，冲突显示原因并保留输入。别名可重名，不能以此自动确定赛事映射。
 - **系统配置**：分别展示足球与 NBA 计划（UTC 时间、启用状态、下次执行），默认 00:00 和 08:00 UTC；编辑时同时展示换算后的 UTC+8 时间和保存后生效的计划。保存采用版本号，冲突时提示重新载入，未保存更改不可静默覆盖。数据源、钱包和 Builder 凭证只展示配置/可用性状态；密钥在受限的服务器配置中维护，不在浏览器回显。
 - **同步日志**：显示来源、运动类型、触发方式、计划/开始/完成时间、36 小时窗口、页数、记录数、运行状态和脱敏错误。提供按运动手动启动同步及查询详情；在队列中的运行标记“排队中”，不把它当成成功。
-- **运行状态**：显示数据库、worker 心跳与最近时间、每个数据源的最近成功/失败、下一次同步、钱包与交易服务可用性。无心跳、无权限或未检查明确显示未知/不可用；不暴露连接密钥和租约令牌。
+- **运行状态**：显示数据库、worker 心跳与最近时间、每个数据源的最近成功/失败、下一次同步、钱包与交易服务可用性。任务列表的“累计领取”包含成功后的周期重排，不等于失败次数；交易/组合对账连续失败达到上限后标记“已停止自动重试”，不再继续刷尝试次数。无心跳、无权限或未检查明确显示未知/不可用；不暴露连接密钥和租约令牌。
 
 ## 10. 状态、错误与刷新规则
 
@@ -187,8 +187,8 @@
 | 赛事详情/映射 | `GET /games/{game_id}`, `POST /games/{game_id}/watch`, `GET /games/{game_id}/markets`, `POST /games/{game_id}/markets/refresh`, `POST /market-links/{link_id}/confirm`, `POST /market-links/{link_id}/reject` |
 | 钱包/盘口 | `GET /wallets`, `GET /wallets/{wallet_id}/status`, `GET /outcomes/{outcome_id}/book` |
 | 单场交易 | `POST /single-orders/preview`, `POST /single-orders`, `GET /trade-intents/by-key/{idempotency_key}`, `GET /trade-intents/{intent_id}`, `POST /single-orders/{intent_id}/cancel`, `POST /trade-intents/{intent_id}/reconcile` |
-| Combo | `POST /combo-rfqs`（`auto_accept:true` 一步下单）, `GET /combo-rfqs`, `GET /combo-rfqs/by-key/{key}`, `GET /combo-rfqs/{rfq_id}/events`；`POST /combo-rfqs/{rfq_id}/accept` 仅保留兼容 |
-| 交易记录 | `GET /trade-intents?hide_settled=true`, `GET /trade-intents/{intent_id}`, `GET /combo-rfqs?state=confirmed&hide_settled=true`, `POST /redemptions/eligibility`, `POST /trade-intents/{intent_id}/redeem`, `POST /combo-rfqs/{combo_id}/redeem` |
+| Combo | `POST /combo-rfqs`（`auto_accept:true` 一步下单）, `GET /combo-rfqs`, `GET /combo-rfqs/by-key/{key}`, `GET /combo-rfqs/{rfq_id}/events`, `POST /combo-rfqs/{combo_id}/reconcile`；`POST /combo-rfqs/{rfq_id}/accept` 仅保留兼容 |
+| 交易记录 | `GET /trade-intents?hide_settled=true`, `GET /trade-intents/{intent_id}`, `GET /combo-rfqs?state=confirmed&hide_settled=true`, `POST /redemptions/eligibility`, `POST /trade-intents/{intent_id}/redeem`, `POST /combo-rfqs/{combo_id}/redeem`, `POST /combo-rfqs/{combo_id}/reconcile` |
 | 球队维护 | `GET /teams`, `PATCH /teams/{team_id}`, `POST /teams/{team_id}/aliases` |
 | 系统配置/日志 | `GET /sync-schedules`, `PUT /sync-schedules`, `POST /sync-runs`, `GET /sync-runs`, `GET /sync-runs/{run_id}`, `GET /jobs`, `GET /jobs/{job_id}/runs`, `GET /audit-events` |
 | 历史与导出 | `GET /history/games`, `GET /history/trades`, `GET /statistics`, `GET /exports/games.csv`, `GET /exports/games.xlsx`, `GET /exports/trades.csv`, `GET /exports/trades.xlsx` |

@@ -69,7 +69,7 @@
 | `ComboQuote` | `id`（本地 UUID）, `external_quote_id`, `price`, `size`, `fee_estimate`, `net_receive`（可空十进制字符串）, `expires_at`, `received_at`；仅返回上游实际提供且可确认的值 |
 | `RedeemRequest` | `id`, `wallet_id`, `wallet_address`, `target_type` (`single` / `combo`), `target_ref`, `intent_id` / `combo_rfq_id`（可空）, `condition_id` / `outcome_index` / `position_id`（可空）, `shares`, `state` (`submitting` / `confirmed` / `rejected` / `unknown`), `tx_hash`（可空）, `transaction_id`（可空）, `payout`（可空）, `collateral_before` / `collateral_balance`（可空）, `error_code`（可空）, `created_at`, `updated_at`, `confirmed_at`（可空） |
 | `SyncRun` | `id`, `provider`, `sport`, `trigger_type`, `scheduled_for`, `started_at`（可空）, `finished_at`（可空）, `status`, `window_start` / `window_end`（可空）, `pages_fetched`, `items_received`, `items_upserted`, `error_code`（可空） |
-| `Job` | `id`, `kind`, `due_at`, `status`, `attempt_count`, `last_error_code`（可空）, `updated_at`；不返回租约 token |
+| `Job` | `id`, `kind`, `due_at`, `status`, `attempt_count`, `failure_count`, `last_error_code`（可空）, `updated_at`；不返回租约 token |
 
 `TradeIntent.state` 使用数据库约定：`draft`, `confirmed`, `submitting`, `pending`, `partially_filled`, `filled`, `rejected`, `cancelled`, `unknown`。`ComboRFQ.state` 使用 `preparing`, `requesting`, `quoted`, `accepting`, `executing`, `confirmed`, `expired`, `rejected`, `failed`, `unknown`。`pending` 和 `executing` 都不代表已经成交；组合 `confirmed` 仅在上游提供相应已确认执行证据后使用，链上结算状态另行返回。
 
@@ -102,7 +102,9 @@
 | `POST /market-links/{link_id}/confirm` | `{}` | `200`：确认后的 `MarketLink` | 检查来源身份、运动类型和冲突；写审计；已确认同一映射幂等 |
 | `POST /market-links/{link_id}/reject` | `{}` | `200`：拒绝后的 `MarketLink` | 已被交易引用或状态不允许时返回 `409`；不能删除交易历史 |
 
-关注任务由 worker 自动恢复：足球首次开赛后 120 分钟、随后每 10 分钟；NBA 首次开赛后 159 分钟、随后每 3 分钟。`next_due_at` 从持久化的待执行任务获取；暂停或完赛时为 null。仅上游明确完赛才设置 `completed`。
+关注任务由 worker 自动恢复：足球首次开赛后 120 分钟、随后每 10 分钟；NBA 首次开赛后 159 分钟、随后每 3 分钟。`next_due_at` 从持久化的待执行任务获取；暂停或完赛时为 null。仅上游明确完赛才设置 `completed`。赛事已完赛且比分已确认时，队列中残留的 `result_poll` 即使尚未到期也会直接结束，不再请求结果来源。
+
+交易与组合对账任务失败后最多连续重试 10 次；达到上限后状态置为 `failed`，错误码为 `retry_exhausted`，不再自动安排。手动 `POST /trade-intents/{intent_id}/reconcile` 或 `POST /combo-rfqs/{combo_id}/reconcile` 会将失败计数清零并把任务重新排队。
 
 ## 5. 行情、钱包和单场交易
 
@@ -155,6 +157,7 @@
 | --- | --- | --- | --- |
 | `POST /redemptions/eligibility` | `{ "intent_ids":["uuid"], "combo_ids":["uuid"] }`，各最多 100 项 | `200`：`{ "execution_enabled": true, "items":[{ "kind":"single"/"combo", "id":"...", "eligible":true, "state":null/"confirmed"/"unknown"/"rejected", "shares":"3", "expected_payout":"3", "reason":null }] }` | 按当前页订单一次批量判断；单场以 Polymarket Data API `/v2/positions?status=REDEEMABLE` 返回的 `token_id` 匹配，组合以 `/v2/positions/combos?status=REDEEMABLE` 的 `combo_position_id` 匹配，并要求 `redeemable=true`、`current_size>0`。不使用本地比分或 `close_blocked` 作为资金依据 |
 | `POST /trade-intents/{intent_id}/redeem` | `{}`；`Idempotency-Key: <UUID>` | `201`：本次确认赎回；`200`：同整仓已确认；`202`：已广播但结果未知 | 单场按 `condition_id` 赎回整仓。执行前现场复查 Data API 可赎回仓位、钱包身份、Router/Adapter 授权（只读），不自动授权。成功后返回 `tx_hash`、`payout`、`credited_amount`、`collateral_balance` |
+| `POST /combo-rfqs/{combo_id}/reconcile` | `{}` | `202`：`{ "combo_id":"uuid", "job_id":"uuid", "status":"pending" }` | 未完成组合可手动重新安排只读对账；`pending` / `done` / `failed` 状态会重新排队并将连续失败计数清零，不改动组合成交状态 |
 | `POST /combo-rfqs/{combo_id}/redeem` | `{}`；`Idempotency-Key: <UUID>` | 同上 | 组合按官方 `position_id` 调用 `redeem_positions(position_id=...)`；要求组合 `direction=BUY`、`state=confirmed` 且本地已保存 `combo_position_id` |
 
 执行约束：

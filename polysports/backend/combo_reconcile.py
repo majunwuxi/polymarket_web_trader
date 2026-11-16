@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .combo_gateway import ComboGateway
 from .combo_service import record, rfq_failure_code
 from .models import ComboRFQ, ComboLeg
-from .scheduler import db_now, finish_attempt
+from .scheduler import db_now, finish_attempt, retry_or_fail
 from .trading import wallet_for
 from .trading_gateway import TradingError
 
@@ -53,7 +53,7 @@ def apply_combo(db,job,payload,error=None):
                 from .combo_fills import confirm_combo_fill
                 confirm_combo_fill(db,row,now)
     if error:
-        finish_attempt(db,job,now,'failed',error);job.status='pending';job.due_at=now+timedelta(minutes=2)
+        retry_or_fail(db,job,now,error,timedelta(minutes=2))
     elif row.state in ('confirmed','failed','expired','rejected'):
         finish_attempt(db,job,now,'succeeded');job.status='done'
     else:

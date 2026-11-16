@@ -21,6 +21,25 @@ router = APIRouter(prefix='/api/v1')
 COMBO_EXECUTION_READY = True
 
 
+@router.post('/combo-rfqs/{combo_id}/reconcile', status_code=202)
+def schedule_combo_reconcile(request: Request, combo_id: uuid.UUID):
+    from sqlalchemy import select
+    from .models import ComboRFQ, Job
+    from .scheduler import db_now
+    with Session(request.app.state.engine) as db, db.begin():
+        if not db.get(ComboRFQ, combo_id):
+            return auth.error(request, 404, 'NOT_FOUND', '组合询价不存在')
+        job = db.scalar(select(Job).where(Job.combo_rfq_id == combo_id).with_for_update())
+        if not job:
+            return auth.error(request, 404, 'NOT_FOUND', '组合对账任务不存在')
+        if job.status in ('pending', 'done', 'failed'):
+            job.status = 'pending'
+            job.due_at = db_now(db)
+            job.failure_count = 0
+            job.last_error_code = job.last_error_summary = None
+        return {'data': {'combo_id': str(combo_id), 'job_id': str(job.id), 'status': job.status}, 'request_id': request.state.request_id}
+
+
 @router.get('/combo-legs/{link_id}/{outcome_id}')
 def check_leg(request: Request, link_id: uuid.UUID, outcome_id: uuid.UUID):
     try:

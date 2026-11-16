@@ -4,7 +4,7 @@ from decimal import Decimal,InvalidOperation
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .models import MarketLink,MarketOutcome,PolyMarket,TradeIntent,TradeStateEvent,TradeSubmission
-from .scheduler import db_now,finish_attempt
+from .scheduler import db_now,finish_attempt,retry_or_fail
 from .trading import wallet_for
 from .trading_gateway import Gateway,TradingError
 import uuid
@@ -52,7 +52,7 @@ def apply_reconciliation(db,job,payload,error=None):
             status=str(payload.status).lower();old=intent.state
             stale=(intent.matched_size is not None and matched<intent.matched_size) or (intent.cancel_state=='confirmed' and status not in ('canceled','cancelled')) or (intent.state=='filled' and (status not in ('matched','filled') or matched!=intent.requested_size))
             if stale:
-                finish_attempt(db,job,now,'failed','stale_order_snapshot');job.status='pending';job.due_at=now+timedelta(minutes=2);return
+                retry_or_fail(db,job,now,'stale_order_snapshot',timedelta(minutes=2));return
             intent.matched_size=matched
             if status in ('canceled','cancelled'):
                 intent.state='cancelled';intent.cancel_state='confirmed'
@@ -68,7 +68,7 @@ def apply_reconciliation(db,job,payload,error=None):
             intent.updated_at=now
             if intent.state!=old: db.add(TradeStateEvent(id=uuid.uuid4(),intent_id=intent.id,state=intent.state))
     if error:
-        finish_attempt(db,job,now,'failed',error);job.status='pending';job.due_at=now+timedelta(minutes=2)
+        retry_or_fail(db,job,now,error,timedelta(minutes=2))
     elif intent.state in ('filled','rejected','cancelled') and intent.cancel_state!='unknown':
         finish_attempt(db,job,now,'succeeded');job.status='done'
     else:

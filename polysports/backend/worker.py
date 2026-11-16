@@ -37,7 +37,10 @@ def fetch_work(engine,job_id,token,settings,client):
             from .trade_reconcile import fetch_order
             trade_id=job.trade_intent_id
         else:
-            watched=db.get(WatchedGame,job.watched_game_id); game=db.get(Game,watched.game_id)
+            watched=db.get(WatchedGame,job.watched_game_id)
+            if watched.state!='active': return None
+            game=db.get(Game,watched.game_id)
+            if game.status=='finished' and game.home_score is not None and game.away_score is not None: return None
             provider=game.provider; external_id=game.external_id
             if provider=='polymarket':
                 binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id,ResultBindingRequest.state=='bound'))
@@ -100,7 +103,7 @@ def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_aft
             else:
                 watch=db.scalar(select(WatchedGame).where(WatchedGame.id==job.watched_game_id).with_for_update())
                 game=db.scalar(select(Game).where(Game.id==watch.game_id).with_for_update())
-                if watch.state!='active':
+                if watch.state!='active' or (game.status=='finished' and game.home_score is not None and game.away_score is not None):
                     finish_attempt(db,job,now,'succeeded'); job.status='done'
                 elif error:
                     finish_attempt(db,job,now,'failed',error); job.status='pending'; job.due_at=now+max(interval(game.sport),timedelta(seconds=retry_after_seconds))
@@ -158,7 +161,7 @@ def process_one(engine,settings,owner,client=None,lease_seconds=120) -> bool:
         except LeaseLost:
             pass
         except Exception as exc:
-            log.error('job_failed type=%s job_id=%s',type(exc).__name__,job_id)
+            log.exception('job_failed type=%s job_id=%s error=%s',type(exc).__name__,job_id,str(exc)[:300])
             apply_work(engine,job_id,token,error='internal_error')
     finally:
         stop.set(); thread.join(timeout=5)

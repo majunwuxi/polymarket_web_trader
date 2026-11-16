@@ -234,7 +234,8 @@ def schedule_reconcile(request:Request,intent_id:uuid.UUID):
         job=db.scalar(select(Job).where(Job.trade_intent_id==intent_id).with_for_update())
         if not job:return auth.error(request,404,'NOT_FOUND','订单对账任务不存在')
         if job.status in ('pending','done','failed'):
-            job.status='pending';job.due_at=db_now(db)
+            job.status='pending';job.due_at=db_now(db);job.failure_count=0
+            job.last_error_code=job.last_error_summary=None
         return ok(request,{'intent_id':str(intent_id),'job_id':str(job.id),'status':job.status})
 
 

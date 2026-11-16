@@ -41,6 +41,7 @@ def env(pg,monkeypatch):
     with pg.begin() as conn:
         conn.execute(text("DELETE FROM job_runs WHERE job_id IN (SELECT id FROM jobs WHERE trade_intent_id IS NOT NULL)"))
         conn.execute(text('DELETE FROM jobs WHERE trade_intent_id IS NOT NULL'))
+        conn.execute(text('DELETE FROM redeem_requests'))
         for table in ('trade_fills','trade_state_events','trade_submissions'):conn.execute(text(f'DELETE FROM {table}'))
         conn.execute(text('DELETE FROM trade_intents WHERE parent_trade_id IS NOT NULL'))
         conn.execute(text('DELETE FROM trade_intents'))

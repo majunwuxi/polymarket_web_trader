@@ -466,3 +466,41 @@ class ComboEvent(Base):
     state: Mapped[str] = mapped_column(String(24),nullable=False)
     code: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class RedeemRequest(Base):
+    """整仓赎回记录；同一钱包同一 condition 或组合 position 只允许一条。"""
+    __tablename__ = 'redeem_requests'
+    __table_args__ = (UniqueConstraint('wallet_id','target_type','target_ref',name='uq_redeem_target'),
+                      UniqueConstraint('tx_hash',name='uq_redeem_tx'),
+                      CheckConstraint("target_type IN ('single','combo')",name='ck_redeem_target_type'),
+                      CheckConstraint("state IN ('submitting','confirmed','rejected','unknown')",name='ck_redeem_state'),
+                      CheckConstraint("wallet_address ~ '^0x[0-9a-fA-F]{40}$'",name='ck_redeem_wallet'),
+                      CheckConstraint("tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'",name='ck_redeem_tx_hash'),
+                      CheckConstraint("condition_id IS NULL OR condition_id ~ '^0x[0-9a-fA-F]{64}$'",name='ck_redeem_condition'),
+                      CheckConstraint('shares > 0',name='ck_redeem_shares'),
+                      Index('ix_redeem_state_created','state',text('created_at DESC')),
+                      Index('ix_redeem_intent','intent_id'),
+                      Index('ix_redeem_combo','combo_rfq_id'))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
+    wallet_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(42),nullable=False)
+    target_type: Mapped[str] = mapped_column(String(16),nullable=False)
+    target_ref: Mapped[str] = mapped_column(String(78),nullable=False)
+    intent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('trade_intents.id',ondelete='RESTRICT'))
+    combo_rfq_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),ForeignKey('combo_rfqs.id',ondelete='RESTRICT'))
+    condition_id: Mapped[str | None] = mapped_column(String(66))
+    outcome_index: Mapped[int | None] = mapped_column(Integer)
+    position_id: Mapped[str | None] = mapped_column(String(78))
+    shares: Mapped[Decimal] = mapped_column(Numeric(38,18),nullable=False)
+    client_request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),nullable=False)
+    state: Mapped[str] = mapped_column(String(24),nullable=False)
+    tx_hash: Mapped[str | None] = mapped_column(String(66))
+    transaction_id: Mapped[str | None] = mapped_column(String(128))
+    payout: Mapped[Decimal | None] = mapped_column(Numeric(38,18))
+    collateral_before: Mapped[Decimal | None] = mapped_column(Numeric(38,18))
+    collateral_balance: Mapped[Decimal | None] = mapped_column(Numeric(38,18))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

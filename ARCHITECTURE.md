@@ -77,6 +77,14 @@ Combo 不是多笔单场订单的简单批量提交。系统需检查每一腿�
 
 官方 Builder 集成示例需要 Builder API key、账户签名和 Deposit Wallet 等配置；实际账户、市场、权限、地域和产品可用性须在集成时验证。Combo 需以稳定 RFQ ID 恢复并核对状态，接受请求结果不明时不得创建新的报价或重复执行来掩盖未知状态。单场与 Combo 的实现及测试必须分别覆盖。
 
+### 5.4 已结算仓位赎回
+
+赎回使用官方 `polymarket-client` 的 `SecureClient.redeem_positions`：单场传 `condition_id`，组合传官方 `position_id`。可赎回资格来自 Polymarket Data API v2 的 `REDEEMABLE` 持仓，不使用本地比分、订单份额或 `close_blocked` 推断；执行前再次现场核验，防止列表缓存过期。
+
+标准赎回没有“按订单部分赎回”参数：同一钱包同一 condition 的全部结果份额一起处理，因此 `redeem_requests` 以 `(wallet_id,target_type,target_ref)` 为整仓幂等键，而不是挂在单笔 `trade_intents` 下。赎回先短事务写 `submitting`，事务外发送并等待官方 SDK 交易句柄；成功写 `confirmed` 和真实交易哈希，发送后任何不确定异常写 `unknown`，禁止自动重发。
+
+赎回前只读检查 PositionManager 对 Router 的 operator 授权，或 CTF 对相应 Collateral Adapter 的授权；不自动 `approve` / `setApprovalForAll`、不部署钱包。智能钱包复用 Builder 凭据走官方交易通道；EOA 直接签名并承担 Polygon gas。`POLYSPORTS_REDEEM_EXECUTION_ENABLED` 默认关闭，启用前须完成链上授权和目标账户验证。
+
 ## 6. 管理、统计与安全访问
 
 单一管理员通过 HTTPS 登录；密码哈希存储，提供会话过期、登录频率限制、CSRF 防护及安全 Cookie；部署说明包含 TLS 更新和反向代理配置。API 密钥集中由环境变量或受限密钥文件提供，前端不接收服务端密钥；配置页面仅显示脱敏状态和允许修改的非秘密参数。日志包含任务类型、来源、时间、结果、错误类别与关联 ID，禁止输出凭证、私钥和签名原文。

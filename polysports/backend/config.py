@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     wallet_credentials: dict[str, WalletSecrets] = Field(default_factory=dict,repr=False)
     polygon_rpc_url: SecretStr | None = None
     combo_execution_enabled: bool = False
+    redeem_execution_enabled: bool = False
 
     @classmethod
     def settings_customise_sources(cls,settings_cls,init_settings,env_settings,dotenv_settings,file_secret_settings):

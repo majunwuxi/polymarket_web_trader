@@ -144,6 +144,8 @@
 
 已核实、且尚未进入结算的买入单才提供「立即平仓」入口：比赛结果已确认（`score_verified`）或市场已停止接单/结算时，按钮显示为灰色禁用的「已结算 · 不可平仓」并给出原因；即使绕过界面直接调用接口，服务端也返回 `409 POSITION_SETTLED`。单场在核对到 Polymarket 已最终结算后即时禁用，组合在任一腿赛果确认或各腿市场均已终态后禁用。单场平仓是独立页面，**不显示方向、限价、份额或金额输入框**：只列出钱包、可平仓份额、当前市价（服务端按真实买盘深度计算）和预计收入，以及「刷新市价」与「确认按市价平仓」两个操作；买盘深度不足、份额过小或市价预览过期时禁用确认并说明原因。组合平仓同样走官方 Combo RFQ，但已并入一次「按当前市价直接平仓」：提交时沿用原组合各腿取得实时 SELL 报价并立即接受，不再有二次确认。
 
+**可赎回卡片与整仓赎回**：交易记录页在订单/组合列表加载后，用当前页 ID 批量请求 `POST /redemptions/eligibility`。只有 Polymarket Data API 明确返回 `REDEEMABLE` 且钱包仍有份额的单场/组合卡片才使用粉色背景（`#fdeef4`）并在操作区显示粉红色「赎回」按钮；未开启功能开关时不使用粉色、不显示按钮。点击后提交一次整仓赎回，按钮在请求期间禁用，成功后提示实际现金余额增量与当前余额，并刷新列表和资格状态；同一市场/组合的其他卡片同步显示「已赎回」。`unknown` 显示「赎回结果未知」且不得再次点击。资格查询失败不阻塞订单列表，也不把未知状态误标为可赎回。赎回是领取自己的已结算资金，**不是** CLOB 下单、平仓或外部钱包提现。
+
 历史页面提供赛事历史与交易历史两个标签、日期/运动/钱包/状态筛选和统计；统计口径注明“仅已核实成交/结算”，无法计算的收益显示“未知”，未成交和未知订单不算作收益。导出按钮分别请求 CSV 或 Excel，告知导出应用于当前筛选的全部数据而非仅当前页；下载失败显示原因。时间列注明 UTC+8、文本字段防公式注入，数据和字段口径与服务端契约一致。
 
 ## 9. 球队维护、设置、同步与运行状态
@@ -182,7 +184,7 @@
 | 钱包/盘口 | `GET /wallets`, `GET /wallets/{wallet_id}/status`, `GET /outcomes/{outcome_id}/book` |
 | 单场交易 | `POST /single-orders/preview`, `POST /single-orders`, `GET /trade-intents/by-key/{idempotency_key}`, `GET /trade-intents/{intent_id}`, `POST /single-orders/{intent_id}/cancel`, `POST /trade-intents/{intent_id}/reconcile` |
 | Combo | `POST /combo-rfqs`（`auto_accept:true` 一步下单）, `GET /combo-rfqs`, `GET /combo-rfqs/by-key/{key}`, `GET /combo-rfqs/{rfq_id}/events`；`POST /combo-rfqs/{rfq_id}/accept` 仅保留兼容 |
-| 交易记录 | `GET /trade-intents?hide_settled=true`, `GET /trade-intents/{intent_id}`, `GET /combo-rfqs?state=confirmed&hide_settled=true` |
+| 交易记录 | `GET /trade-intents?hide_settled=true`, `GET /trade-intents/{intent_id}`, `GET /combo-rfqs?state=confirmed&hide_settled=true`, `POST /redemptions/eligibility`, `POST /trade-intents/{intent_id}/redeem`, `POST /combo-rfqs/{combo_id}/redeem` |
 | 球队维护 | `GET /teams`, `PATCH /teams/{team_id}`, `POST /teams/{team_id}/aliases` |
 | 系统配置/日志 | `GET /sync-schedules`, `PUT /sync-schedules`, `POST /sync-runs`, `GET /sync-runs`, `GET /sync-runs/{run_id}`, `GET /jobs`, `GET /jobs/{job_id}/runs`, `GET /audit-events` |
 | 历史与导出 | `GET /history/games`, `GET /history/trades`, `GET /statistics`, `GET /exports/games.csv`, `GET /exports/games.xlsx`, `GET /exports/trades.csv`, `GET /exports/trades.xlsx` |

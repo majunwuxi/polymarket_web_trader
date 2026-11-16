@@ -63,6 +63,16 @@ WALLET_2_SIGNATURE_TYPE=1
 
 目前交易 SDK 仅支持生产 CLOB 地址。`DRY_RUN=true` 会验证实时订单簿，但不会初始化交易会话或发送订单，因此不验证钱包凭证和链上授权。
 
+### PolySports 独立服务
+
+`polysports/` 使用独立的 `/etc/polysports/polysports.env` 与 `POLYSPORTS_*` 前缀，不复用上面的 Flask Dashboard 变量。已结算仓位赎回默认关闭；完成 Router/Adapter 授权、Polygon RPC 和智能钱包 Builder 凭证验证后，才设置：
+
+```text
+POLYSPORTS_REDEEM_EXECUTION_ENABLED=true
+```
+
+系统不会自动授权、自动部署钱包或自动重发结果未知的赎回请求；详细条件见 [polysports/README.md](polysports/README.md) 和 [DEPLOY.md](DEPLOY.md)。
+
 
 ## 2FA
 

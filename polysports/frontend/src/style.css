@@ -15,6 +15,9 @@
 @media(max-width:1180px){.order-columns{grid-template-columns:1fr}}
 .order-history .order-card{min-width:0;margin-top:16px;padding:22px 24px;background:#fff;border:1px solid #e6eee8;border-radius:14px;box-shadow:0 5px 18px rgba(34,69,50,.09),0 1px 4px rgba(34,69,50,.05);overflow-wrap:anywhere;transition:box-shadow .2s ease,transform .2s ease}
 .order-history .order-card:hover{transform:translateY(-2px);box-shadow:0 10px 25px rgba(34,69,50,.13),0 2px 6px rgba(34,69,50,.06)}
+.order-history .order-card.is-redeemable{background:#fdeef4;border-color:#f3c4d6;box-shadow:0 5px 18px rgba(180,60,110,.10),0 1px 4px rgba(180,60,110,.06)}
+.order-history .order-card.is-redeemable:hover{box-shadow:0 10px 25px rgba(180,60,110,.14),0 2px 6px rgba(180,60,110,.08)}
+.order-history .order-card.is-redeemable h2,.order-history .order-card.is-redeemable h3{color:#8c2f56}
 .order-history .order-card h2,.order-history .order-card h3{margin:0 0 12px;color:#244638;font-size:17px}
 .order-history .text-button:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:600px){.order-history .order-card{padding:18px 16px}.order-history .order-columns > .welcome-card{padding:18px 14px}}
@@ -42,6 +45,11 @@
 .order-actions{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:12px 0 4px}
 .order-actions .text-button{font-size:13px}
 .order-actions .text-button:disabled{color:#9aa8a0;cursor:not-allowed;text-decoration:none}
+.order-actions .redeem-button{background:#d6336c;color:#fff;border:0;border-radius:999px;padding:5px 14px;font-weight:700;font-size:13px}
+.order-actions .redeem-button:hover:not(:disabled){background:#b92559}
+.order-actions .redeem-button:disabled{background:#d6336c;color:#fff;opacity:.5}
+.redeem-state{display:inline-block;padding:4px 10px;border-radius:999px;background:#f8dbe7;color:#8c2f56;font-size:12px;font-weight:700}
+.redeem-state-warn{background:#fff2e2;color:#9a651a}
 .resolution-block{margin-top:12px;padding:12px 14px;border-radius:9px;background:#f6f9f7;border:1px solid #e6eee8}
 .check-line{margin:0 0 8px;font-size:14px;font-weight:700}
 .check-line.tone-ok{color:#17694f}.check-line.tone-warn{color:#a64134}.check-line.tone-info{color:#8a6d1f}.check-line.tone-muted{color:#75857d}

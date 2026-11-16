@@ -40,11 +40,11 @@
 | 401 | `UNAUTHENTICATED` | 未登录、会话过期或凭证无效；不得区分用户是否存在 |
 | 403 | `CSRF_INVALID`, `TRADING_RESTRICTED` | CSRF、地区或账户权限不允许操作 |
 | 404 | `NOT_FOUND` | 本地实体不存在或不可见 |
-| 409 | `IDEMPOTENCY_CONFLICT`, `STATE_CONFLICT`, `MAPPING_UNCONFIRMED`, `QUOTE_EXPIRED`, `PREVIEW_STALE` | 请求与已保存状态不一致；按错误提示刷新，不能盲目重试 |
+| 409 | `IDEMPOTENCY_CONFLICT`, `STATE_CONFLICT`, `MAPPING_UNCONFIRMED`, `QUOTE_EXPIRED`, `PREVIEW_STALE`, `REDEEM_APPROVAL_REQUIRED`, `REDEEM_IN_PROGRESS`, `REDEEM_REJECTED` | 请求与已保存状态不一致；按错误提示刷新，不能盲目重试。`REDEEM_REJECTED` 表示官方 SDK 明确未发送，可修正后重试 |
 | 422 | `VALIDATION_ERROR`, `ORDER_RULES_INVALID` | 请求格式或市场规则不合法 |
 | 429 | `RATE_LIMITED` | 已触发应用限制；按 `Retry-After` 等待 |
 | 502 | `PROVIDER_ERROR` | 外部服务明确返回无法处理的错误；不等同于没有数据 |
-| 503 | `PROVIDER_UNAVAILABLE`, `ENGINE_RESTARTING`, `POST_ONLY_MODE`, `SERVICE_UNAVAILABLE` | 服务暂不可用或交易受限；带上游等待时间时保留 |
+| 503 | `PROVIDER_UNAVAILABLE`, `ENGINE_RESTARTING`, `POST_ONLY_MODE`, `REDEEM_DISABLED`, `SERVICE_UNAVAILABLE` | 服务暂不可用或交易受限；带上游等待时间时保留 |
 | 500 | `INTERNAL_ERROR` | 内部错误；不暴露堆栈 |
 
 若已发起可能产生资金结果的上游请求而发生超时、连接中断或进程重启，不返回暗示可安全重试的普通失败：返回 `202` 和本地意图的 `unknown` 状态（如能返回响应），客户端仅查询与对账。HTTP 超时没有收到本地响应时，通过原 `Idempotency-Key` 查询原意图，不用新键重发。
@@ -67,6 +67,7 @@
 | `Submission` | `id`, `intent_id`, `attempt_no`, `state`, `order_id`（可空）, `order_hash`（可空）, `started_at`, `resolved_at`（可空）, `filled_size`（可空）, `error_code`（可空） |
 | `ComboRFQ` | `id`（本地 UUID）, `intent_id`, `external_rfq_id`（可空字符串）, `state`, `requested_at`, `resolved_at`（可空）, `quote`（可空 `ComboQuote`） |
 | `ComboQuote` | `id`（本地 UUID）, `external_quote_id`, `price`, `size`, `fee_estimate`, `net_receive`（可空十进制字符串）, `expires_at`, `received_at`；仅返回上游实际提供且可确认的值 |
+| `RedeemRequest` | `id`, `wallet_id`, `wallet_address`, `target_type` (`single` / `combo`), `target_ref`, `intent_id` / `combo_rfq_id`（可空）, `condition_id` / `outcome_index` / `position_id`（可空）, `shares`, `state` (`submitting` / `confirmed` / `rejected` / `unknown`), `tx_hash`（可空）, `transaction_id`（可空）, `payout`（可空）, `collateral_before` / `collateral_balance`（可空）, `error_code`（可空）, `created_at`, `updated_at`, `confirmed_at`（可空） |
 | `SyncRun` | `id`, `provider`, `sport`, `trigger_type`, `scheduled_for`, `started_at`（可空）, `finished_at`（可空）, `status`, `window_start` / `window_end`（可空）, `pages_fetched`, `items_received`, `items_upserted`, `error_code`（可空） |
 | `Job` | `id`, `kind`, `due_at`, `status`, `attempt_count`, `last_error_code`（可空）, `updated_at`；不返回租约 token |
 
@@ -88,7 +89,7 @@
 
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |
-| `GET /games` | `sport`（必填 `football` / `nba`）；可选 `from`, `to`, `status`, `watched`, `limit`, `cursor` | `200` 分页 `Game` | 默认未来 36 小时；按 `starts_at,id` 升序；返回实际来源状态，不将获取失败伪装为空列表 |
+| `GET /games` | `sport`（必填 `football` / `nba`）；可选 `from`, `to`, `status`, `watched`, `limit`, `cursor` | `200` 分页 `Game` | 未传 `from/to` 时，足球默认 `[now-2h30m, now+36h)`，NBA 默认 `[now-3h, now+36h)`；按 `starts_at,id` 升序；返回实际来源状态，不将获取失败伪装为空列表 |
 | `GET /games/{game_id}` | 路径 UUID | `200`：`Game`，附 `watch`（可空）、`recent_revisions` | 展示已记录的状态/时间变更及数据更新时间 |
 | `GET /teams` | 可选 `sport`, `translation_status`, `q`, `limit`, `cursor` | `200` 分页 `Team` | 按 `source_name,id` 升序；队徽缺失返回 null |
 | `PATCH /teams/{team_id}` | `{ "name_zh": "...", "translation_status": "verified" }` | `200` 更新后的 `Team` | `verified` 必须提供非空中文名称；记录审计，未确认时设 `missing` 和 null |
@@ -145,6 +146,24 @@
 市场结算的读取口径：`condition` 选择器可能返回多行（V2 生命周期 → UMA 生命周期 → CTF 终态），实现按「终态且赔付可用」选行；同一查询出现互相矛盾的终态赔付，或返回的条件编号与订单不符时，视为上游数据异常（`state:"unavailable"`），不猜测结果。`split`（50/50）、分数赔付、未知单位与缺失赔付一律不确认。非终态 `market_status` 取值包括 `initialized`、`posed`、`proposed`、`challenged`、`reproposed`、`disputed`、`active`、`arbitration`；`not_found` 表示结算数据暂未收录该条件。**赛事终态与市场终态相互独立**：同一场比赛的胜负、让分、总分盘口各有独立 `condition_id`，比赛结束只说明不再有赛果变化，不表示该盘口已完成链上结算。
 
 `settlement` 字段：`settlement_amount`（已确认的应结算金额，pUSD）、`market_settlement_amount`（市场结果口径）、`result_settlement_amount`（赛果结果口径）、`market_outcome_won`、`result_outcome_won`、`agreement`、`cost_basis`（成交成本）、`realized_pnl`（净盈亏）、`covered_shares`（已核实成交份额）、`confirmed_fill_count`、`cost_verified`、`currency`、`reason`、`notice`。两个结果各自按 `matched_size × 1`（获胜）或 `0`（未获胜）换算，绝不互相替代：`agreement` 为 `consistent`（两结果一致，确认金额）、`conflict`（不一致，并列保留两个金额但不确认，需人工核实）、`market_only`（仅市场结果可用，按市场终态给出金额并建议人工核实）、`result_only`（仅赛果结果可用，金额为**预计值**不确认）、`unavailable`（两者皆无）。`cost_basis` 与 `realized_pnl` 只在金额已确认、且本系统已保存的 `CONFIRMED` 成交明细份额之和严格等于 `matched_size` 时给出，否则为 `null` 并在 `reason` 中说明（可先查询成交记录）。`side:"SELL"` 平仓订单按成交价结算，不适用市场最终赔付。金额是按二元终态赔付与已确认成交计算的**应结算金额**，不含未记录费用，不代表链上赎回或实际到账；组合交易不走本接口。
+
+### 5.1.3 整仓赎回（Redeem）
+
+赎回是独立于下单和平仓的链上资金操作：已结算赢家份额通过 Polymarket 官方 SDK 换回 `pUSD` 现金余额，不创建 `TradeIntent`，也不进入 CLOB 订单簿。标准单场赎回按 `condition_id` 一次处理该钱包在该 condition 下的全部结果份额；组合赎回按官方 `combo_position_id` 处理该组合仓位。**不支持按单笔订单部分赎回**。
+
+| 方法与路径 | 请求 | 成功响应 | 业务规则 |
+| --- | --- | --- | --- |
+| `POST /redemptions/eligibility` | `{ "intent_ids":["uuid"], "combo_ids":["uuid"] }`，各最多 100 项 | `200`：`{ "execution_enabled": true, "items":[{ "kind":"single"/"combo", "id":"...", "eligible":true, "state":null/"confirmed"/"unknown"/"rejected", "shares":"3", "expected_payout":"3", "reason":null }] }` | 按当前页订单一次批量判断；单场以 Polymarket Data API `/v2/positions?status=REDEEMABLE` 返回的 `token_id` 匹配，组合以 `/v2/positions/combos?status=REDEEMABLE` 的 `combo_position_id` 匹配，并要求 `redeemable=true`、`current_size>0`。不使用本地比分或 `close_blocked` 作为资金依据 |
+| `POST /trade-intents/{intent_id}/redeem` | `{}`；`Idempotency-Key: <UUID>` | `201`：本次确认赎回；`200`：同整仓已确认；`202`：已广播但结果未知 | 单场按 `condition_id` 赎回整仓。执行前现场复查 Data API 可赎回仓位、钱包身份、Router/Adapter 授权（只读），不自动授权。成功后返回 `tx_hash`、`payout`、`credited_amount`、`collateral_balance` |
+| `POST /combo-rfqs/{combo_id}/redeem` | `{}`；`Idempotency-Key: <UUID>` | 同上 | 组合按官方 `position_id` 调用 `redeem_positions(position_id=...)`；要求组合 `direction=BUY`、`state=confirmed` 且本地已保存 `combo_position_id` |
+
+执行约束：
+
+- 同一 `(wallet_id,target_type,target_ref)` 只有一条 `redeem_requests` 记录；`confirmed` 后幂等返回 `200`，`submitting` / `unknown` 时禁止重复操作并返回 `409`。
+- 请求一旦可能已广播，任何异常都落为 `unknown` + `202`，禁止自动重发；必须到 Polymarket 或链上独立核对。官方 SDK 明确在发送前拒绝的输入/relayer 拒绝落为 `rejected`，返回 `409 REDEEM_REJECTED`，可修正后重试。
+- 智能钱包赎回复用钱包配置中的完整 Builder 凭证；EOA 直接签名并使用 Polygon gas。未配置 RPC、Builder 凭证或 SDK 不支持时在发送前拒绝。
+- `POLYSPORTS_REDEEM_EXECUTION_ENABLED` 默认 `false`；关闭时资格查询仍返回 `execution_enabled:false`，赎回端点返回 `503 REDEEM_DISABLED`。
+- `payout`/`credited_amount` 优先由赎回前后 `collateral_balance` 差值给出；无法可靠读取任一余额时为 `null`，不根据订单份额伪造到账金额。
 
 ### 5.2 提交、查询和撤单
 

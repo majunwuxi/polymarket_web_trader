@@ -205,6 +205,14 @@ Combo 询价时可预先保存 `draft` 意图和所有腿；用户确认后更�
 
 设计稿中的 `combo_quotes` 与 `rfq_status_events` **未落地**：报价对象只保存在单个 API 进程的 `_quotes` 内存缓存（不持久化签名敏感字段），RFQ 状态由 `combo_events` 与外部 RFQ ID 对账；服务重启后报价不可再接受，需重新询价。
 
+### 7.4 `redeem_requests`（迁移 `c7e3f9a12b40`）
+
+`redeem_requests`：`id uuid PK`；`wallet_id uuid`、`wallet_address varchar(42)` 必填；`target_type varchar(16)` 取 `single` / `combo`；`target_ref varchar(78)` 为单场小写 `condition_id` 或组合 `position_id`；`intent_id uuid`、`combo_rfq_id uuid` 可空外键（`ON DELETE RESTRICT`）；`condition_id varchar(66)`、`outcome_index integer`、`position_id varchar(78)` 可空；`shares numeric(38,18)` 必填且 > 0；`client_request_id uuid`、`state varchar(24)` 必填，取 `submitting` / `confirmed` / `rejected` / `unknown`；`tx_hash varchar(66)`、`transaction_id varchar(128)`、`payout`、`collateral_before`、`collateral_balance numeric(38,18)`、`error_code varchar(80)`、`confirmed_at timestamptz` 可空；`created_at`、`updated_at timestamptz` 必填。
+
+约束：`UNIQUE(wallet_id,target_type,target_ref)` 保证同一钱包同一整仓目标只有一条记录；`UNIQUE(tx_hash)` 防止同一链上交易关联多个目标；非空 `tx_hash` 必须为小写 `0x` + 64 位十六进制；非空 `condition_id` 必须为 `0x` + 64 位十六进制；`wallet_address` 必须为 20 字节十六进制地址；索引 `(state, created_at DESC)`、`(intent_id)`、`(combo_rfq_id)`。
+
+赎回不是 `trade_intents` 的子类型：标准单场赎回按 `condition_id` 领取该钱包全部结果份额，组合赎回按官方 `position_id` 领取组合仓位；一个整仓目标可关联多张订单卡片。写入顺序为：现场只读核实 Data API `REDEEMABLE` 仓位与 Router/Adapter 授权 → 短事务预写 `submitting` 和审计 → 事务外调用官方 SDK 并等待确认 → 新事务回写 `confirmed` / `unknown`。`confirmed` 后重复请求按整仓目标幂等返回；`unknown` 禁止重发，只能人工或外部核对。`payout` 只保存赎回前后现金余额可可靠计算的正差值，不用订单份额伪造到账。
+
 `trade_state_events`：`id uuid PK`；`intent_id uuid` 必填外键；`old_state`, `new_state varchar(24)`、`reason varchar(80)` 必填；`source varchar(24)` 必填，`user`, `exchange`, `reconcile`, `system`；`observed_at timestamptz` 必填；`correlation_id uuid` 可空；索引 `(intent_id, observed_at)`。状态转换、事实写入、事件和必要的对账任务应在同一事务中提交。来源更新必须幂等且不得把确认后的终态静默倒退；发生更正应追加事件。
 
 ## 8. 数据一致性、索引与迁移

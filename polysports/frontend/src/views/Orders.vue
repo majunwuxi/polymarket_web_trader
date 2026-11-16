@@ -5,6 +5,7 @@ import {session,logout,clearSession,ApiError} from '../auth'
 const router=useRouter(),menuOpen=ref(false),orders=ref<any[]>([]),nextCursor=ref<string|null>(null),loaded=ref(false),message=ref(''),pendingCancel=ref<string|null>(null),recoveryId=ref<string|null>(null),candidates=ref<any[]>([]),fillOrder=ref<string|null>(null),fills=ref<any[]>([]),fillsTruncated=ref(false),attachId=ref(''),ack=ref(false)
 const combos=ref<any[]>([]),comboCursor=ref<string|null>(null),comboLoaded=ref(false),comboError=ref(''),comboBusy=ref(false)
 const fullId=ref<string|null>(null)
+const redeemMap=ref<Record<string,any>>({}),redeemEnabled=ref(false),redeemBusy=ref<string|null>(null)
 
 async function api(path:string,options:RequestInit={}){const r=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options});const b=await r.json();if(!r.ok)throw new Error(b?.error?.message||'请求失败');return b.data}
 
@@ -48,6 +49,38 @@ const stateName=(s:string)=>({submitting:'提交中',pending:'已接受，待核
 const cancelName=(s:string)=>({submitting:'撤单中',unknown:'撤单结果未知',confirmed:'已确认撤单',rejected:'撤单被拒绝'} as Record<string,string>)[s]||'未知'
 async function action(id:string,kind:'cancel'|'reconcile'){try{await api(kind==='cancel'?'/single-orders/'+id+'/cancel':'/trade-intents/'+id+'/reconcile',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:'{}'});pendingCancel.value=null;message.value=kind==='cancel'?'撤单请求已处理，请查看状态。':'已安排只读对账。';await load()}catch{message.value='请求结果未确认，请刷新或安排只读对账。'}}
 async function loadFills(id:string){try{const data=await api('/trade-intents/'+id+'/fills');fillOrder.value=id;fills.value=data.items;fillsTruncated.value=data.truncated;message.value='已查询交易所成交记录。'}catch(e){message.value=e instanceof Error?e.message:'成交记录查询失败。'}}
+const redeemKey=(kind:'single'|'combo',id:string)=>kind+':'+id
+const redeemInfo=(kind:'single'|'combo',id:string)=>redeemMap.value[redeemKey(kind,id)]
+const canRedeem=(kind:'single'|'combo',id:string)=>redeemEnabled.value&&redeemInfo(kind,id)?.eligible===true
+async function loadRedeemEligibility(){
+  const intentIds=orders.value.map((row:any)=>row.id),comboIds=combos.value.map((row:any)=>row.id)
+  if(!intentIds.length&&!comboIds.length){redeemMap.value={};redeemEnabled.value=false;return}
+  try{
+    const data=await api('/redemptions/eligibility',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({intent_ids:intentIds,combo_ids:comboIds})})
+    const next:Record<string,any>={}
+    for(const item of data.items||[])next[redeemKey(item.kind,item.id)]=item
+    redeemMap.value=next;redeemEnabled.value=data.execution_enabled===true
+  }catch{redeemMap.value={};redeemEnabled.value=false}
+}
+async function refreshAll(){await Promise.all([load(),loadCombos()]);await loadRedeemEligibility()}
+async function redeem(kind:'single'|'combo',id:string){
+  if(!canRedeem(kind,id)||redeemBusy.value)return
+  const busyKey=redeemKey(kind,id);redeemBusy.value=busyKey
+  message.value=kind==='combo'?'正在提交组合整仓赎回…':'正在提交整仓赎回…'
+  try{
+    const key=crypto.randomUUID()
+    const path=kind==='single'?'/trade-intents/'+id+'/redeem':'/combo-rfqs/'+id+'/redeem'
+    const data=await api(path,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf,'Idempotency-Key':key},body:'{}'})
+    if(data.state==='confirmed'){
+      const credit=data.credited_amount!=null?'，现金余额增加 '+data.credited_amount+' pUSD':''
+      const balance=data.collateral_balance!=null?'；当前现金余额 '+data.collateral_balance+' pUSD':''
+      message.value='赎回已确认'+credit+balance
+    }else if(data.state==='unknown')message.value=data.message||'赎回结果未知，请勿重复操作。'
+    else message.value=data.message||'赎回请求已处理。'
+    await refreshAll()
+  }catch(e){message.value=e instanceof Error?e.message:'赎回请求结果未确认，请勿重复操作。'}
+  finally{redeemBusy.value=null}
+}
 const resolutionOrder=ref<string|null>(null), resolution=ref<any>(null)
 async function loadResolution(id:string){try{const data=await api('/trade-intents/'+id+'/resolution');resolution.value=data;resolutionOrder.value=id;if(data?.state==='resolved'){const row=orders.value.find((o:any)=>o.id===id);if(row){row.close_blocked=true;row.close_block_reason='市场已最终结算，不能平仓'}}}catch(e){message.value=e instanceof Error?e.message:'结算查询失败'}}
 async function findCandidates(id:string){recoveryId.value=id;candidates.value=[];attachId.value='';ack.value=false;try{const data=await api('/trade-intents/'+id+'/reconcile-candidates');candidates.value=data.items;message.value=data.truncated?'候选可能不完整，请到 Polymarket 独立核查。':'候选仅包括未完成订单；请独立核实。'}catch{message.value='候选订单查询失败，请稍后重试。'}}
@@ -73,7 +106,7 @@ const buyMetrics=(c:any)=>{
 }
 const buySource=(c:any)=>({combo_fill:'已落库 CONFIRMED 成交明细（签名接受订单的 makerAmount / takerAmount）',quote_rebuilt:'官方签名报价按 micro-USDC 精度重建',quote_partial:'签名报价字段不完整，金额未核实',unavailable:'暂无可核实的成交明细或报价'} as Record<string,string>)[c?.buy_summary?.basis]||'暂无可核实的成交明细或报价'
 const legTone=(leg:any)=>leg.leg_agreement==='conflict'?'mini-tag-warn':leg.result_won===true?'mini-tag-ok':'mini-tag-neutral'
-onMounted(()=>{load();loadCombos()})
+onMounted(refreshAll)
 </script>
 
 <template>
@@ -84,20 +117,23 @@ onMounted(()=>{load();loadCombos()})
     <div class="workspace-top"><span class="breadcrumb">工作台 / 交易记录</span><div class="account"><span>{{session.username}}</span><button class="text-button" @click="signOut">退出</button></div></div>
     <div class="page-heading"><div><p class="eyebrow">ORDER STATUS</p><h1>交易记录</h1><p class="muted">已接受不等于已成交；未知状态须对账，不能重复提交。开赛超过 24 小时且已结算的历史记录不再显示。</p></div></div>
     <p role="status" class="form-message">{{message}}</p>
-    <button class="text-button" @click="load()">刷新订单</button>
+    <button class="text-button" @click="refreshAll">刷新订单</button>
 
     <div class="order-columns">
     <section class="welcome-card" aria-label="单场交易记录">
       <h2>单场订单</h2>
-      <p class="scope-note">赛果判断与 Polymarket 终态结算一致才确认金额；金额按已确认成交份额计算，不等于链上赎回或实际到账。已结算或赛果已确认的订单不再提供平仓。卡片盈亏标签：黑底为亏损、红底为盈利；有完整 CONFIRMED 成交明细时用真实成本，缺失时按限价估算并标「约」，悬停可看口径。</p>
+      <p class="scope-note">赛果判断与 Polymarket 终态结算一致才确认金额；金额按已确认成交份额计算，不等于链上赎回或实际到账。已结算或赛果已确认的订单不再提供平仓。粉色卡片表示当前钱包存在可整仓赎回的赢家份额；赎回会领取该市场下的全部可赎回份额并进入现金余额。卡片盈亏标签：黑底为亏损、红底为盈利；有完整 CONFIRMED 成交明细时用真实成本，缺失时按限价估算并标「约」，悬停可看口径。</p>
       <p v-if="loaded && !orders.length">暂无已记录订单。</p>
-      <article v-for="order in orders" :key="order.id" class="market-card order-card">
+      <article v-for="order in orders" :key="order.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('single',order.id)}]">
         <h2 class="card-title"><span>{{order.side==='BUY'?'买入':'卖出'}} · {{stateName(order.state)}}<span v-if="resultTag(order)"> · {{resultTag(order)}}</span></span><span class="pnl-badge" :class="pnlBadge(order).cls" :title="pnlBadge(order).hint">{{pnlBadge(order).text}}</span></h2>
         <p>{{order.home}} 对 {{order.away}} · {{shortQuestion(order.market_question)}} · {{order.outcome_label}}</p>
         <p class="summary-line"><span>{{sharesLine(order)}}<template v-if="confirmedAmount(order)!=null"> · 结算 {{confirmedAmount(order)}} pUSD</template></span><span v-if="order.external_order_id" class="id-text id-compact">ID <template v-if="fullId===order.id">{{order.external_order_id}}</template><template v-else>{{shortId(order.external_order_id)}}</template><button class="text-button id-toggle" @click="fullId=fullId===order.id?null:order.id">{{fullId===order.id?'收起':'全文'}}</button></span></p>
         <p v-if="order.error_code">状态说明：{{order.error_code}}<span v-if="order.retry_after_seconds!==null"> · 建议等待 {{order.retry_after_seconds}} 秒</span></p>
         <p v-if="order.cancel_state">撤单状态：{{cancelName(order.cancel_state)}}</p>
         <div class="order-actions">
+          <button v-if="canRedeem('single',order.id)" class="text-button redeem-button" :disabled="redeemBusy===redeemKey('single',order.id)" :title="'整仓赎回该钱包在 '+order.market_question+' 的全部可赎回份额'" @click="redeem('single',order.id)">赎回</button>
+          <span v-else-if="redeemInfo('single',order.id)?.state==='confirmed'" class="redeem-state">已赎回</span>
+          <span v-else-if="redeemInfo('single',order.id)?.state==='unknown'" class="redeem-state redeem-state-warn">赎回结果未知</span>
           <RouterLink v-if="canClose(order)" class="text-button" :to="{path:'/orders/new/'+order.market_link_id+'/'+order.outcome_id,query:{close:order.id}}">立即平仓</RouterLink>
           <button v-else class="text-button" disabled :title="closeHint(order)">{{order.close_blocked?'已结算 · 不可平仓':'立即平仓'}}</button>
           <button v-if="order.external_order_id" class="text-button" @click="loadFills(order.id)">查询成交记录</button>
@@ -144,16 +180,16 @@ onMounted(()=>{load();loadCombos()})
           </details>
         </div>
       </article>
-      <button v-if="nextCursor" class="text-button" @click="load(true)">加载更多</button>
+      <button v-if="nextCursor" class="text-button" @click="load(true).then(loadRedeemEligibility)">加载更多</button>
     </section>
 
     <section class="welcome-card" aria-label="组合交易记录">
       <h2>组合交易</h2>
-      <p class="scope-note">这里只显示已确认的组合交易；组合按全中口径核对。已落库 CONFIRMED 成交明细的卡片按签名订单实际支出与份额显示确定盈亏（不带「约」）；未回填的历史组合仍按报价估算并标「约」。金额不等于链上赎回或实际到账。</p>
-      <button class="text-button" :disabled="comboBusy" @click="loadCombos()">刷新组合记录</button>
+      <p class="scope-note">这里只显示已确认的组合交易；组合按全中口径核对。已落库 CONFIRMED 成交明细的卡片按签名订单实际支出与份额显示确定盈亏（不带「约」）；未回填的历史组合仍按报价估算并标「约」。粉色卡片表示该组合仓位可以整仓赎回，赎回后资金进入现金余额。</p>
+      <button class="text-button" :disabled="comboBusy" @click="loadCombos().then(loadRedeemEligibility)">刷新组合记录</button>
       <p v-if="comboError" role="alert">{{comboError}}</p>
       <p v-else-if="comboLoaded && !combos.length">暂无已确认组合交易。</p>
-      <article v-for="combo in combos" :key="combo.id" class="market-card order-card">
+      <article v-for="combo in combos" :key="combo.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('combo',combo.id)}]">
         <h3 class="card-title"><span>组合{{combo.direction==='BUY'?'买入':'卖出'}} · {{comboState(combo.state)}}<span v-if="combo.by_score!==null&&combo.by_score!==undefined"> · {{comboWinner(combo.by_score)}}</span></span><span class="pnl-badge" :class="pnlBadge(combo).cls" :title="pnlBadge(combo).hint">{{pnlBadge(combo).text}}</span></h3>
         <div v-if="combo.direction==='BUY'" class="buy-metrics" aria-label="组合买入摘要">
           <div v-for="m in buyMetrics(combo)" :key="m.label" class="buy-metric" :title="m.detail"><span class="buy-metric-label">{{m.label}}</span><strong class="buy-metric-value">{{m.value}}</strong><span class="buy-metric-hint">{{m.hint}}</span></div>
@@ -161,6 +197,9 @@ onMounted(()=>{load();loadCombos()})
         <p v-for="leg in combo.legs" :key="leg.outcome_id" class="leg-chip" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span> · {{legWinner(leg.result_won,'无法判断')}}</p>
         <p class="summary-line"><span>按赛果判断：{{comboWinner(combo.by_score)}} · 已判断 {{combo.judged_legs ?? 0}}/{{combo.leg_count ?? combo.legs.length}} 腿<template v-if="combo.score_reason"> · {{combo.score_reason}}</template></span><span class="id-compact">{{shortId(combo.external_rfq_id)}}</span></p>
         <div class="order-actions">
+          <button v-if="canRedeem('combo',combo.id)" class="text-button redeem-button" :disabled="redeemBusy===redeemKey('combo',combo.id)" title="整仓赎回该组合的全部可赎回份额" @click="redeem('combo',combo.id)">赎回</button>
+          <span v-else-if="redeemInfo('combo',combo.id)?.state==='confirmed'" class="redeem-state">已赎回</span>
+          <span v-else-if="redeemInfo('combo',combo.id)?.state==='unknown'" class="redeem-state redeem-state-warn">赎回结果未知</span>
           <RouterLink v-if="combo.direction==='BUY' && combo.state==='confirmed' && !combo.close_blocked" class="text-button" :to="{path:'/combos',query:{close:combo.id}}">立即平仓</RouterLink>
           <button v-else class="text-button" disabled :title="closeHint(combo)">{{combo.close_blocked?'已结算 · 不可平仓':'立即平仓'}}</button>
           <button class="text-button" @click="loadComboResolution(combo.id)">核对组合赛果和市场结算</button>
@@ -235,7 +274,7 @@ onMounted(()=>{load();loadCombos()})
           </details>
         </div>
       </article>
-      <button v-if="comboCursor" class="text-button" :disabled="comboBusy" @click="loadCombos(true)">加载更多组合</button>
+      <button v-if="comboCursor" class="text-button" :disabled="comboBusy" @click="loadCombos(true).then(loadRedeemEligibility)">加载更多组合</button>
     </section>
     </div>
   </main>

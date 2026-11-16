@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .database import make_engine
-from . import auth, sports_api, scheduler_api, market_api, trading_api, combo_api, history_api, result_binding_api
+from . import auth, sports_api, scheduler_api, market_api, trading_api, combo_api, history_api, result_binding_api, redeem_api
 
 logger = logging.getLogger("polysports")
 
@@ -104,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(trading_api.router)
     app.include_router(combo_api.router)
     app.include_router(history_api.router)
+    app.include_router(redeem_api.router)
 
     @app.get("/api/v1/health/live")
     def health(request: Request):

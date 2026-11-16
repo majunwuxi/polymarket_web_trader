@@ -21,6 +21,8 @@ describe('交易记录中的组合（模拟接口）',()=>{
     expect(view.text()).toContain('mock-external')
     expect(view.text()).toContain('比分追踪：已关注 · 外部赛果：已绑定 · 当前比分：100 : 99')
     expect(view.text()).toContain('赛果判断：选项获胜')
+    const resultBadge=view.get('[aria-label="组合交易记录"] .result-badge.result-win')
+    expect(resultBadge.text()).toBe('选项获胜')
     expect(view.text()).toContain('按赛果判断：全部腿命中，组合获胜 · 已判断 1/1 腿')
     expect(fetchMock.mock.calls.some(([url])=>url.includes('state=confirmed'))).toBe(true)
     view.unmount()
@@ -194,12 +196,23 @@ describe('交易记录精简显示与平仓准入（模拟接口）',()=>{
     expect(view.findAll('a').some(a=>a.text()==='立即平仓')).toBe(false)
     view.unmount()
   })
-  it('列表返回赛果已确认时，无需核对即禁用平仓并在标题显示结论',async()=>{
+  it('列表返回赛果已确认时，无需核对即禁用平仓并显示黑色失败徽标',async()=>{
     vi.stubGlobal('fetch',compactFetch([{...compactOrder,close_blocked:true,close_block_reason:'比赛结果已确认，持仓已进入结算，不能平仓',result_won:false}]))
     const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
-    expect(view.text()).toContain('买入 · 全部成交 · 选项未获胜')
+    expect(view.text()).toContain('买入 · 全部成交')
+    const badge=view.get('.result-badge.result-loss')
+    expect(badge.text()).toBe('选项失败')
     expect(view.text()).toContain('已结算 · 不可平仓')
     expect(view.findAll('a').some(a=>a.text()==='立即平仓')).toBe(false)
+    view.unmount()
+  })
+  it('组合失败腿使用黑色选项失败徽标',async()=>{
+    const failedLeg={...combo.legs[0],outcome_id:'failed',home:'Mock Loss',away:'Mock Win',result_won:false}
+    const failedCombo={...combo,by_score:false,legs:[failedLeg]}
+    vi.stubGlobal('fetch',vi.fn((url:string)=>Promise.resolve(url.includes('/combo-rfqs')?json({data:{items:[failedCombo],next_cursor:null}}):json({data:{items:[],next_cursor:null}}))))
+    const view=mount(Orders,{global:{plugins:[router]}});await flushPromises()
+    const badge=view.get('[aria-label="组合交易记录"] .result-badge.result-loss')
+    expect(badge.text()).toBe('选项失败')
     view.unmount()
   })
 })

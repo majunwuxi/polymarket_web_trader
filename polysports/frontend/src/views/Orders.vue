@@ -17,7 +17,7 @@ const sharesLine=(o:any)=>{
   if(o.matched_size!=null&&String(o.matched_size)!==String(o.size))parts.push(`已成交 ${o.matched_size}`)
   return parts.join(' · ')
 }
-const resultTag=(o:any)=>o.result_won===true?'选项获胜':o.result_won===false?'选项未获胜':''
+const resultBadge=(won:any)=>won===true?{cls:'result-win',text:'选项获胜'}:won===false?{cls:'result-loss',text:'选项失败'}:null
 const canClose=(o:any)=>o.side==='BUY'&&Number(o.matched_size)>0&&!o.close_blocked
 const closeHint=(o:any)=>o.close_blocked?(o.close_block_reason||'比赛结果已确认或市场已结算，不能平仓'):'该记录没有已确认的买入持仓可供平仓'
 const confirmedAmount=(o:any)=>resolutionOrder.value===o.id&&resolution.value?.settlement?.agreement==='consistent'?resolution.value.settlement.settlement_amount:null
@@ -125,7 +125,7 @@ onMounted(refreshAll)
       <p class="scope-note">赛果判断与 Polymarket 终态结算一致才确认金额；金额按已确认成交份额计算，不等于链上赎回或实际到账。已结算或赛果已确认的订单不再提供平仓。粉色卡片表示当前钱包存在可整仓赎回的赢家份额；赎回会领取该市场下的全部可赎回份额并进入现金余额。卡片盈亏标签：黑底为亏损、红底为盈利；有完整 CONFIRMED 成交明细时用真实成本，缺失时按限价估算并标「约」，悬停可看口径。</p>
       <p v-if="loaded && !orders.length">暂无已记录订单。</p>
       <article v-for="order in orders" :key="order.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('single',order.id)}]">
-        <h2 class="card-title"><span>{{order.side==='BUY'?'买入':'卖出'}} · {{stateName(order.state)}}<span v-if="resultTag(order)"> · {{resultTag(order)}}</span></span><span class="pnl-badge" :class="pnlBadge(order).cls" :title="pnlBadge(order).hint">{{pnlBadge(order).text}}</span></h2>
+        <h2 class="card-title"><span>{{order.side==='BUY'?'买入':'卖出'}} · {{stateName(order.state)}}<span v-if="resultBadge(order.result_won)" class="result-badge" :class="resultBadge(order.result_won)?.cls">{{resultBadge(order.result_won)?.text}}</span></span><span class="pnl-badge" :class="pnlBadge(order).cls" :title="pnlBadge(order).hint">{{pnlBadge(order).text}}</span></h2>
         <p>{{order.home}} 对 {{order.away}} · {{shortQuestion(order.market_question)}} · {{order.outcome_label}}</p>
         <p class="summary-line"><span>{{sharesLine(order)}}<template v-if="confirmedAmount(order)!=null"> · 结算 {{confirmedAmount(order)}} pUSD</template></span><span v-if="order.external_order_id" class="id-text id-compact">ID <template v-if="fullId===order.id">{{order.external_order_id}}</template><template v-else>{{shortId(order.external_order_id)}}</template><button class="text-button id-toggle" @click="fullId=fullId===order.id?null:order.id">{{fullId===order.id?'收起':'全文'}}</button></span></p>
         <p v-if="order.error_code">状态说明：{{order.error_code}}<span v-if="order.retry_after_seconds!==null"> · 建议等待 {{order.retry_after_seconds}} 秒</span></p>
@@ -195,7 +195,7 @@ onMounted(refreshAll)
         <div v-if="combo.direction==='BUY'" class="buy-metrics" aria-label="组合买入摘要">
           <div v-for="m in buyMetrics(combo)" :key="m.label" class="buy-metric" :title="m.detail"><span class="buy-metric-label">{{m.label}}</span><strong class="buy-metric-value">{{m.value}}</strong><span class="buy-metric-hint">{{m.hint}}</span></div>
         </div>
-        <p v-for="leg in combo.legs" :key="leg.outcome_id" class="leg-chip" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span> · {{legWinner(leg.result_won,'无法判断')}}</p>
+        <p v-for="leg in combo.legs" :key="leg.outcome_id" class="leg-chip" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span><span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span><span v-else> · 无法判断</span></p>
         <p class="summary-line"><span>按赛果判断：{{comboWinner(combo.by_score)}} · 已判断 {{combo.judged_legs ?? 0}}/{{combo.leg_count ?? combo.legs.length}} 腿<template v-if="combo.score_reason"> · {{combo.score_reason}}</template></span><span class="id-compact">{{shortId(combo.external_rfq_id)}}</span></p>
         <div class="order-actions">
           <button v-if="canRedeem('combo',combo.id)" class="text-button redeem-button" :disabled="redeemBusy===redeemKey('combo',combo.id)" title="整仓赎回该组合的全部可赎回份额" @click="redeem('combo',combo.id)">赎回</button>
@@ -209,7 +209,7 @@ onMounted(refreshAll)
               <p class="detail-section-title">逐腿信息</p>
               <div class="mini-card-grid">
                 <div v-for="leg in combo.legs" :key="leg.outcome_id" class="mini-card">
-                  <div class="mini-card-head"><strong>{{leg.home}} 对 {{leg.away}}</strong><span class="mini-tag" :class="leg.result_won===true?'mini-tag-ok':'mini-tag-neutral'">{{legWinner(leg.result_won,'无法判断')}}</span></div>
+                  <div class="mini-card-head"><strong>{{leg.home}} 对 {{leg.away}}</strong><span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span><span v-else class="mini-tag mini-tag-neutral">无法判断</span></div>
                   <p class="mini-card-meta">{{leg.market_question}} · {{leg.outcome_label}}</p>
                   <div class="detail-rows">
                     <div class="detail-row"><span class="detail-label">比赛时间：</span>{{new Date(leg.starts_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}} UTC+8</div>
@@ -250,7 +250,7 @@ onMounted(refreshAll)
             <p class="detail-section-title">赛事终态核对：共 {{comboResolution.leg_count}} 腿 · 已按赛果判断 {{comboResolution.judged_legs}} 腿 · 已有市场终态 {{comboResolution.resolved_legs}} 腿</p>
             <div class="mini-card-grid">
               <div v-for="leg in comboResolution.legs" :key="leg.leg_no" class="mini-card">
-                <div class="mini-card-head"><strong>腿 {{leg.leg_no}} · {{leg.home}} 对 {{leg.away}}</strong><span class="mini-tag" :class="legTone(leg)">{{legWinner(leg.result_won,'无法判断')}}</span></div>
+                <div class="mini-card-head"><strong>腿 {{leg.leg_no}} · {{leg.home}} 对 {{leg.away}}</strong><span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span><span v-else class="mini-tag mini-tag-neutral">无法判断</span></div>
                 <p class="mini-card-meta">{{leg.market_question}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span></p>
                 <div class="detail-rows">
                   <div class="detail-row"><span class="detail-label">赛事终态：</span><template v-if="leg.score_verified">比赛已结束，外部赛果已核实 {{leg.home_score}} : {{leg.away_score}}</template><template v-else>比赛尚未确认结束或外部赛果未核实（{{leg.game_status}}）</template></div>

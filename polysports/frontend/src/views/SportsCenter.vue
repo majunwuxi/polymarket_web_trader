@@ -11,6 +11,8 @@ const lastSync=ref<{status:string;error_code:string|null;started_at:string|null;
 const mappingBusy=ref(false)
 const detail=ref<Record<string,any>|null>(null), editor=ref<Team|null>(null), chinese=ref(''), alias=ref(''), selectedRange=ref('upcoming')
 const detailDialog=ref<HTMLDialogElement|null>(null), liveData=ref<any>(null), liveError=ref(''), liveLoading=ref(false), binding=ref<any>(null)
+const bindingSummary=ref<any>(null),bindingSummaryLoading=ref(false),bindingSummaryError=ref(''),bindingActionError=ref(''),bindingBusy=ref<string|null>(null)
+let summaryRequest=0
 const matchSingle=ref<any[]>([]),matchCombo=ref<any[]>([]),singleCursor=ref<string|null>(null),comboCursor=ref<string|null>(null)
 const singleError=ref(''),comboError=ref(''),singleLoading=ref(false),comboLoading=ref(false)
 const marketGroups=computed(()=>{const defs=[{type:'moneyline',football:'全场胜平负',nba:'胜负'},{type:'spreads',football:'全场让球',nba:'让分'},{type:'totals',football:'全场总进球大小',nba:'总分大小'}];return defs.map(def=>({...def,label:sport()==='football'?def.football:def.nba,events:(liveData.value?.events||[]).map((event:any)=>({...event,markets:event.markets.filter((market:any)=>market.type===def.type)})).filter((event:any)=>event.markets.length)}))})
@@ -39,6 +41,28 @@ async function load(append=false) {
     games.value=append?[...games.value,...result.items]:result.items; next.value=result.next_cursor
   } catch { message.value='赛事加载失败，请检查服务状态。'; if(!append) games.value=[] }
   finally { loading.value=false }
+}
+async function loadBindingSummary(){
+  const request=++summaryRequest
+  if(sport()!=='football'){bindingSummary.value=null;bindingSummaryError.value='';bindingActionError.value='';bindingSummaryLoading.value=false;return}
+  bindingSummaryLoading.value=true;bindingSummaryError.value='';bindingActionError.value=''
+  try{
+    const data=await api('/result-bindings/summary?sport=football&limit=20')
+    if(!data||!data.totals||!Array.isArray(data.items))throw new Error('invalid summary')
+    if(request===summaryRequest)bindingSummary.value=data
+  }catch{if(request===summaryRequest){bindingSummary.value=null;bindingSummaryError.value='赛果绑定统计加载失败。'}}
+  finally{if(request===summaryRequest)bindingSummaryLoading.value=false}
+}
+async function confirmSummaryBinding(item:any,candidate:any){
+  if(bindingBusy.value)return
+  const key=item.game_id+':'+candidate.id;bindingBusy.value=key;bindingActionError.value=''
+  try{
+    await api('/games/'+item.game_id+'/result-binding/confirm',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({fixture_id:candidate.id})})
+    const text='已绑定 '+item.home+' 对 '+item.away+'：'+candidate.home+' 对 '+candidate.away
+    await Promise.all([loadBindingSummary(),load()])
+    message.value=text
+  }catch(e){bindingActionError.value=e instanceof Error?e.message:'确认绑定失败，请刷新后重试。'}
+  finally{bindingBusy.value=null}
 }
 async function followGame(game:Game) {
   try {
@@ -107,7 +131,7 @@ async function saveTeam() {
   } catch {message.value='球队资料保存失败，译名可能已保存；请刷新后核对。'}
 }
 async function signOut() {try {await logout(); await router.replace('/login')} catch(e) {if(e instanceof ApiError && e.status===401) {clearSession(); await router.replace('/login')} else message.value='退出请求未确认，请重试。'}}
-watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRange.value='upcoming';load()},{immediate:true})
+watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRange.value='upcoming';load();loadBindingSummary()},{immediate:true})
 
 </script>
 <template>
@@ -116,7 +140,38 @@ watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRan
   <aside id="primary-nav" class="sidebar" :class="{open:menuOpen}"><div class="brand sidebar-brand"><span class="brand-mark">P</span> PolySports</div><p class="nav-label">工作台</p><nav aria-label="主导航"><RouterLink to="/">总览</RouterLink><RouterLink to="/sports/football">足球赛事</RouterLink><RouterLink to="/sports/nba">NBA 赛事</RouterLink><RouterLink to="/combos">组合交易</RouterLink><RouterLink to="/orders">交易记录</RouterLink><RouterLink to="/history">历史与导出</RouterLink><RouterLink to="/wallets">钱包状态</RouterLink><RouterLink to="/system">系统管理</RouterLink></nav></aside>
   <main class="workspace"><div class="workspace-top"><span class="breadcrumb">工作台 / {{title()}}</span><div class="account"><span>{{session.username}}</span><button class="text-button" @click="signOut">退出</button></div></div>
     <div class="page-heading"><div><p class="eyebrow">MATCH CENTER · UTC+8</p><h1>{{title()}}</h1><p class="muted">时间显示为北京时间；赛事由配置的数据源提供。</p></div></div>
-    <div class="game-tools"><label for="range">赛事范围</label><select id="range" v-model="selectedRange" @change="load()"><option value="upcoming">{{sport()==='football'?'过去 2 小时 30 分至未来 36 小时':'过去 3 小时至未来 36 小时'}}</option><option value="history">历史赛事</option></select><button class="text-button" @click="load()">刷新</button></div>
+    <section v-if="sport()==='football'" class="welcome-card binding-summary" aria-label="足球赛果绑定状态">
+  <div class="binding-summary-head"><div><p class="eyebrow">RESULT BINDING</p><h2>足球赛果绑定状态</h2></div><button class="text-button" :disabled="bindingSummaryLoading" @click="loadBindingSummary">刷新绑定状态</button></div>
+  <p v-if="bindingSummaryLoading" role="status">正在加载赛果绑定状态…</p>
+  <p v-else-if="bindingSummaryError" role="alert" class="form-message">{{bindingSummaryError}}</p>
+  <template v-else-if="bindingSummary">
+    <div class="info-grid binding-metrics">
+      <div><span>未绑定</span><strong>{{bindingSummary.totals.unbound}}</strong></div>
+      <div><span>待确认</span><strong>{{bindingSummary.totals.needs_review}}</strong></div>
+      <div><span>自动匹配中</span><strong>{{bindingSummary.totals.pending}}</strong></div>
+      <div><span>已绑定</span><strong>{{bindingSummary.totals.bound}}</strong></div>
+    </div>
+    <p class="muted">未绑定包含“待确认”和“自动匹配中”。后台会自动查询 API-FOOTBALL，找到候选后进入待确认。</p>
+    <p v-if="bindingActionError" role="alert" class="form-message">{{bindingActionError}}</p>
+    <p v-if="!bindingSummary.totals.total" class="muted">暂无需要绑定赛果的足球赛事。</p>
+    <div v-else-if="bindingSummary.items.length" class="binding-queue">
+      <article v-for="item in bindingSummary.items" :key="item.game_id" class="binding-row">
+        <div class="binding-row-head"><strong>{{item.home}} 对 {{item.away}}</strong><span>{{item.league || '联赛未知'}} · {{dateFormat(item.starts_at)}} UTC+8</span></div>
+        <p class="muted">Polymarket 来源 ID：{{item.external_id}} · 状态：待确认</p>
+        <div class="binding-candidates">
+          <div v-for="candidate in item.candidates" :key="candidate.id" class="binding-candidate">
+            <span>{{candidate.home}} 对 {{candidate.away}} · {{dateFormat(candidate.starts_at)}} UTC+8 · {{candidate.league || '联赛未知'}}</span>
+            <button class="text-button" :disabled="!!bindingBusy" @click="confirmSummaryBinding(item,candidate)">{{bindingBusy===item.game_id+':'+candidate.id?'绑定中…':'确认绑定'}}</button>
+          </div>
+        </div>
+      </article>
+    </div>
+    <p v-else-if="bindingSummary.totals.pending" class="muted">等待后台自动匹配候选，完成后会出现在这里。</p>
+    <p v-else class="muted">当前没有待确认的赛果候选。</p>
+    <p v-if="bindingSummary.has_more" class="muted">仅显示前 20 条待确认赛事，处理后刷新可查看其余记录。</p>
+  </template>
+</section>
+<div class="game-tools"><label for="range">赛事范围</label><select id="range" v-model="selectedRange" @change="load()"><option value="upcoming">{{sport()==='football'?'过去 2 小时 30 分至未来 36 小时':'过去 3 小时至未来 36 小时'}}</option><option value="history">历史赛事</option></select><button class="text-button" @click="load()">刷新</button></div>
     <p class="muted" v-if="lastSync">{{lastSync.started_at ? '最近同步' : '计划同步'}}：{{dateFormat(lastSync.started_at || lastSync.scheduled_for)}} UTC+8 · {{lastSync.status === 'succeeded' ? '成功' : lastSync.status === 'failed' ? '失败' : lastSync.status === 'queued' ? '排队中' : lastSync.status === 'running' ? '进行中' : '未知'}}<span v-if="lastSync.error_code">（{{lastSync.error_code}}）</span></p><p class="muted" v-else>尚无同步记录。</p><p v-if="!detail" role="status" class="form-message">{{message}}</p><p v-if="loading && !games.length">正在加载…</p><p v-else-if="!games.length && !message" class="muted">暂无已保存赛事。若尚未同步，请先配置数据源并运行同步命令。</p>
     <div class="games-list"><article v-for="game in games" :key="game.id" class="game-card"><div class="game-meta">{{game.league?.name || (sport()==='nba'?'NBA':'足球')}} · {{game.provider==='polymarket'?(sport()==='football'?'Polymarket 胜平负 · ':'Polymarket NBA · ')+bindingName(game.result_binding_state)+' · ':''}} {{dateFormat(game.starts_at)}} UTC+8 · {{statusName(game.status)}}</div><div class="matchup"><div v-for="team in [game.home_team,game.away_team]" :key="team.id" class="team"><img v-if="team.logo_url" :src="team.logo_url" alt="" @error="team.logo_url=null"><span v-else class="logo-placeholder">队徽待补充</span><strong>{{name(team)}}</strong><small v-if="sport()==='nba' && team.name_zh">{{team.source_name}}</small><small v-if="!team.name_zh">中文名待补充</small><small v-else-if="team.name_zh_source==='sportsmatch'">球队目录参考名，待核对</small><button class="text-button" @click="edit(team)">维护球队</button></div></div><p v-if="game.has_matched_order" class="game-filled">● 已成交</p><p v-if="game.home_score!==null && game.away_score!==null">{{game.home_score}} : {{game.away_score}}</p><button class="text-button" @click="showDetail(game)">查看详情</button><button v-if="game.provider!=='polymarket'" class="text-button" @click="followGame(game)">关注赛事</button><span v-else-if="!game.result_binding_state">确认订单后开始绑定赛果</span></article></div>
     <button v-if="next" class="primary more" :disabled="loading" @click="load(true)">加载更多</button>

@@ -81,7 +81,7 @@ def test_unauthenticated_history_and_exports_are_rejected(pg):
     from backend.main import create_app
     # 隔离数据库；拒绝认证发生在导出查询之前。
     with TestClient(create_app(),base_url='https://example.test',raise_server_exceptions=False) as client:
-        for path in ('/api/v1/history/games','/api/v1/statistics','/api/v1/exports/trades.xlsx'):
+        for path in ('/api/v1/history/games','/api/v1/statistics','/api/v1/result-bindings/summary','/api/v1/exports/trades.xlsx'):
             assert client.get(path).status_code==401
 
 

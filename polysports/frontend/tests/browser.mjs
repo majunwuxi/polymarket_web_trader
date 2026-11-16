@@ -52,6 +52,7 @@ try {
       if (endpoint === 'worker-status') return route.fulfill({status:200,json:{data:{workers:[]}}})
       if (endpoint === 'watch') return route.fulfill({status:200,json:{data:{state:'active'}}})
       if (endpoint === 'sync-runs') return route.fulfill({status:200,json:{data:{items:[]}}})
+      if (endpoint === 'summary' && url.pathname.includes('/result-bindings/')) return route.fulfill({status:200,json:{data:{sport:'football',as_of:'2026-01-01T00:00:00Z',totals:{total:0,bound:0,pending:0,needs_review:0,unbound:0,ready_to_confirm:0},items:[],has_more:false}}})
       if (endpoint === 'games') {
         const team = (id, name) => ({ id, source_name:name, name_zh:null, translation_status:'missing', logo_url:null })
         const game = { id:'mock-game', starts_at:'2026-01-01T18:00:00Z', status:'scheduled', home_team:team('mock-home','Mock Home'), away_team:team('mock-away','Mock Away'), home_score:null, away_score:null, league:null, last_synced_at:null }
@@ -79,6 +80,7 @@ try {
     }
     await page.getByRole('link', { name: '足球赛事' }).click()
     await page.getByRole('heading', { name: '足球赛事中心' }).waitFor()
+    await page.getByRole('heading', { name: '足球赛果绑定状态' }).waitFor()
     await page.getByText('Mock Home').waitFor()
     assert.equal(await page.getByText('中文名待补充').count(), 2)
     assert.equal(await page.getByText('队徽待补充').count(), 2)

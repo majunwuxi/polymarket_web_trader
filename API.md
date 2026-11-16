@@ -165,6 +165,14 @@
 - `POLYSPORTS_REDEEM_EXECUTION_ENABLED` 默认 `false`；关闭时资格查询仍返回 `execution_enabled:false`，赎回端点返回 `503 REDEEM_DISABLED`。
 - `payout`/`credited_amount` 优先由赎回前后 `collateral_balance` 差值给出；无法可靠读取任一余额时为 `null`，不根据订单份额伪造到账金额。
 
+### 5.1.4 足球赛果绑定汇总
+
+| 方法与路径 | 请求 | 成功响应 | 业务规则 |
+| --- | --- | --- | --- |
+| `GET /result-bindings/summary` | `sport`（默认 `football`，可选 `nba`）、`limit`（1–20，默认 20） | `200`：`{ "sport", "as_of", "totals": { "total", "bound", "pending", "needs_review", "unbound", "ready_to_confirm" }, "items": [...], "has_more" }` | 只统计 `games.provider='polymarket'` 且存在 `result_binding_requests` 的赛事；`unbound = pending + needs_review`。`items` 仅包含 `needs_review`，按开赛时间升序，附主客队、联赛、来源 ID、候选列表与 `can_quick_confirm`，供足球赛事中心直接确认；不访问 API-FOOTBALL |
+
+`pending` 表示后台仍在自动匹配候选，不能人工确认；`needs_review` 才显示候选与“确认绑定”。快速确认继续调用 `POST /games/{game_id}/result-binding/confirm`，候选必须仍存在于该赛事的 `candidates` 中。`limit` 只限制待确认列表，不改变 `totals` 的全量计数。
+
 ### 5.2 提交、查询和撤单
 
 `POST /single-orders` 要求 `Idempotency-Key: <UUID>`、会话和 CSRF。请求：

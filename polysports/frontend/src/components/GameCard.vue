@@ -5,12 +5,17 @@ import { gameBindingName, gameStatusName } from '../utils/labels'
 type Team = { id: string; source_name: string; name_zh: string | null; translation_status: string; name_zh_source?: string | null; logo_url: string | null }
 type Game = { id: string; provider: string; starts_at: string; status: string; home_team: Team; away_team: Team; home_score: number | null; away_score: number | null; league: { name: string } | null; last_synced_at: string | null; result_binding_state: string | null; has_matched_order: boolean }
 
-defineProps<{ game: Game; sport: string }>()
-const emit = defineEmits<{ detail: [game: Game]; follow: [game: Game] }>()
+defineProps<{ game: Game; sport: string; polyLoading?: boolean }>()
+const emit = defineEmits<{ detail: [game: Game]; follow: [game: Game]; poly: [game: Game] }>()
 
 const name = (team: Team) => team.name_zh || team.source_name
 const teamNameNote = (game: Game) => [game.home_team, game.away_team].some(team => !team.name_zh) ? '中文名待补充' : ''
 const scoreLabel = (game: Game) => game.status === 'finished' ? '全场比分' : game.status === 'live' ? '当前比分' : '比分'
+const googleSearchUrl = (game: Game) => {
+  const parts = [game.home_team.source_name, 'vs', game.away_team.source_name]
+  if (game.league?.name) parts.push(game.league.name)
+  return 'https://www.google.com/search?q=' + encodeURIComponent(parts.join(' '))
+}
 </script>
 
 <template>
@@ -36,6 +41,8 @@ const scoreLabel = (game: Game) => game.status === 'finished' ? '全场比分' :
     <div class="game-actions">
       <button class="text-button" @click="emit('detail', game)">查看详情</button>
       <button v-if="game.provider !== 'polymarket'" class="text-button" @click="emit('follow', game)">关注赛事</button>
+      <button class="text-button" :disabled="polyLoading" @click="emit('poly', game)">在 Polymarket 查看 ↗</button>
+      <a class="text-button" :href="googleSearchUrl(game)" target="_blank" rel="noopener noreferrer">Google 搜索 ↗</a>
     </div>
   </article>
 </template>

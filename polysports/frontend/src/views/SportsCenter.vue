@@ -84,6 +84,23 @@ async function followGame(game:Game) {
   } catch(e) { message.value=e instanceof Error?e.message:'关注失败，请检查服务状态。' }
 }
 function closeDetail(){detailRequest++;detailDialog.value?.close();detail.value=null;liveData.value=null;binding.value=null;matchSingle.value=[];matchCombo.value=[]}
+const polySlugs=new Map<string,string>(),polyBusy=ref<string|null>(null)
+async function openPolymarket(game:Game){
+  if(polyBusy.value)return
+  polyBusy.value=game.id
+  try{
+    let slug=polySlugs.get(game.id)
+    if(!slug){
+      const data=await api('/games/'+game.id+'/live-markets')
+      const events=Array.isArray(data?.events)?data.events:[]
+      slug=events.map((event:any)=>event.slug).find((value:any)=>typeof value==='string'&&value)||null
+      if(slug)polySlugs.set(game.id,slug)
+    }
+    if(!slug){message.value='未找到本场比赛的 Polymarket 页面。';return}
+    window.open('https://polymarket.com/event/'+slug,'_blank','noopener,noreferrer')
+  }catch(e){message.value=e instanceof Error?e.message:'Polymarket 页面查询失败，请稍后重试。'}
+  finally{if(polyBusy.value===game.id)polyBusy.value=null}
+}
 async function loadMatchOrders(kind:'single'|'combo',gameId:string,request:number,append=false){
   const values=kind==='single'?matchSingle:matchCombo,cursor=kind==='single'?singleCursor:comboCursor,error=kind==='single'?singleError:comboError,busy=kind==='single'?singleLoading:comboLoading
   busy.value=true;error.value=''
@@ -158,7 +175,7 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
 <div class="game-tools"><label for="range">赛事范围</label><select id="range" v-model="selectedRange" @change="load()"><option value="upcoming">{{sport()==='football'?'过去 2 小时 30 分至未来 36 小时':'过去 3 小时至未来 36 小时'}}</option><option value="history">历史赛事</option></select><button class="text-button" @click="load()">刷新</button></div>
     <p class="muted" v-if="lastSync">{{lastSync.started_at ? '最近同步' : '计划同步'}}：{{formatDateTime(lastSync.started_at || lastSync.scheduled_for)}} UTC+8 · {{lastSync.status === 'succeeded' ? '成功' : lastSync.status === 'failed' ? '失败' : lastSync.status === 'queued' ? '排队中' : lastSync.status === 'running' ? '进行中' : '未知'}}<span v-if="lastSync.error_code">（{{lastSync.error_code}}）</span></p><p class="muted" v-else>尚无同步记录。</p><p v-if="!detail" role="status" class="form-message">{{message}}</p><p v-if="loading && !games.length">正在加载…</p><p v-else-if="!games.length && !message" class="muted">暂无已保存赛事。若尚未同步，请先配置数据源并运行同步命令。</p>
     <div class="games-list">
-      <GameCard v-for="game in games" :key="game.id" :game="game" :sport="sport()" @detail="showDetail" @follow="followGame" />
+      <GameCard v-for="game in games" :key="game.id" :game="game" :sport="sport()" :poly-loading="polyBusy===game.id" @detail="showDetail" @follow="followGame" @poly="openPolymarket" />
     </div>
     <button v-if="next" class="primary more" :disabled="loading" @click="load(true)">加载更多</button>
     <dialog ref="detailDialog" class="game-dialog" aria-labelledby="game-dialog-title" @close="closeDetail">

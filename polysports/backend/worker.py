@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import signal
 import threading
+import time
 import uuid
 from datetime import timedelta
 
@@ -19,6 +20,9 @@ from .sports_sync import upsert_game, apply_polymarket_scan
 from .trading_gateway import TradingError
 
 log=logging.getLogger('polysports.worker')
+IDLE_SECONDS=15
+HEARTBEAT_SECONDS=15
+SCHEDULE_SECONDS=60
 
 
 class LeaseLost(Exception):
@@ -174,18 +178,24 @@ def main():
     settings=get_settings(); engine=make_engine(settings); worker_id=uuid.uuid4(); stopping=threading.Event()
     def stop(*_): stopping.set()
     signal.signal(signal.SIGINT,stop); signal.signal(signal.SIGTERM,stop)
+    last_heartbeat=last_schedule=-float('inf')
+    client=httpx.Client()
     try:
         while not stopping.is_set():
             try:
-                heartbeat(engine,worker_id,'running'); ensure_scheduled(engine)
-                worked=process_one(engine,settings,str(worker_id))
+                now=time.monotonic()
+                if now-last_heartbeat>=HEARTBEAT_SECONDS:
+                    heartbeat(engine,worker_id,'running'); last_heartbeat=now
+                if now-last_schedule>=SCHEDULE_SECONDS:
+                    ensure_scheduled(engine); last_schedule=now
+                worked=process_one(engine,settings,str(worker_id),client=client)
                 from .result_binding import process_pending_binding
-                with httpx.Client() as client:
-                    bound=process_pending_binding(engine,settings,client)
-                if not worked and not bound: stopping.wait(5)
+                bound=process_pending_binding(engine,settings,client)
+                if not worked and not bound: stopping.wait(IDLE_SECONDS)
             except Exception as exc:
                 log.error('worker_iteration_failed type=%s',type(exc).__name__); stopping.wait(5)
     finally:
+        client.close()
         try: heartbeat(engine,worker_id,'stopping')
         finally: engine.dispose()
 

@@ -240,6 +240,7 @@ COMBO_ERROR_TEXT = {
     'no_quote': '本次没有收到报价，未成交',
     'quote_expired': '报价已过期，未成交',
     'reconcile_stale': '组合对账已停止自动重试，请到 Polymarket 核对后重新安排对账',
+    'rfq_not_found': '上游已找不到该组合 RFQ，请到 Polymarket 核对持仓和成交记录',
 }
 
 

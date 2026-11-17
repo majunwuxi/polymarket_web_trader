@@ -1,5 +1,6 @@
 from datetime import timedelta
 import uuid
+from polymarket import RequestRejectedError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .combo_gateway import ComboGateway
@@ -20,9 +21,13 @@ def fetch_combo(engine,ident,settings,gateway_cls=ComboGateway):
         wallet=wallet_for(settings,row.wallet_id)
         if wallet.wallet_address!=row.wallet_address:raise TradingError('wallet_mismatch','钱包已变化')
         external=row.external_rfq_id; mode=row.gateway_mode
-    if gateway_cls is ComboGateway:
-        with gateway_cls(settings,wallet,mode=mode) as gateway:return gateway.client.fetch_rfq_status(rfq_id=external)
-    with gateway_cls(settings,wallet) as gateway:return gateway.client.fetch_rfq_status(rfq_id=external)
+    try:
+        if gateway_cls is ComboGateway:
+            with gateway_cls(settings,wallet,mode=mode) as gateway:return gateway.client.fetch_rfq_status(rfq_id=external)
+        with gateway_cls(settings,wallet) as gateway:return gateway.client.fetch_rfq_status(rfq_id=external)
+    except RequestRejectedError as exc:
+        if exc.status==404: raise TradingError('rfq_not_found','上游已找不到该组合 RFQ，请到 Polymarket 核对持仓和成交记录') from exc
+        raise
 
 
 def apply_combo(db,job,payload,error=None):
@@ -56,7 +61,15 @@ def apply_combo(db,job,payload,error=None):
                 from .combo_fills import confirm_combo_fill
                 confirm_combo_fill(db,row,now)
     if error:
-        retry_or_fail(db,job,now,error,timedelta(minutes=2))
+        if error=='rfq_not_found':
+            if row.state not in ('confirmed','failed','expired','rejected'):
+                row.state='unknown';row.error_code='rfq_not_found';row.updated_at=now
+                db.add(ComboEvent(id=uuid.uuid4(),rfq_id=row.id,state='unknown',code='rfq_not_found'))
+            finish_attempt(db,job,now,'failed',error)
+            job.status='failed';job.last_error_code=error
+            job.last_error_summary='上游已找不到该组合 RFQ，已停止自动重试'
+        else:
+            retry_or_fail(db,job,now,error,timedelta(minutes=2))
     elif row.state in ('confirmed','failed','expired','rejected'):
         finish_attempt(db,job,now,'succeeded');job.status='done'
     else:

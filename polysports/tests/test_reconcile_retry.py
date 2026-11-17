@@ -55,6 +55,30 @@ def test_nonterminal_success_can_preserve_pending_streak():
     assert row.failure_count == 4
 
 
+def test_combo_rfq_not_found_stops_without_retry():
+    class SequenceDb:
+        def __init__(self, *values):
+            self.values = iter(values)
+            self.added = []
+
+        def scalar(self, query):
+            return next(self.values)
+
+        def add(self, value):
+            self.added.append(value)
+
+    now = datetime.now(timezone.utc)
+    combo = S(id=uuid.uuid4(), state='executing', external_rfq_id='ext', quote_expires_at=None)
+    row = job()
+    row.combo_rfq_id = combo.id
+    db = SequenceDb(combo, now, attempt())
+    apply_combo(db, row, None, error='rfq_not_found')
+    assert row.status == 'failed'
+    assert row.last_error_code == 'rfq_not_found'
+    assert combo.state == 'unknown' and combo.error_code == 'rfq_not_found'
+    assert db.added and db.added[-1].state == 'unknown'
+
+
 def test_combo_matched_status_stays_executing():
     class SequenceDb:
         def __init__(self, *values):

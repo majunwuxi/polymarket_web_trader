@@ -277,8 +277,10 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
                                  source='signed_order',state='pending'))
             if job.status=='pending':job.due_at=now+timedelta(seconds=90)
         with _quote_lock:_quotes.pop(ident,None)
+        accept_hash=None
         try:
             result=accept_once(gateway.client,quote)
+            accept_hash=str(result.taker_order_hash) if getattr(result,'taker_order_hash',None) else None
             state='executing' if result.status=='executing' and str(result.rfq_id)==external_id else 'rejected' if result.status=='failed' and str(result.rfq_id)==external_id else 'unknown'
             code=None if state=='executing' else rfq_failure_code(result) if state=='rejected' else 'accept_unknown'
         except Exception:state='unknown';code='accept_unknown'
@@ -286,6 +288,7 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
             job=tx.scalar(select(Job).where(Job.combo_rfq_id==ident).with_for_update())
             row=tx.scalar(select(ComboRFQ).where(ComboRFQ.id==ident).with_for_update())
             if row.state=='accepting':
+                if accept_hash:row.accept_order_hash=accept_hash
                 record(tx,row,state,code)
                 # 上游明确拒绝（非结果未知）时，同步作废接受阶段预写的待确认明细，
                 # 不留孤儿 pending 记录；结果未知必须保留给后台对账判定。

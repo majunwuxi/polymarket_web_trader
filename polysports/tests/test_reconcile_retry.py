@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from types import SimpleNamespace as S
 import uuid
 
-from backend.combo_reconcile import MAX_COMBO_PENDING_CHECKS, apply_combo
+from backend import combo_reconcile, result_binding
+from backend.combo_reconcile import MAX_COMBO_PENDING_CHECKS, _confirm_from_chain, apply_combo
 from backend.scheduler import MAX_CONSECUTIVE_FAILURES, finish_attempt, retry_or_fail
 
 
@@ -53,6 +55,39 @@ def test_nonterminal_success_can_preserve_pending_streak():
     row = job(failures=4)
     finish_attempt(Db(attempt()), row, datetime.now(timezone.utc), 'succeeded', reset_failures=False)
     assert row.failure_count == 4
+
+
+def test_combo_rfq_404_confirms_from_onchain_balance(monkeypatch):
+    class Db:
+        def __init__(self, fill, attempt):
+            self.values = iter([fill, fill, attempt])
+            self.added = []
+
+        def scalar(self, query):
+            return next(self.values)
+
+        def scalars(self, query):
+            return [uuid.uuid4(), uuid.uuid4()]
+
+        def add(self, value):
+            self.added.append(value)
+
+    now = datetime.now(timezone.utc)
+    row = S(id=uuid.uuid4(), state='executing', direction='BUY', combo_position_id='123456',
+            wallet_address='0x' + '1' * 40, error_code=None, updated_at=None, tx_hash=None)
+    fill = S(state='pending', size=Decimal('2'), tx_hash=None, confirmed_at=None)
+    job_row = job()
+    job_row.combo_rfq_id = row.id
+    db = Db(fill, attempt())
+    bound = []
+    monkeypatch.setattr(combo_reconcile, 'combo_position_balance', lambda *args: Decimal('2'))
+    monkeypatch.setattr(result_binding, 'request_binding_for_accepted_order', lambda db, game_id: bound.append(game_id))
+    assert _confirm_from_chain(db, row, job_row, S(polygon_rpc_url=object()), now)
+    assert row.state == 'confirmed'
+    assert fill.state == 'confirmed' and fill.confirmed_at == now
+    assert job_row.status == 'done' and job_row.failure_count == 0
+    assert db.added[-1].state == 'confirmed'
+    assert len(bound) == 2
 
 
 def test_combo_rfq_not_found_stops_without_retry():

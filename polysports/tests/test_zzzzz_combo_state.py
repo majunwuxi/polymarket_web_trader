@@ -60,12 +60,14 @@ def test_quote_idempotency_and_accept_once(sample,monkeypatch):
     with Session(engine) as db:
         row=db.get(ComboRFQ,ident);qid=row.quote_id
         assert row.state=='quoted' and db.scalar(select(Job).where(Job.combo_rfq_id==ident))
-    calls=[]
-    monkeypatch.setattr(combo_service,'accept_once',lambda client,quote:(calls.append(1) or S(status='executing',rfq_id='mock-rfq')))
+    calls=[];order_hash='0x'+'a'*64
+    monkeypatch.setattr(combo_service,'accept_once',lambda client,quote:(calls.append(1) or S(status='executing',rfq_id='mock-rfq',taker_order_hash=order_hash)))
     combo_service.accept_quote(engine,settings,ident,qid,gateway_cls=FakeGateway,catalog=catalog)
     combo_service.accept_quote(engine,settings,ident,qid,gateway_cls=FakeGateway,catalog=catalog)
     assert len(calls)==1
-    with Session(engine) as db:assert db.get(ComboRFQ,ident).state=='executing'
+    with Session(engine) as db:
+        row=db.get(ComboRFQ,ident)
+        assert row.state=='executing' and row.accept_order_hash==order_hash
 
 
 def test_timeout_stays_unknown_and_cannot_bypass_by_new_key(sample,monkeypatch):

@@ -173,7 +173,7 @@ def combo_data(db,row,fill=_MISSING,prefetch=None):
     fill_data=fill_payload(fill)
     pnl=combo_pnl(direction=row.direction,by_score=score_summary['by_score'],
                   quantity=row.quantity,quote=quote,fill=fill_data)
-    return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'error_text':combo_error_text(row.error_code),'tx_hash':row.tx_hash,'parent_combo_id':str(row.parent_combo_id) if row.parent_combo_id else None,'combo_position_id':row.combo_position_id,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details,
+    return {'id':str(row.id),'wallet_id':str(row.wallet_id),'wallet_address':row.wallet_address,'direction':row.direction,'quantity':str(row.quantity),'state':row.state,'external_rfq_id':row.external_rfq_id,'error_code':row.error_code,'error_text':combo_error_text(row.error_code),'tx_hash':row.tx_hash,'accept_order_hash':row.accept_order_hash,'parent_combo_id':str(row.parent_combo_id) if row.parent_combo_id else None,'combo_position_id':row.combo_position_id,'created_at':row.created_at.isoformat(),'updated_at':row.updated_at.isoformat(),'legs':details,
             'by_score':score_summary['by_score'],'judged_legs':score_summary['judged_legs'],
             'leg_count':score_summary['leg_count'],'score_reason':score_summary['reason'],
             'close_blocked':close_reason is not None,'close_block_reason':close_reason,

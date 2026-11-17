@@ -13,6 +13,31 @@ from .trading_gateway import Gateway, TradingError
 POSITION_MANAGER='0x006F54F7f9A22e0000CC2AB60031000000ae9fEF'
 
 
+def combo_position_balance(settings,wallet_address,position_id,web3_cls=None):
+    """Read the wallet's on-chain balance for one combo position."""
+    from web3 import Web3
+    if not settings or not getattr(settings,'polygon_rpc_url',None):
+        raise TradingError('position_unavailable','未配置 Polygon RPC，无法核对组合持仓')
+    if not isinstance(wallet_address,str) or not re.fullmatch(r'0x[0-9a-fA-F]{40}',wallet_address):
+        raise TradingError('position_unavailable','组合钱包地址无效')
+    try: position=int(str(position_id))
+    except (TypeError,ValueError): raise TradingError('position_unavailable','组合持仓标识无效')
+    try:
+        cls=web3_cls or Web3
+        url=settings.polygon_rpc_url.get_secret_value()
+        w3=cls(cls.HTTPProvider(url,request_kwargs={'timeout':10}))
+        if w3.eth.chain_id!=137:raise ValueError('wrong chain')
+        abi=[{'type':'function','name':'balanceOf','stateMutability':'view','inputs':[{'name':'account','type':'address'},{'name':'id','type':'uint256'}],'outputs':[{'type':'uint256'}]}]
+        contract=w3.eth.contract(address=cls.to_checksum_address(POSITION_MANAGER),abi=abi)
+        raw=contract.functions.balanceOf(cls.to_checksum_address(wallet_address),position).call()
+        if type(raw) is not int or raw<0:raise ValueError('invalid balance')
+        with localcontext() as context:
+            context.prec=90
+            return Decimal(raw)/Decimal(10**6)
+    except TradingError:raise
+    except Exception as exc:raise TradingError('position_unavailable','无法核实组合持仓余额') from exc
+
+
 def market_close_quote(bids,shares,tick_size,min_order_size):
     """按降序买盘累计深度，给出能一次卖出全部份额的市价（FOK 限价）和保守预计收入。
 

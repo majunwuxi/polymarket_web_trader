@@ -78,7 +78,7 @@ def fetch_work(engine,job_id,token,settings,client):
     return games,pages,received
 
 
-def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_after_seconds: int=0) -> bool:
+def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_after_seconds: int=0,settings=None) -> bool:
     try:
         with Session(engine) as db, db.begin():
             job=locked_valid_job(db,job_id,token)
@@ -101,7 +101,7 @@ def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_aft
                     finish_attempt(db,job,now,'succeeded'); job.status='done'
             elif job.kind=='combo_reconcile':
                 from .combo_reconcile import apply_combo
-                apply_combo(db,job,payload,error)
+                apply_combo(db,job,payload,error,settings=settings)
             elif job.kind=='trade_reconcile':
                 from .trade_reconcile import apply_reconciliation
                 apply_reconciliation(db,job,payload,error)
@@ -168,14 +168,14 @@ def process_one(engine,settings,owner,client=None,lease_seconds=120) -> bool:
     try:
         try:
             payload=fetch_work(engine,job_id,token,settings,source_client)
-            apply_work(engine,job_id,token,payload)
+            apply_work(engine,job_id,token,payload,settings=settings)
         except (SourceError,TradingError) as exc:
-            apply_work(engine,job_id,token,error=exc.code,retry_after_seconds=getattr(exc,'retry_after_seconds',0))
+            apply_work(engine,job_id,token,error=exc.code,retry_after_seconds=getattr(exc,'retry_after_seconds',0),settings=settings)
         except LeaseLost:
             pass
         except Exception as exc:
             log.exception('job_failed type=%s job_id=%s error=%s',type(exc).__name__,job_id,str(exc)[:300])
-            apply_work(engine,job_id,token,error='internal_error')
+            apply_work(engine,job_id,token,error='internal_error',settings=settings)
     finally:
         stop.set(); thread.join(timeout=5)
         if owned: source_client.close()

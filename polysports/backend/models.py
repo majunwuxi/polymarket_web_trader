@@ -416,6 +416,7 @@ class ComboRFQ(Base):
     quote_receive: Mapped[__import__('decimal').Decimal | None] = mapped_column(__import__('sqlalchemy').Numeric(38,18))
     error_code: Mapped[str | None] = mapped_column(String(80))
     tx_hash: Mapped[str | None] = mapped_column(String(255))
+    accept_order_hash: Mapped[str | None] = mapped_column(String(255))
     accept_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())

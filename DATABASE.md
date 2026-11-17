@@ -125,7 +125,7 @@ erDiagram
 | 字段 | 类型 / 约束 | 说明 |
 | --- | --- | --- |
 | `id` | uuid PK | 任务 ID |
-| `kind` | varchar(24) 必填 | `sync`, `result_poll`, `trade_reconcile`, `combo_reconcile`, `cleanup` |
+| `kind` | varchar(24) 必填 | `sync`, `result_poll`, `trade_reconcile`, `combo_reconcile`, `cleanup`, `combo_watchdog` |
 | `dedupe_key` | varchar(255) 必填，唯一 | 稳定业务去重键；每个定时同步按计划时间、每个赛果任务按关注 ID 区分 |
 | `watched_game_id` | uuid，可空，FK → `watched_games.id` | `result_poll` 必填，其他类型为空 |
 | `trade_intent_id` | uuid，可空，FK → `trade_intents.id` | `trade_reconcile` 必填，其他类型为空 |
@@ -141,7 +141,7 @@ erDiagram
 | `last_error_code`, `last_error_summary` | varchar(80), text 可空 | 脱敏错误；达到失败上限为 `retry_exhausted`，组合持续未终态上限为 `reconcile_stale` |
 | `created_at`, `updated_at` | timestamptz 必填 | 审计时间 |
 
-约束：`result_poll`、`trade_reconcile`、`combo_reconcile` 的目标外键互斥且分别必填；`sync` 不关联关注或交易意图，且必须关联一个同步运行；`cleanup` 不关联任何比赛、同步运行、订单或组合目标；其他任务不得设置 `sync_run_id`；`status='leased'` 当且仅当 `lease_owner`、`lease_until`、`lease_token` 均非空。索引：`(due_at, id) WHERE status='pending'`、`(lease_until, id) WHERE status='leased'`、`(due_at, id)`、`(watched_game_id)`、`(trade_intent_id)`；`UNIQUE(sync_run_id) WHERE sync_run_id IS NOT NULL`。同一关注赛事仅一条长期复用的常规轮询任务，`dedupe_key` 唯一保证不会重复排队。每日 UTC 04:00 后的 `cleanup` 任务按 `maintenance:cleanup:<UTC 日期>` 去重。
+约束：`result_poll`、`trade_reconcile`、`combo_reconcile` 的目标外键互斥且分别必填；`sync` 不关联关注或交易意图，且必须关联一个同步运行；`cleanup`、`combo_watchdog` 不关联任何比赛、同步运行、订单或组合目标；其他任务不得设置 `sync_run_id`；`status='leased'` 当且仅当 `lease_owner`、`lease_until`、`lease_token` 均非空。索引：`(due_at, id) WHERE status='pending'`、`(lease_until, id) WHERE status='leased'`、`(due_at, id)`、`(watched_game_id)`、`(trade_intent_id)`；`UNIQUE(sync_run_id) WHERE sync_run_id IS NOT NULL`。同一关注赛事仅一条长期复用的常规轮询任务，`dedupe_key` 唯一保证不会重复排队。每日 UTC 04:00 后的 `cleanup` 任务按 `maintenance:cleanup:<UTC 日期>` 去重；`combo_watchdog` 每 10 分钟按时间槽去重，每次最多扫描 20 笔创建 24 小时内、仍为 `executing`/`unknown` 且有待确认成交明细的组合，并按链上仓位余额尝试确认。
 
 `job_runs`：`id uuid PK`；`job_id uuid` 必填外键；`attempt_no integer` 必填；`lease_token uuid` 必填；`started_at timestamptz` 必填；`finished_at timestamptz` 可空；`result varchar(20)` 必填，`running`, `succeeded`, `failed`, `abandoned`；`error_code varchar(80)`, `error_summary text` 可空。唯一 `(job_id, attempt_no)`、索引 `(job_id, started_at DESC)`。日志保留每次尝试，不以新任务覆盖历史。
 

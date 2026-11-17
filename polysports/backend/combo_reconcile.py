@@ -1,13 +1,13 @@
 from datetime import timedelta
 import uuid
 from polymarket import RequestRejectedError
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 from .close_positions import combo_position_balance
 from .combo_gateway import ComboGateway
 from .combo_service import record, rfq_failure_code
-from .models import ComboRFQ, ComboLeg, ComboEvent, ComboFill
-from .scheduler import db_now, finish_attempt, retry_or_fail
+from .models import ComboRFQ, ComboLeg, ComboEvent, ComboFill, Job
+from .scheduler import MAX_CONSECUTIVE_FAILURES, db_now, finish_attempt, retry_or_fail
 from .trading import wallet_for
 from .trading_gateway import TradingError
 
@@ -47,9 +47,32 @@ def _confirm_from_chain(db,row,job,settings,now):
     from .result_binding import request_binding_for_accepted_order
     game_ids=set(db.scalars(select(ComboLeg.game_id).where(ComboLeg.rfq_id==row.id)))
     for game_id in sorted(game_ids,key=str): request_binding_for_accepted_order(db,game_id)
-    finish_attempt(db,job,now,'succeeded');job.status='done';job.failure_count=0
-    job.last_error_code=job.last_error_summary=None
+    if job is not None:
+        finish_attempt(db,job,now,'succeeded');job.status='done';job.failure_count=0
+        job.last_error_code=job.last_error_summary=None
     return True
+
+
+def run_combo_watchdog(db,settings,now,limit=20):
+    """Recheck on-chain balances for unresolved combos for up to 24 hours."""
+    pending=exists(select(ComboFill.id).where(ComboFill.rfq_id==ComboRFQ.id,ComboFill.state=='pending'))
+    rows=list(db.scalars(select(ComboRFQ).where(
+        ComboRFQ.state.in_(('executing','unknown')),
+        ComboRFQ.direction=='BUY',
+        ComboRFQ.combo_position_id.is_not(None),
+        ComboRFQ.created_at>=now-timedelta(hours=24),
+        pending,
+    ).order_by(ComboRFQ.updated_at,ComboRFQ.id).limit(limit).with_for_update(skip_locked=True)))
+    confirmed=0
+    for row in rows:
+        if not _confirm_from_chain(db,row,None,settings,now): continue
+        confirmed+=1
+        job=db.scalar(select(Job).where(Job.combo_rfq_id==row.id).with_for_update())
+        if job and job.status!='leased':
+            job.status='done';job.failure_count=0
+            job.last_error_code=job.last_error_summary=None
+            job.lease_owner=job.lease_until=job.lease_token=None
+    return {'scanned':len(rows),'confirmed':confirmed}
 
 
 def apply_combo(db,job,payload,error=None,settings=None):
@@ -92,7 +115,12 @@ def apply_combo(db,job,payload,error=None,settings=None):
             job.status='failed';job.last_error_code=error
             job.last_error_summary='上游已找不到该组合 RFQ，已停止自动重试'
         else:
+            next_failures=(job.failure_count or 0)+1
+            if next_failures>=MAX_CONSECUTIVE_FAILURES and _confirm_from_chain(db,row,job,settings,now): return
             retry_or_fail(db,job,now,error,timedelta(minutes=2))
+            if job.status=='failed' and row.state not in ('confirmed','failed','expired','rejected'):
+                row.state='unknown';row.error_code='reconcile_failed';row.updated_at=now
+                db.add(ComboEvent(id=uuid.uuid4(),rfq_id=row.id,state='unknown',code='reconcile_failed'))
     elif row.state in ('confirmed','failed','expired','rejected'):
         finish_attempt(db,job,now,'succeeded');job.status='done'
     else:

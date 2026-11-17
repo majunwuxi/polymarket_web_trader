@@ -207,7 +207,7 @@ def queue_sync(request: Request,body:ManualSync):
 
 
 @router.get('/jobs')
-def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','combo_reconcile','cleanup'] | None=None,status:Literal['pending','leased','done','cancelled','failed'] | None=None,game_id:uuid.UUID|None=None,start:datetime|None=Query(None,alias='from'),end:datetime|None=Query(None,alias='to'),limit:int=Query(100,ge=1,le=100),cursor:str|None=None):
+def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','combo_reconcile','cleanup','combo_watchdog'] | None=None,status:Literal['pending','leased','done','cancelled','failed'] | None=None,game_id:uuid.UUID|None=None,start:datetime|None=Query(None,alias='from'),end:datetime|None=Query(None,alias='to'),limit:int=Query(100,ge=1,le=100),cursor:str|None=None):
     now=datetime.now(timezone.utc)
     start=start or now-timedelta(hours=20);end=end or now+timedelta(hours=24)
     if start.tzinfo is None or end.tzinfo is None or end<=start:return auth.error(request,422,'VALIDATION_ERROR','时间范围无效')

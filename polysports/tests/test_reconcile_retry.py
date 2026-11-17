@@ -57,6 +57,47 @@ def test_nonterminal_success_can_preserve_pending_streak():
     assert row.failure_count == 4
 
 
+def test_combo_watchdog_confirms_pending_rows_and_closes_job(monkeypatch):
+    class Db:
+        def __init__(self, rows, job_row):
+            self.rows = rows
+            self.job_row = job_row
+
+        def scalars(self, query):
+            return self.rows
+
+        def scalar(self, query):
+            return self.job_row
+
+    now = datetime.now(timezone.utc)
+    rows = [S(id=uuid.uuid4(), updated_at=now), S(id=uuid.uuid4(), updated_at=now)]
+    job_row = job();job_row.status='pending'
+    db = Db(rows, job_row)
+    monkeypatch.setattr(combo_reconcile, '_confirm_from_chain', lambda db, row, job, settings, now: row is rows[0])
+    counts = combo_reconcile.run_combo_watchdog(db, S(polygon_rpc_url=object()), now)
+    assert counts == {'scanned': 2, 'confirmed': 1}
+    assert job_row.status == 'done' and job_row.failure_count == 0
+
+
+def test_combo_failure_cap_checks_chain_before_unknown(monkeypatch):
+    class Db:
+        def __init__(self, combo, now):
+            self.values = iter([combo, now])
+
+        def scalar(self, query):
+            return next(self.values)
+
+    now = datetime.now(timezone.utc)
+    combo = S(id=uuid.uuid4(), state='executing', direction='BUY')
+    row = job(failures=MAX_CONSECUTIVE_FAILURES - 1)
+    row.combo_rfq_id = combo.id
+    called = []
+    monkeypatch.setattr(combo_reconcile, '_confirm_from_chain', lambda *args: (called.append(1) or True))
+    combo_reconcile.apply_combo(Db(combo, now), row, None, error='internal_error', settings=S(polygon_rpc_url=object()))
+    assert called == [1]
+    assert row.status == 'leased'
+
+
 def test_combo_rfq_404_confirms_from_onchain_balance(monkeypatch):
     class Db:
         def __init__(self, fill, attempt):

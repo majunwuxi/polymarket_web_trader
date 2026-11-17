@@ -84,6 +84,11 @@ def ensure_scheduled(engine) -> None:
             due=now.replace(hour=4,minute=0,second=0,microsecond=0)
             if due<=now: due=now+timedelta(minutes=5)
             db.add(Job(id=uuid.uuid4(),kind='cleanup',dedupe_key=cleanup_key,due_at=due,status='pending'))
+        watchdog_slot=now.replace(minute=(now.minute//10)*10,second=0,microsecond=0)
+        watchdog_key='maintenance:combo-watchdog:'+watchdog_slot.isoformat()
+        if db.scalar(select(Job.id).where(Job.dedupe_key==watchdog_key)) is None:
+            # Keep a short delay so ordinary reconciliation jobs keep priority.
+            db.add(Job(id=uuid.uuid4(),kind='combo_watchdog',dedupe_key=watchdog_key,due_at=now+timedelta(minutes=10),status='pending'))
 
 
 def claim_next(engine, owner: str, lease_seconds: int = 120) -> tuple[uuid.UUID,uuid.UUID] | None:

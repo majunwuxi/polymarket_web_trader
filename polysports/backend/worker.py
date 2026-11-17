@@ -33,7 +33,7 @@ def fetch_work(engine,job_id,token,settings,client):
     with Session(engine) as db:
         job=db.get(Job,job_id)
         if not job or job.status!='leased' or job.lease_token!=token: raise LeaseLost()
-        if job.kind=='cleanup': return None
+        if job.kind in ('cleanup','combo_watchdog'): return None
         if job.kind=='sync':
             run=db.get(SyncRun,job.sync_run_id); provider=run.provider; start=run.window_start; sport=run.sport
         elif job.kind=='combo_reconcile':
@@ -113,6 +113,14 @@ def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_aft
                     counts=cleanup_expired(db)
                     finish_attempt(db,job,now,'succeeded');job.status='done'
                     log.info('maintenance_cleanup admin_sessions=%s auth_rate_limits=%s audit_events=%s',counts['admin_sessions'],counts['auth_rate_limits'],counts['audit_events'])
+            elif job.kind=='combo_watchdog':
+                if error:
+                    retry_or_fail(db,job,now,error,timedelta(minutes=5))
+                else:
+                    from .combo_reconcile import run_combo_watchdog
+                    counts=run_combo_watchdog(db,settings,now)
+                    finish_attempt(db,job,now,'succeeded');job.status='done'
+                    log.info('combo_watchdog scanned=%s confirmed=%s',counts['scanned'],counts['confirmed'])
             else:
                 watch=db.scalar(select(WatchedGame).where(WatchedGame.id==job.watched_game_id).with_for_update())
                 game=db.scalar(select(Game).where(Game.id==watch.game_id).with_for_update())

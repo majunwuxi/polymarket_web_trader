@@ -34,6 +34,32 @@ it('只显示本场单场订单和组合腿',async()=>{
   view.unmount()
 })
 
+it('完赛详情显示最终比分，本场订单使用卡片和胜负徽标',async()=>{
+  const finished={...game,status:'finished',home_score:120,away_score:136}
+  const single=(id:string,won:boolean|null)=>({id,side:'BUY',state:'filled',market_question:'Mock '+id,outcome_label:'Mock',limit_price:'0.5',size:'2',matched_size:'2',created_at:'2026-11-15T00:00:00Z',external_order_id:'0x'+id,result_won:won})
+  const combo={id:'combo',state:'confirmed',direction:'BUY',quantity:'2',created_at:'2026-11-15T00:00:00Z',external_rfq_id:'rfq',legs:[{game_id:'mock-game',outcome_id:'a',market_question:'本场胜负',outcome_label:'主队',result_won:true}]}
+  vi.stubGlobal('fetch',vi.fn((url:string)=>{
+    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[finished],next_cursor:null}))
+    if(url.includes('/sync-runs'))return Promise.resolve(json({items:[]}))
+    if(url.includes('/live-markets'))return Promise.resolve(json({events:[],observed_at:'2026-11-14T00:00:00Z'}))
+    if(url.includes('/result-binding'))return Promise.resolve(json(null))
+    if(url.includes('/trade-intents?'))return Promise.resolve(json({items:[single('win',true),single('loss',false)],next_cursor:null}))
+    if(url.includes('/combo-rfqs?'))return Promise.resolve(json({items:[combo],next_cursor:null}))
+    return Promise.resolve(json(finished))
+  }))
+  const view=mount(SportsCenter,{global:{plugins:[router]}});await flushPromises()
+  await view.findAll('button').find(button=>button.text()==='查看详情')!.trigger('click');await flushPromises()
+  const score=view.get('.summary-scoreboard')
+  expect(score.text()).toContain('全场比分')
+  expect(score.text()).toContain('120')
+  expect(score.text()).toContain('136')
+  expect(score.get('.score-winner').text()).toBe('136')
+  expect(view.findAll('.match-order-card')).toHaveLength(3)
+  expect(view.findAll('.result-badge.result-win').map(item=>item.text())).toContain('选项获胜')
+  expect(view.findAll('.result-badge.result-loss').map(item=>item.text())).toContain('选项失败')
+  view.unmount()
+})
+
 it('赛事详情不展示 spread 让分市场，大小分按盘口升序排列',async()=>{
   const live={events:[{id:'event-1',title:'Mock Event',slug:'mock-event',markets:[
     {id:'money',type:'moneyline',question:'Mock Home vs Mock Away',group:'胜负',closed:false,accepting_orders:true,outcomes:[{label:'Mock Home',price:'0.55'}]},

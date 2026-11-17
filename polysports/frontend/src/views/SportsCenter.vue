@@ -24,7 +24,8 @@ const title=()=>sport()==='football'?'足球赛事中心':'NBA 赛事中心'
 const dateFormat=(value:string)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value))
 const name=(team:Team)=>team.name_zh || team.source_name
 const teamNameNote=(game:Game)=>[game.home_team,game.away_team].some(team=>!team.name_zh)?'中文名待补充':''
-const scoreLabel=(game:Game)=>game.status==='finished'?'全场比分':game.status==='live'?'当前比分':'比分'
+const scoreLabel=(game:any)=>game.status==='finished'?'全场比分':game.status==='live'?'当前比分':'比分'
+const resultBadge=(won:any)=>won===true?{cls:'result-win',text:'选项获胜'}:won===false?{cls:'result-loss',text:'选项失败'}:null
 const bindingName=(state:string|null)=>({bound:'赛果已绑定',pending:'赛果匹配中',needs_review:'赛果待确认'} as Record<string,string>)[state || ''] || '赛果未绑定'
 const statusName=(status:string)=>({scheduled:'未开始',live:'进行中',finished:'已完赛',postponed:'已延期',cancelled:'已取消',interrupted:'已中断',unknown:'状态未知'} as Record<string,string>)[status] || '状态未知'
 const orderState=(state:string)=>({submitting:'提交中',pending:'已接受，待核对',partially_filled:'部分成交',filled:'全部成交',rejected:'已拒绝',cancelled:'已撤单',unknown:'结果未知'} as Record<string,string>)[state]||'状态未知'
@@ -229,7 +230,7 @@ watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRan
         <p v-if="message" role="status" class="form-message">{{message}}</p>
         <section class="match-summary" aria-label="比赛信息">
           <div class="summary-meta"><span>{{detail.league?.name || (sport()==='nba'?'NBA':'足球')}}</span><span>·</span><span>{{detail.starts_at ? dateFormat(detail.starts_at)+' UTC+8' : '开赛时间未知'}}</span><span class="summary-status">{{statusName(detail.status)}}</span></div>
-          <div v-if="detail.home_team && detail.away_team" class="summary-teams"><div class="summary-team"><img v-if="detail.home_team.logo_url" :src="detail.home_team.logo_url" alt=""><span v-else class="summary-logo">主</span><div><small>主队</small><strong>{{name(detail.home_team)}}</strong><button class="text-button team-maintain" @click="editFromDetail(detail.home_team)">维护名称</button></div></div><span class="summary-versus">VS</span><div class="summary-team away"><div><small>客队</small><strong>{{name(detail.away_team)}}</strong><button class="text-button team-maintain" @click="editFromDetail(detail.away_team)">维护名称</button></div><img v-if="detail.away_team.logo_url" :src="detail.away_team.logo_url" alt=""><span v-else class="summary-logo">客</span></div></div>
+          <div v-if="detail.home_team && detail.away_team" class="summary-teams"><div class="summary-team"><img v-if="detail.home_team.logo_url" :src="detail.home_team.logo_url" alt=""><span v-else class="summary-logo">主</span><div><small>主队</small><strong>{{name(detail.home_team)}}</strong><button class="text-button team-maintain" @click="editFromDetail(detail.home_team)">维护名称</button></div></div><div v-if="detail.home_score!==null && detail.away_score!==null" class="game-scoreboard summary-scoreboard" :aria-label="`${scoreLabel(detail)}：${name(detail.home_team)} ${detail.home_score} 比 ${detail.away_score} ${name(detail.away_team)}`"><span class="game-score-label">{{scoreLabel(detail)}}</span><div class="game-score-line"><strong :class="detail.home_score>detail.away_score?'score-winner':detail.home_score<detail.away_score?'score-loser':''">{{detail.home_score}}</strong><span class="game-score-sep">:</span><strong :class="detail.away_score>detail.home_score?'score-winner':detail.away_score<detail.home_score?'score-loser':''">{{detail.away_score}}</strong></div></div><span v-else class="summary-versus">VS</span><div class="summary-team away"><div><small>客队</small><strong>{{name(detail.away_team)}}</strong><button class="text-button team-maintain" @click="editFromDetail(detail.away_team)">维护名称</button></div><img v-if="detail.away_team.logo_url" :src="detail.away_team.logo_url" alt=""><span v-else class="summary-logo">客</span></div></div>
           <div class="summary-foot"><span>来源：{{detail.provider}} · 来源 ID：{{detail.external_id}}</span><span>最近同步：{{detail.last_synced_at ? dateFormat(detail.last_synced_at)+' UTC+8' : '未知'}}</span></div>
         </section>
         </div>
@@ -239,17 +240,17 @@ watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRan
           <p v-if="singleError" role="alert">{{singleError}} <button class="text-button" @click="loadMatchOrders('single',detail.id,detailRequest)">重试</button></p>
           <p v-if="comboError" role="alert">{{comboError}} <button class="text-button" @click="loadMatchOrders('combo',detail.id,detailRequest)">重试</button></p>
           <p v-if="!singleLoading && !comboLoading && !singleError && !comboError && !matchSingle.length && !matchCombo.length">暂无本场订单。</p>
-          <article v-for="order in matchSingle" :key="order.id" class="market-card">
-            <strong>单场{{order.side==='BUY'?'买入':'卖出'}} · {{orderState(order.state)}}</strong>
+          <article v-for="order in matchSingle" :key="order.id" class="match-order-card">
+            <strong>单场{{order.side==='BUY'?'买入':'卖出'}} · {{orderState(order.state)}}<span v-if="resultBadge(order.result_won)" class="result-badge" :class="resultBadge(order.result_won)?.cls">{{resultBadge(order.result_won)?.text}}</span></strong>
             <p>{{order.market_question}} · {{order.outcome_label}}</p>
             <p>限价 {{order.limit_price}} · 份额 {{order.size}} · 已成交 {{order.matched_size ?? '未知'}}</p>
             <p>创建时间：{{dateFormat(order.created_at)}} UTC+8</p>
             <p>订单编号：{{order.external_order_id || '尚未取得'}}</p>
           </article>
           <button v-if="singleCursor" class="text-button" :disabled="singleLoading" @click="loadMatchOrders('single',detail.id,detailRequest,true)">加载更多单场订单</button>
-          <article v-for="combo in matchCombo" :key="combo.id" class="market-card">
+          <article v-for="combo in matchCombo" :key="combo.id" class="match-order-card">
             <strong>组合{{combo.direction==='BUY'?'买入':'卖出'}} · 已确认</strong>
-            <p v-for="leg in combo.legs.filter((item:any)=>item.game_id===detail?.id)" :key="leg.outcome_id">本场选项：{{leg.market_question || '市场信息未知'}} · {{leg.outcome_label || '选项信息未知'}}</p>
+            <p v-for="leg in combo.legs.filter((item:any)=>item.game_id===detail?.id)" :key="leg.outcome_id">本场选项：{{leg.market_question || '市场信息未知'}} · {{leg.outcome_label || '选项信息未知'}}<span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span></p>
             <p>组合预算或份额：{{combo.quantity}}<span v-if="combo.quote"> · 组合报价：{{combo.quote.price}} · 报价所需：{{combo.quote.total_required}}</span></p>
             <p>创建时间：{{dateFormat(combo.created_at)}} UTC+8</p>
             <p>组合 RFQ：{{combo.external_rfq_id || '未知'}}<span v-if="combo.tx_hash"> · 交易哈希：{{combo.tx_hash}}</span></p>

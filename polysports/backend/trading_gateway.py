@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any
 import math
+import threading
+import time
 
 import httpx
 from eth_account import Account
@@ -60,27 +62,80 @@ def restriction(exc: Exception) -> TradingError | None:
     return None
 
 
+GEO_TTL_SECONDS=10
+CLIENT_TTL_SECONDS=30
+_GEO_CACHE: tuple[float,bool] | None=None
+_GEO_LOCK=threading.Lock()
+_CLIENTS: dict[tuple, '_ClientEntry']={}
+_CLIENTS_LOCK=threading.Lock()
+
+
+class _ClientEntry:
+    __slots__=('client','expires_at','lock','settings')
+    def __init__(self,settings):
+        self.client=None
+        self.expires_at=0.0
+        self.lock=threading.Lock()
+        self.settings=settings
+
+
+def _close_quietly(client) -> None:
+    if client is None: return
+    try: client.close()
+    except Exception: pass
+
+
+def close_gateway_clients() -> None:
+    """停止服务或测试结束时关闭缓存的 SDK 客户端。"""
+    global _GEO_CACHE
+    with _CLIENTS_LOCK:
+        entries=list(_CLIENTS.values());_CLIENTS.clear()
+    with _GEO_LOCK:
+        _GEO_CACHE=None
+    for entry in entries:
+        entry.lock.acquire()
+        try:
+            client=entry.client;entry.client=None
+        finally:
+            entry.lock.release()
+        _close_quietly(client)
+
+
 def ensure_geography() -> None:
+    global _GEO_CACHE
+    now=time.monotonic()
+    with _GEO_LOCK:
+        cached=_GEO_CACHE
+    if cached and cached[0]>now:
+        if cached[1]: return
+        raise TradingError('geoblock_blocked','当前服务位置受交易限制')
     try:
         response=httpx.get('https://polymarket.com/api/geoblock',timeout=10,follow_redirects=False)
         if response.status_code!=200: raise TradingError('geoblock_unknown','无法确认地区交易限制')
         body=response.json()
         if not isinstance(body,dict) or type(body.get('blocked')) is not bool: raise TradingError('geoblock_unknown','无法确认地区交易限制')
-        if body['blocked']: raise TradingError('geoblock_blocked','当前服务位置受交易限制')
+        blocked=body['blocked']
     except TradingError: raise
     except Exception as exc: raise TradingError('geoblock_unknown','无法确认地区交易限制') from exc
+    with _GEO_LOCK:
+        _GEO_CACHE=(time.monotonic()+GEO_TTL_SECONDS,not blocked)
+    if blocked: raise TradingError('geoblock_blocked','当前服务位置受交易限制')
 
 
 class Gateway:
     def __init__(self, settings, wallet):
         self.settings=settings;self.wallet=wallet;self.client=None;self.geography_verified=False
+        self._pool_entry: _ClientEntry | None=None
 
     def sdk_api_key(self, credential):
         return None
 
-    def __enter__(self):
-        ensure_geography()
-        self.geography_verified=True
+    def _cache_key(self):
+        wallet=self.wallet
+        return (id(self.settings),wallet.wallet_address.lower(),wallet.signer_address.lower(),
+                wallet.wallet_type,wallet.credential_ref)
+
+    def _credential(self):
         ref=self.wallet.credential_ref
         credential=self.settings.wallet_credentials.get(ref) if ref else None
         if credential is None: raise TradingError('credentials_missing','钱包未配置有效凭据')
@@ -100,22 +155,70 @@ class Gateway:
                     raise TradingError('wallet_undeployed','钱包未部署')
             except TradingError: raise
             except Exception as exc: raise TradingError('wallet_deployment_unknown','无法核对钱包部署状态') from exc
+        return credential
+
+    def _new_client(self,credential):
         vals=[x.get_secret_value() if x else '' for x in (credential.clob_api_key,credential.clob_api_secret,credential.clob_api_passphrase)]
         creds=ApiKeyCreds(apiKey=vals[0],secret=vals[1],passphrase=vals[2]) if all(vals) else None
+        client=None
         try:
-            self.client=NoDeployClient.create(private_key=credential.private_key.get_secret_value(),wallet=Web3.to_checksum_address(self.wallet.wallet_address),credentials=creds,api_key=self.sdk_api_key(credential))
-            if str(self.client.wallet).lower()!=self.wallet.wallet_address or str(self.client.wallet_type)!=self.wallet.wallet_type:
+            client=NoDeployClient.create(private_key=credential.private_key.get_secret_value(),wallet=Web3.to_checksum_address(self.wallet.wallet_address),credentials=creds,api_key=self.sdk_api_key(credential))
+            if str(client.wallet).lower()!=self.wallet.wallet_address or str(client.wallet_type)!=self.wallet.wallet_type:
                 raise TradingError('wallet_mismatch','SDK 钱包身份或类型不匹配')
+            return client
         except TradingError:
-            if self.client: self.client.close()
+            _close_quietly(client)
             raise
         except Exception as exc:
-            if self.client: self.client.close()
+            _close_quietly(client)
             raise restriction(exc) or TradingError('sdk_unavailable','交易客户端初始化失败') from exc
+
+    def _enter_pooled(self):
+        key=self._cache_key();stale=None
+        with _CLIENTS_LOCK:
+            entry=_CLIENTS.get(key)
+            if entry is None or entry.settings is not self.settings:
+                stale=entry
+                entry=_ClientEntry(self.settings);_CLIENTS[key]=entry
+        if stale is not None:
+            stale.lock.acquire()
+            try:
+                old=stale.client;stale.client=None
+            finally:
+                stale.lock.release()
+            _close_quietly(old)
+        entry.lock.acquire()
+        try:
+            if entry.client is not None and entry.expires_at>time.monotonic():
+                self.client=entry.client;self._pool_entry=entry
+                return
+            credential=self._credential()
+            client=self._new_client(credential)
+            old=entry.client
+            entry.client=client;entry.expires_at=time.monotonic()+CLIENT_TTL_SECONDS
+            self.client=client;self._pool_entry=entry
+            _close_quietly(old)
+        except Exception:
+            if entry.client is not None and entry.expires_at<=time.monotonic():
+                old=entry.client;entry.client=None;_close_quietly(old)
+            entry.lock.release()
+            raise
+
+    def __enter__(self):
+        ensure_geography()
+        self.geography_verified=True
+        if type(self) is Gateway:
+            self._enter_pooled()
+        else:
+            self.client=self._new_client(self._credential())
         return self
 
     def __exit__(self,*args):
-        if self.client: self.client.close()
+        entry=self._pool_entry
+        if entry is not None:
+            self._pool_entry=None;self.client=None;entry.lock.release()
+        elif self.client:
+            self.client.close();self.client=None
 
     def inspect(self, market, outcome, side, price, size, event):
         # event=None 表示平仓：赛事映射核对只用于开仓，平仓靠真实盘口与链上余额核实持仓身份。

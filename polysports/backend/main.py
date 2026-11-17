@@ -39,6 +39,8 @@ def create_app() -> FastAPI:
             yield
         finally:
             if combo_lock is not None: combo_lock.close()
+            from .trading_gateway import close_gateway_clients
+            close_gateway_clients()
             app.state.engine.dispose()
             logger.info(json.dumps({"event": "application_stopped"}))
 

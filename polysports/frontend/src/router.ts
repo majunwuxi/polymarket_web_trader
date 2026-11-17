@@ -1,14 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Login from './views/Login.vue'
-import Dashboard from './views/Dashboard.vue'
-import SportsCenter from './views/SportsCenter.vue'
-import SystemPage from './views/SystemPage.vue'
-import Wallets from './views/Wallets.vue'
-import Orders from './views/Orders.vue'
-import OrderEntry from './views/OrderEntry.vue'
-import Combos from './views/Combos.vue'
-import History from './views/History.vue'
 import { restoreSession } from './auth'
+
+const Login = () => import('./views/Login.vue')
+const Dashboard = () => import('./views/Dashboard.vue')
+const SportsCenter = () => import('./views/SportsCenter.vue')
+const SystemPage = () => import('./views/SystemPage.vue')
+const Wallets = () => import('./views/Wallets.vue')
+const Orders = () => import('./views/Orders.vue')
+const OrderEntry = () => import('./views/OrderEntry.vue')
+const Combos = () => import('./views/Combos.vue')
+const History = () => import('./views/History.vue')
 
 export const router = createRouter({
   history: createWebHistory(),

@@ -3,7 +3,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Login from '../src/views/Login.vue'
 import Dashboard from '../src/views/Dashboard.vue'
-import { clearSession, session } from '../src/auth'
+import { clearSession, restoreSession, session } from '../src/auth'
 
 // 本文件所有 API 返回值均为模拟测试数据，不访问真实服务。
 const json = (body: unknown, status = 200) => ({ status, ok: status >= 200 && status < 300, json: async () => body }) as Response
@@ -45,6 +45,16 @@ describe('管理员页面（模拟接口）', () => {
     expect(entries.map(entry => entry.attributes('href'))).toEqual(['/sports/football', '/sports/nba', '/orders'])
     await entries[1].trigger('click'); await flushPromises()
     expect(router.currentRoute.value.path).toBe('/sports/nba')
+  })
+  it('并发恢复会话只发起一次请求', async () => {
+    let resolveResponse!: (value: Response) => void
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => { resolveResponse = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    const first = restoreSession()
+    const second = restoreSession()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    resolveResponse(json({ data: { username: 'mock-admin', csrf_token: 'mock-csrf', expires_at: '2026-11-17T00:00:00Z' } }))
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true])
   })
   it('退出失败保留会话，移动菜单可切换，未完成功能不可点击', async () => {
     session.username = 'mock-admin'; session.csrf = 'mock-session-csrf'; session.authenticated = true

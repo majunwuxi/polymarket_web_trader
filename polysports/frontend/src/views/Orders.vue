@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {onMounted,ref} from 'vue'
+import {onActivated,onMounted,ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {session,logout,clearSession,ApiError} from '../auth'
 const router=useRouter(),menuOpen=ref(false),orders=ref<any[]>([]),nextCursor=ref<string|null>(null),loaded=ref(false),message=ref(''),pendingCancel=ref<string|null>(null),recoveryId=ref<string|null>(null),candidates=ref<any[]>([]),fillOrder=ref<string|null>(null),fills=ref<any[]>([]),fillsTruncated=ref(false),attachId=ref(''),ack=ref(false)
@@ -107,6 +107,8 @@ const buyNote=(c:any)=>({quote_rebuilt:'金额按签名报价重建，标「约�
 const buySource=(c:any)=>({combo_fill:'已落库 CONFIRMED 成交明细（签名接受订单的 makerAmount / takerAmount）',quote_rebuilt:'官方签名报价按 micro-USDC 精度重建',quote_partial:'签名报价字段不完整，金额未核实',unavailable:'暂无可核实的成交明细或报价'} as Record<string,string>)[c?.buy_summary?.basis]||'暂无可核实的成交明细或报价'
 const legTone=(leg:any)=>leg.leg_agreement==='conflict'?'mini-tag-warn':leg.result_won===true?'mini-tag-ok':'mini-tag-neutral'
 onMounted(refreshAll)
+let activated=false
+onActivated(()=>{if(!activated){activated=true;return}void refreshAll()})
 </script>
 
 <template>

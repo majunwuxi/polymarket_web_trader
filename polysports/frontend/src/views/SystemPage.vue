@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { session, logout, clearSession, ApiError } from '../auth'
 type Schedule = {sport:'football'|'nba';provider:'polymarket'|'balldontlie';utc_time:string;enabled:boolean}
@@ -31,6 +31,8 @@ async function enqueue(sport:'football'|'nba'){try{await api('/sync-runs',{metho
 async function showRuns(job:Job){try{selected.value=job;attempts.value=(await api('/jobs/'+job.id+'/runs')).items}catch{message.value='任务记录加载失败。'}}
 async function signOut(){try{await logout();await router.replace('/login')}catch(e){if(e instanceof ApiError&&e.status===401){clearSession();await router.replace('/login')}else message.value='退出请求未确认，请重试。'}}
 onMounted(load)
+let activated=false
+onActivated(()=>{if(!activated){activated=true;return}void load()})
 </script>
 <template>
 <div class="app-layout"><header class="mobile-header"><div class="brand"><span class="brand-mark">P</span> PolySports</div><button class="menu-button" :aria-expanded="menuOpen" aria-controls="primary-nav" @click="menuOpen=!menuOpen">菜单</button></header>

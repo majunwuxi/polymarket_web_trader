@@ -1,6 +1,9 @@
 import { reactive } from 'vue'
 
 export const session = reactive({ authenticated: false, username: '', csrf: '', expiresAt: '' })
+const SESSION_RESTORE_TTL = 15_000
+let restoreInFlight: Promise<boolean> | null = null
+let restoredAt = 0
 export class ApiError extends Error {
   constructor(public status: number, message: string, public retryAfter: number | null = null) { super(message) }
 }
@@ -12,7 +15,7 @@ async function responseData(response: Response) {
   return body.data
 }
 
-export async function restoreSession(): Promise<boolean> {
+async function loadSession(): Promise<boolean> {
   try {
     const response = await fetch('/api/v1/auth/session', { credentials: 'same-origin', cache: 'no-store' })
     const data = await responseData(response)
@@ -28,6 +31,15 @@ export async function restoreSession(): Promise<boolean> {
   }
 }
 
+export function restoreSession(): Promise<boolean> {
+  if (session.authenticated && Date.now() - restoredAt < SESSION_RESTORE_TTL) return Promise.resolve(true)
+  if (restoreInFlight) return restoreInFlight
+  restoreInFlight = loadSession()
+    .then((authenticated) => { if (authenticated) restoredAt = Date.now(); return authenticated })
+    .finally(() => { restoreInFlight = null })
+  return restoreInFlight
+}
+
 export async function login(username: string, password: string): Promise<void> {
   const csrfResponse = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store' })
   const initial = await responseData(csrfResponse)
@@ -38,10 +50,11 @@ export async function login(username: string, password: string): Promise<void> {
   const data = await responseData(response)
   session.authenticated = data.authenticated
   session.csrf = data.csrf_token
+  restoredAt = Date.now()
 }
 
 export function clearSession(): void {
-  session.authenticated = false; session.username = ''; session.csrf = ''; session.expiresAt = ''
+  session.authenticated = false; session.username = ''; session.csrf = ''; session.expiresAt = ''; restoredAt = 0
 }
 
 export async function logout(): Promise<void> {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, watch, nextTick, computed, onActivated } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { session, logout, clearSession, ApiError } from '../auth'
 
@@ -145,6 +145,8 @@ async function saveTeam() {
 }
 async function signOut() {try {await logout(); await router.replace('/login')} catch(e) {if(e instanceof ApiError && e.status===401) {clearSession(); await router.replace('/login')} else message.value='退出请求未确认，请重试。'}}
 watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRange.value='upcoming';load();loadBindingSummary()},{immediate:true})
+let activated=false
+onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;closeDetail();load();loadBindingSummary()})
 
 </script>
 <template>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 import uuid
 from pathlib import Path
 import pytest
@@ -40,10 +41,16 @@ def test_isolated_backup_restore_and_nonempty_refusal(env,tmp_path):
     password_file.write_text(f'{url.host}:{url.port}:*:{url.username}:{url.password}\n',encoding='utf-8')
     if os.name!='nt':password_file.chmod(0o600)
     envvars=os.environ.copy()
-    envvars.update(PGHOST=url.host,PGPORT=str(url.port),PGUSER=url.username,PGDATABASE=url.database,PGPASSFILE=str(password_file))
+    envvars.update(PGHOST=url.host,PGPORT=str(url.port),PGUSER=url.username,PGDATABASE=url.database,PGPASSFILE=str(password_file),BACKUP_RETENTION_DAYS='14')
     if bin_dir:envvars['PATH']=bin_dir+os.pathsep+envvars.get('PATH','')
+    old_backup=tmp_path/'polysports-20000101T000000Z-old.dump'
+    old_backup.write_bytes(b'old mock backup')
+    old_time=time.time()-40*24*3600
+    os.utime(old_backup,(old_time,old_time))
+    assert old_backup.exists()
     backup=subprocess.run([bash,'deploy/scripts/backup.sh',str(tmp_path)],env=envvars,text=True,encoding="utf-8",errors="replace",capture_output=True)
     assert backup.returncode==0,backup.stderr
+    assert not old_backup.exists()
     files=list(tmp_path.glob('*.dump'));assert len(files)==1
     # 已有生产记录的模拟来源库不得被恢复覆盖。
     refused=subprocess.run([bash,'deploy/scripts/restore-empty.sh',str(files[0])],env=envvars,text=True,encoding="utf-8",errors="replace",capture_output=True)

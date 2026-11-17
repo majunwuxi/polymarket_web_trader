@@ -10,6 +10,7 @@ Group=polysports
 WorkingDirectory=/opt/polysports-src/polysports
 LoadCredential=pgpass:/etc/polysports/backup.pgpass
 Environment=PGHOST=127.0.0.1 PGPORT=5432 PGUSER=polysports PGDATABASE=polysports
+Environment=BACKUP_RETENTION_DAYS=30
 ExecStart=/opt/polysports-src/polysports/deploy/scripts/backup-systemd.sh
 UMask=0077
 NoNewPrivileges=yes

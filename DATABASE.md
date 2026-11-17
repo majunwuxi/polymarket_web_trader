@@ -61,11 +61,11 @@ erDiagram
 
 ### 3.2 `admin_sessions`
 
-`id uuid PK`；`admin_id uuid` 必填外键 → `admin_users.id`；`token_hash varchar(128)` 必填唯一，只保存不可逆会话令牌摘要；`csrf_secret_hash varchar(128)` 必填；`created_at`, `expires_at`, `last_seen_at` 为必填 timestamptz；`revoked_at timestamptz` 可空。索引 `(admin_id, expires_at)`；过期或撤销后不可继续访问。账户登录频率限制按共享存储实现，不依赖单进程计数。
+`id uuid PK`；`admin_id uuid` 必填外键 → `admin_users.id`；`token_hash varchar(128)` 必填唯一，只保存不可逆会话令牌摘要；`csrf_secret_hash varchar(128)` 必填；`created_at`, `expires_at`, `last_seen_at` 为必填 timestamptz；`revoked_at timestamptz` 可空。索引 `(admin_id, expires_at)`；过期或撤销后不可继续访问。账户登录频率限制按共享存储实现，不依赖单进程计数。每日 cleanup 任务删除过期或撤销超过 1 天的会话记录。
 
 ### 3.3 `auth_rate_limits`、`worker_heartbeats`
 
-`auth_rate_limits`：`bucket_key varchar(128) PK`（使用服务端密钥对规范化 IP/账户等值计算 HMAC，不能保存明文密码）；`window_start timestamptz` 必填；`attempt_count integer` 必填且非负；`blocked_until timestamptz` 可空；`updated_at timestamptz` 必填。应用在事务中原子更新各维度计数与阻断时间；索引 `(updated_at)` 用于清理过期窗口；多进程共享生效。清理不得解除仍有效的阻断。
+`auth_rate_limits`：`bucket_key varchar(128) PK`（使用服务端密钥对规范化 IP/账户等值计算 HMAC，不能保存明文密码）；`window_start timestamptz` 必填；`attempt_count integer` 必填且非负；`blocked_until timestamptz` 可空；`updated_at timestamptz` 必填。应用在事务中原子更新各维度计数与阻断时间；索引 `(updated_at)` 用于清理过期窗口；多进程共享生效。每日 cleanup 任务只删除 24 小时未更新且不再阻断的记录；清理不得解除仍有效的阻断。
 
 `worker_heartbeats`：`worker_id uuid PK`；`started_at`, `last_seen_at timestamptz` 必填；`worker_version varchar(80)` 可空；`state varchar(16)` 必填，`running` / `stopping`。worker 周期性更新，状态页按数据库当前时间与心跳间隔判断新鲜度；不存在或过期时显示 `unknown` / `unavailable`，不能仅凭进程 ID 判定就绪。该记录不持久化凭证与租约令牌。
 
@@ -73,7 +73,7 @@ erDiagram
 
 `settings`：`key varchar(120) PK`；`value jsonb` 必填，仅允许经白名单验证的非秘密配置；`revision bigint` 必填默认 1，用于乐观并发；`updated_at timestamptz` 必填；`updated_by uuid` 可空外键 → `admin_users.id`。调度时间在 `sync_schedules`，密钥统一从环境或受限文件加载，禁止写入本表。
 
-`audit_events`：`id uuid PK`；`actor_id uuid` 可空外键 → `admin_users.id`（系统任务为空）；`action varchar(100)` 必填；`entity_type varchar(80)`, `entity_id uuid`, `correlation_id uuid` 可空；`details jsonb` 必填默认 `{}`（仅脱敏白名单）；`created_at timestamptz` 必填。索引 `(created_at DESC)`、`(entity_type, entity_id, created_at DESC)`。交易状态变更另外保存在 `trade_state_events`。
+`audit_events`：`id uuid PK`；`actor_id uuid` 可空外键 → `admin_users.id`（系统任务为空）；`action varchar(100)` 必填；`entity_type varchar(80)`, `entity_id uuid`, `correlation_id uuid` 可空；`details jsonb` 必填默认 `{}`（仅脱敏白名单）；`created_at timestamptz` 必填。索引 `(created_at DESC)`、`(entity_type, entity_id, created_at DESC)`。默认保留 30 天，由每日 cleanup 任务删除更早记录；交易状态变更另外保存在 `trade_state_events`。
 
 ## 4. 球队、联赛与赛事
 
@@ -125,7 +125,7 @@ erDiagram
 | 字段 | 类型 / 约束 | 说明 |
 | --- | --- | --- |
 | `id` | uuid PK | 任务 ID |
-| `kind` | varchar(24) 必填 | `sync`, `result_poll`, `trade_reconcile`, `combo_reconcile` |
+| `kind` | varchar(24) 必填 | `sync`, `result_poll`, `trade_reconcile`, `combo_reconcile`, `cleanup` |
 | `dedupe_key` | varchar(255) 必填，唯一 | 稳定业务去重键；每个定时同步按计划时间、每个赛果任务按关注 ID 区分 |
 | `watched_game_id` | uuid，可空，FK → `watched_games.id` | `result_poll` 必填，其他类型为空 |
 | `trade_intent_id` | uuid，可空，FK → `trade_intents.id` | `trade_reconcile` 必填，其他类型为空 |
@@ -141,7 +141,7 @@ erDiagram
 | `last_error_code`, `last_error_summary` | varchar(80), text 可空 | 脱敏错误；达到失败上限为 `retry_exhausted`，组合持续未终态上限为 `reconcile_stale` |
 | `created_at`, `updated_at` | timestamptz 必填 | 审计时间 |
 
-约束：`result_poll`、`trade_reconcile` 的目标外键互斥且分别必填；`sync` 不关联关注或交易意图，且必须关联一个同步运行；其他任务不得设置 `sync_run_id`；`status='leased'` 当且仅当 `lease_owner`、`lease_until`、`lease_token` 均非空。索引：`(due_at, id) WHERE status='pending'`、`(lease_until, id) WHERE status='leased'`、`(due_at, id)`、`(watched_game_id)`、`(trade_intent_id)`；`UNIQUE(sync_run_id) WHERE sync_run_id IS NOT NULL`。同一关注赛事仅一条长期复用的常规轮询任务，`dedupe_key` 唯一保证不会重复排队。
+约束：`result_poll`、`trade_reconcile`、`combo_reconcile` 的目标外键互斥且分别必填；`sync` 不关联关注或交易意图，且必须关联一个同步运行；`cleanup` 不关联任何比赛、同步运行、订单或组合目标；其他任务不得设置 `sync_run_id`；`status='leased'` 当且仅当 `lease_owner`、`lease_until`、`lease_token` 均非空。索引：`(due_at, id) WHERE status='pending'`、`(lease_until, id) WHERE status='leased'`、`(due_at, id)`、`(watched_game_id)`、`(trade_intent_id)`；`UNIQUE(sync_run_id) WHERE sync_run_id IS NOT NULL`。同一关注赛事仅一条长期复用的常规轮询任务，`dedupe_key` 唯一保证不会重复排队。每日 UTC 04:00 后的 `cleanup` 任务按 `maintenance:cleanup:<UTC 日期>` 去重。
 
 `job_runs`：`id uuid PK`；`job_id uuid` 必填外键；`attempt_no integer` 必填；`lease_token uuid` 必填；`started_at timestamptz` 必填；`finished_at timestamptz` 可空；`result varchar(20)` 必填，`running`, `succeeded`, `failed`, `abandoned`；`error_code varchar(80)`, `error_summary text` 可空。唯一 `(job_id, attempt_no)`、索引 `(job_id, started_at DESC)`。日志保留每次尝试，不以新任务覆盖历史。
 

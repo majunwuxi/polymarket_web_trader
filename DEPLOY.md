@@ -125,7 +125,7 @@ sudo certbot renew --dry-run
 
 ## 5. 备份与空库恢复
 
-数据库备份含赛事、账户和交易历史，应保存在权限受限的本机及独立加密备份位置。备份脚本使用 PostgreSQL custom 格式、权限 `0600`，不在命令行中传递密码；它不自动删除旧备份，请自行设置保留策略并监控磁盘空间。定时备份默认每天 UTC 03:30，允许最多五分钟随机延迟。
+数据库备份含赛事、账户和交易历史，应保存在权限受限的本机及独立加密备份位置。备份脚本使用 PostgreSQL custom 格式、权限 `0600`，不在命令行中传递密码；成功备份后会自动删除超过保留期的 `polysports-*.dump`，默认 30 天，可用 `BACKUP_RETENTION_DAYS` 调整为 14–30 天，仍应监控磁盘空间并保留独立异地备份。定时备份默认每天 UTC 03:30，允许最多五分钟随机延迟。
 
 ```bash
 sudo install -d -m 0700 -o polysports -g polysports /var/backups/polysports

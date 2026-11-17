@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .database import make_engine
 from .models import Game, GameRevision, Job, ResultBindingRequest, SyncRun, WatchedGame
-from .scheduler import claim_next, db_now, ensure_scheduled, finish_attempt, first_delay, heartbeat, interval, locked_valid_job, renew
+from .scheduler import claim_next, db_now, ensure_scheduled, finish_attempt, first_delay, heartbeat, interval, locked_valid_job, renew, retry_or_fail
 from .sports_sources import SourceError, fetch_game, fetch_schedule
 from .sports_sync import upsert_game, apply_polymarket_scan
 from .trading_gateway import TradingError
@@ -33,6 +33,7 @@ def fetch_work(engine,job_id,token,settings,client):
     with Session(engine) as db:
         job=db.get(Job,job_id)
         if not job or job.status!='leased' or job.lease_token!=token: raise LeaseLost()
+        if job.kind=='cleanup': return None
         if job.kind=='sync':
             run=db.get(SyncRun,job.sync_run_id); provider=run.provider; start=run.window_start; sport=run.sport
         elif job.kind=='combo_reconcile':
@@ -104,6 +105,14 @@ def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_aft
             elif job.kind=='trade_reconcile':
                 from .trade_reconcile import apply_reconciliation
                 apply_reconciliation(db,job,payload,error)
+            elif job.kind=='cleanup':
+                if error:
+                    retry_or_fail(db,job,now,error,timedelta(hours=1))
+                else:
+                    from .maintenance import cleanup_expired
+                    counts=cleanup_expired(db)
+                    finish_attempt(db,job,now,'succeeded');job.status='done'
+                    log.info('maintenance_cleanup admin_sessions=%s auth_rate_limits=%s audit_events=%s',counts['admin_sessions'],counts['auth_rate_limits'],counts['audit_events'])
             else:
                 watch=db.scalar(select(WatchedGame).where(WatchedGame.id==job.watched_game_id).with_for_update())
                 game=db.scalar(select(Game).where(Game.id==watch.game_id).with_for_update())

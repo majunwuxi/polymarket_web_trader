@@ -12,6 +12,10 @@ export PGCONNECT_TIMEOUT=10
 if [[ $# -ne 1 || ! -d "$1" || ! -w "$1" ]]; then
     printf '%s\n' '用法：backup.sh 已存在且可写的备份目录' >&2; exit 2
 fi
+retention=${BACKUP_RETENTION_DAYS:-30}
+[[ "$retention" =~ ^[0-9]+$ ]] && ((10#$retention>=14 && 10#$retention<=30)) || {
+    printf '%s\n' 'BACKUP_RETENTION_DAYS 必须是 14 到 30 之间的整数' >&2; exit 2
+}
 backup_dir=$(cd -- "$1" && pwd -P)
 tmp=$(mktemp "$backup_dir/polysports-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")
 trap 'rm -f -- "$tmp"' EXIT
@@ -22,3 +26,8 @@ final="$tmp.dump"
 mv -- "$tmp" "$final"
 trap - EXIT
 printf '备份完成：%s\n' "$final"
+deleted=0
+while IFS= read -r -d '' old; do
+    rm -f -- "$old"; deleted=$((deleted+1))
+done < <(find "$backup_dir" -maxdepth 1 -type f -name 'polysports-*.dump' -mtime +"$retention" -print0)
+printf '已清理超过 %d 天的备份：%d 个\n' "$retention" "$deleted"

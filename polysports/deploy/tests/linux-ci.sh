@@ -86,7 +86,14 @@ sudo nginx -t -p "$RUNNER_TEMP/nginx/" -c "$RUNNER_TEMP/nginx/nginx.conf"
 sudo nginx -p "$RUNNER_TEMP/nginx/" -c "$RUNNER_TEMP/nginx/nginx.conf"
 trap 'sudo nginx -p "$RUNNER_TEMP/nginx/" -c "$RUNNER_TEMP/nginx/nginx.conf" -s quit || true' EXIT
 curl --fail --silent --show-error --insecure --noproxy '*' --resolve example.test:18443:127.0.0.1 https://example.test:18443/api/v1/health/live >/dev/null
-curl --fail --silent --show-error --insecure --noproxy '*' --resolve example.test:18443:127.0.0.1 https://example.test:18443/history | grep -qi '<!doctype html>'
+curl --fail --silent --show-error --insecure --noproxy '*' --resolve example.test:18443:127.0.0.1 -D "$RUNNER_TEMP/index.headers" -o /dev/null https://example.test:18443/history
+tr -d '\r' < "$RUNNER_TEMP/index.headers" | grep -qi '^cache-control: no-store, no-cache, must-revalidate$'
+asset=$(find /opt/polysports-src/polysports/frontend/dist/assets -type f -name '*.js' -print -quit)
+asset_path=${asset#/opt/polysports-src/polysports/frontend/dist}
+curl --fail --silent --show-error --insecure --noproxy '*' --resolve example.test:18443:127.0.0.1 -H 'Accept-Encoding: gzip' -D "$RUNNER_TEMP/asset.headers" -o /dev/null "https://example.test:18443$asset_path"
+tr -d '\r' < "$RUNNER_TEMP/asset.headers" | grep -qi '^cache-control: public, max-age=31536000, immutable$'
+tr -d '\r' < "$RUNNER_TEMP/asset.headers" | grep -qi '^content-encoding: gzip$'
+tr -d '\r' < "$RUNNER_TEMP/asset.headers" | grep -qi '^vary: accept-encoding$'
 # 验证伪造的 X-Forwarded-For 被覆盖：限流记录按 127.0.0.1 生成。
 curl --fail --silent --show-error --insecure --noproxy '*' --resolve example.test:18443:127.0.0.1 -c "$RUNNER_TEMP/cookies" https://example.test:18443/api/v1/auth/csrf > "$RUNNER_TEMP/csrf.json"
 csrf=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["data"]["csrf_token"])' "$RUNNER_TEMP/csrf.json")

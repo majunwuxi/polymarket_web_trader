@@ -141,7 +141,7 @@ erDiagram
 | `last_error_code`, `last_error_summary` | varchar(80), text 可空 | 脱敏错误；达到失败上限为 `retry_exhausted`，组合持续未终态上限为 `reconcile_stale` |
 | `created_at`, `updated_at` | timestamptz 必填 | 审计时间 |
 
-约束：`result_poll`、`trade_reconcile` 的目标外键互斥且分别必填；`sync` 不关联关注或交易意图，且必须关联一个同步运行；其他任务不得设置 `sync_run_id`；`status='leased'` 当且仅当 `lease_owner`、`lease_until`、`lease_token` 均非空。索引：`(due_at, id) WHERE status='pending'`、`(lease_until, id) WHERE status='leased'`、`(watched_game_id)`、`(trade_intent_id)`；`UNIQUE(sync_run_id) WHERE sync_run_id IS NOT NULL`。同一关注赛事仅一条长期复用的常规轮询任务，`dedupe_key` 唯一保证不会重复排队。
+约束：`result_poll`、`trade_reconcile` 的目标外键互斥且分别必填；`sync` 不关联关注或交易意图，且必须关联一个同步运行；其他任务不得设置 `sync_run_id`；`status='leased'` 当且仅当 `lease_owner`、`lease_until`、`lease_token` 均非空。索引：`(due_at, id) WHERE status='pending'`、`(lease_until, id) WHERE status='leased'`、`(due_at, id)`、`(watched_game_id)`、`(trade_intent_id)`；`UNIQUE(sync_run_id) WHERE sync_run_id IS NOT NULL`。同一关注赛事仅一条长期复用的常规轮询任务，`dedupe_key` 唯一保证不会重复排队。
 
 `job_runs`：`id uuid PK`；`job_id uuid` 必填外键；`attempt_no integer` 必填；`lease_token uuid` 必填；`started_at timestamptz` 必填；`finished_at timestamptz` 可空；`result varchar(20)` 必填，`running`, `succeeded`, `failed`, `abandoned`；`error_code varchar(80)`, `error_summary text` 可空。唯一 `(job_id, attempt_no)`、索引 `(job_id, started_at DESC)`。日志保留每次尝试，不以新任务覆盖历史。
 
@@ -182,7 +182,7 @@ erDiagram
 | `confirmed_at`, `submitted_at` | timestamptz 可空 | 用户确认和外部提交开始 |
 | `created_at`, `updated_at` | timestamptz 必填 | 创建/更新 |
 
-唯一 `(wallet_id, client_request_id)`；相同键且指纹一致返回原意图，不再次提交；指纹不同返回冲突。索引 `(wallet_id, created_at DESC)`、`(state, updated_at)`；部分唯一索引 `(wallet_id, request_fingerprint) WHERE state IN ('submitting','unknown')` 防止换幂等键并发重复发送相同参数；Combo 询价或接受存在未解决外部请求时，其意图须处于对应的 `submitting` 或 `unknown` 状态。冲突后返回原意图的安全标识，由用户查询/对账；不得通过换键绕过。确认前核对市场、用户输入与有效报价；`submitting` 事务提交后，外部请求可能已发出，因此重启时必须先对账，不能当作未发送。
+唯一 `(wallet_id, client_request_id)`；相同键且指纹一致返回原意图，不再次提交；指纹不同返回冲突。索引 `(wallet_id, created_at DESC)`、`(game_id)`、`(state, updated_at)`；部分唯一索引 `(wallet_id, request_fingerprint) WHERE state IN ('submitting','unknown')` 防止换幂等键并发重复发送相同参数；Combo 询价或接受存在未解决外部请求时，其意图须处于对应的 `submitting` 或 `unknown` 状态。冲突后返回原意图的安全标识，由用户查询/对账；不得通过换键绕过。确认前核对市场、用户输入与有效报价；`submitting` 事务提交后，外部请求可能已发出，因此重启时必须先对账，不能当作未发送。
 
 `trade_legs`：`id uuid PK`；`intent_id uuid` 必填外键；`leg_index integer` 非负；`game_id uuid`、`market_link_id uuid`、`outcome_id uuid` 均必填外键；`outcome_label_snapshot text` 必填；`created_at timestamptz` 必填。唯一 `(intent_id, leg_index)`、`(intent_id, outcome_id)`；索引 `(game_id, intent_id)`。服务在同一事务中验证 `market_link.game_id = game_id`、`market_link.market_id = outcome.market_id` 且映射 confirmed，并在对外提交前重新验证。保存展示快照供审计，不替代来源 ID。
 
@@ -196,9 +196,9 @@ Combo 询价时可预先保存 `draft` 意图和所有腿；用户确认后更�
 
 ### 7.3 `combo_rfqs`、`combo_legs`、`combo_events`、`combo_fills`（实际落地）
 
-`combo_rfqs`：`id uuid PK`；`wallet_id uuid`、`wallet_address varchar(42)`、`client_request_id uuid`、`fingerprint varchar(64)` 必填；`direction varchar(4)` 取 `BUY`/`SELL`；`quantity numeric(38,18)` 必填且 > 0（BUY 为预算、SELL 为份额）；`state varchar(24)` 取 `requesting`, `quoted`, `accepting`, `executing`, `confirmed`, `expired`, `rejected`, `failed`, `unknown`；`gateway_mode varchar(16)` 默认 `builder`；`external_rfq_id varchar(255)`、`combo_position_id varchar(78)`、`parent_combo_id uuid`（自引用外键）、`quote_id uuid`、`quote_expires_at timestamptz`、`quote_price`/`quote_required`/`quote_receive numeric(38,18)`、`error_code varchar(80)`、`tx_hash varchar(255)`、`accept_started_at timestamptz` 可空；`created_at`/`updated_at timestamptz` 必填。唯一 `(wallet_id, client_request_id)`、唯一 `external_rfq_id`；部分唯一索引 `uq_combo_unresolved (wallet_id, fingerprint) WHERE state IN ('requesting','quoted','accepting','executing','unknown')`；索引 `(parent_combo_id)`；检查约束 `parent_combo_id IS NULL OR direction='SELL'`。`quote_price` 是签名报价 blended_price、`quote_receive` 是 BUY 的 takerAmount（实际份额）或 SELL 的 net_receive、`quote_required` 是 total_required（接受所需余额，不是实际支出）。询价或接受结果不明时，不得靠创建新的 RFQ 来重试；优先使用外部 RFQ ID 对账，ID 不可得时保留未知并人工处理。
+`combo_rfqs`：`id uuid PK`；`wallet_id uuid`、`wallet_address varchar(42)`、`client_request_id uuid`、`fingerprint varchar(64)` 必填；`direction varchar(4)` 取 `BUY`/`SELL`；`quantity numeric(38,18)` 必填且 > 0（BUY 为预算、SELL 为份额）；`state varchar(24)` 取 `requesting`, `quoted`, `accepting`, `executing`, `confirmed`, `expired`, `rejected`, `failed`, `unknown`；`gateway_mode varchar(16)` 默认 `builder`；`external_rfq_id varchar(255)`、`combo_position_id varchar(78)`、`parent_combo_id uuid`（自引用外键）、`quote_id uuid`、`quote_expires_at timestamptz`、`quote_price`/`quote_required`/`quote_receive numeric(38,18)`、`error_code varchar(80)`、`tx_hash varchar(255)`、`accept_started_at timestamptz` 可空；`created_at`/`updated_at timestamptz` 必填。唯一 `(wallet_id, client_request_id)`、唯一 `external_rfq_id`；部分唯一索引 `uq_combo_unresolved (wallet_id, fingerprint) WHERE state IN ('requesting','quoted','accepting','executing','unknown')`；索引 `(parent_combo_id)`、`(created_at, id)`、`(state, created_at, id)`；检查约束 `parent_combo_id IS NULL OR direction='SELL'`。`quote_price` 是签名报价 blended_price、`quote_receive` 是 BUY 的 takerAmount（实际份额）或 SELL 的 net_receive、`quote_required` 是 total_required（接受所需余额，不是实际支出）。询价或接受结果不明时，不得靠创建新的 RFQ 来重试；优先使用外部 RFQ ID 对账，ID 不可得时保留未知并人工处理。
 
-`combo_legs`：`id uuid PK`；`rfq_id uuid` 必填外键；`game_id`、`market_link_id`、`outcome_id uuid` 必填；`position_id varchar(78)` 必填（官方 Combo 目录持仓标识）。唯一 `(rfq_id, outcome_id)`、唯一 `(rfq_id, position_id)`。
+`combo_legs`：`id uuid PK`；`rfq_id uuid` 必填外键；`game_id`、`market_link_id`、`outcome_id uuid` 必填；`position_id varchar(78)` 必填（官方 Combo 目录持仓标识）。唯一 `(rfq_id, outcome_id)`、唯一 `(rfq_id, position_id)`；索引 `(game_id)`。
 
 `combo_events`：`id uuid PK`；`rfq_id uuid` 必填外键；`state varchar(24)` 必填；`code varchar(80)` 可空；`created_at timestamptz` 必填；索引 `(rfq_id, created_at)`。状态只依据真实服务端结果写入。
 

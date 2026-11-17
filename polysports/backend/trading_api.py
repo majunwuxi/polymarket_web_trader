@@ -12,7 +12,7 @@ from .close_policy import score_verified_clause,settled_visibility_cutoff
 from .models import Game,Job,MarketLink,PolyMarket,TradeFill,TradeIntent,TradeStateEvent,TradeSubmission
 from .scheduler import db_now
 from .sports_api import cursor_decode,cursor_encode
-from .trading import as_data,execute,prepare,wallet_for
+from .trading import as_data,execute,prepare,prefetch_intents,wallet_for
 from .trading_gateway import Gateway,TradingError,restriction
 
 router=APIRouter(prefix='/api/v1')
@@ -106,7 +106,8 @@ def list_intents(request:Request,limit:int=50,wallet_id:uuid.UUID | None=None,ga
         if items:
             for fill in db.scalars(select(TradeFill).where(TradeFill.intent_id.in_([x.id for x in items]))):
                 fill_map.setdefault(fill.intent_id,[]).append({'size':fill.size,'price':fill.price,'status':fill.status})
-        return ok(request,{'items':[as_data(x,db,fill_map.get(x.id,[])) for x in items],'next_cursor':cursor_encode([items[-1].created_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
+        related=prefetch_intents(db,items)
+        return ok(request,{'items':[as_data(x,db,fill_map.get(x.id,[]),related.get(x.id)) for x in items],'next_cursor':cursor_encode([items[-1].created_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
 
 
 @router.get('/trade-intents/{intent_id}')

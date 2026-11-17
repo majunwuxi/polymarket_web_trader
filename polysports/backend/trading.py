@@ -9,9 +9,10 @@ from .close_policy import assert_close_allowed, close_decision, game_result_stat
 from .config import Settings
 from .market_api import wallet_id
 from .markets import valid_link
-from .models import Game,Job,MarketLink,MarketOutcome,PolyEvent,PolyMarket,Team,TradeFill,TradeIntent,TradeStateEvent,TradeSubmission
+from .models import Game,Job,MarketLink,MarketOutcome,PolyEvent,PolyMarket,ResultBindingRequest,Team,TradeFill,TradeIntent,TradeStateEvent,TradeSubmission
 from .order_resolution import judge_score_detail
 from .pnl import single_pnl
+from .prefetch import objects_by_id
 from .scheduler import db_now,watch_game
 from .trading_gateway import Gateway,TradingError,finite_decimal,restriction
 
@@ -134,12 +135,44 @@ def get_existing(db,wallet,request_id,fp):
     return intent
 
 
-def as_data(intent,db=None,fills=None):
+def prefetch_intents(db,intents):
+    intents=list(intents)
+    if not intents: return {}
+    game_ids={intent.game_id for intent in intents}
+    link_ids={intent.market_link_id for intent in intents}
+    outcome_ids={intent.outcome_id for intent in intents}
+    games=objects_by_id(db,Game,game_ids)
+    links=objects_by_id(db,MarketLink,link_ids)
+    markets=objects_by_id(db,PolyMarket,{link.market_id for link in links.values()})
+    outcomes=objects_by_id(db,MarketOutcome,outcome_ids)
+    teams=objects_by_id(db,Team,
+                        {game.home_team_id for game in games.values()} |
+                        {game.away_team_id for game in games.values()})
+    bindings={binding.game_id:binding for binding in db.scalars(select(ResultBindingRequest).where(ResultBindingRequest.game_id.in_(game_ids)))} if game_ids else {}
+    result={}
+    for intent in intents:
+        link=links.get(intent.market_link_id);game=games.get(intent.game_id)
+        result[intent.id]={'game':game,'link':link,'market':markets.get(link.market_id) if link else None,
+                           'outcome':outcomes.get(intent.outcome_id),
+                           'home':teams.get(game.home_team_id) if game else None,
+                           'away':teams.get(game.away_team_id) if game else None,
+                           'binding':bindings.get(intent.game_id)}
+    return result
+
+
+def as_data(intent,db=None,fills=None,related=None):
     value={'id':str(intent.id),'wallet_id':str(intent.wallet_id),'game_id':str(intent.game_id),'market_link_id':str(intent.market_link_id),'outcome_id':str(intent.outcome_id),'side':intent.side,'order_type':intent.order_type,'parent_trade_id':str(intent.parent_trade_id) if intent.parent_trade_id else None,'limit_price':canonical(intent.limit_price),'size':canonical(intent.requested_size),'state':intent.state,'external_order_id':intent.external_order_id,'matched_size':canonical(intent.matched_size) if intent.matched_size is not None else None,'cancel_state':intent.cancel_state,'error_code':intent.error_code,'retry_after_seconds':intent.retry_after_seconds,'created_at':intent.created_at.isoformat(),'updated_at':intent.updated_at.isoformat()}
     if db:
-        game=db.get(Game,intent.game_id);link=db.get(MarketLink,intent.market_link_id);market=db.get(PolyMarket,link.market_id);outcome=db.get(MarketOutcome,intent.outcome_id)
-        home=db.get(Team,game.home_team_id);away=db.get(Team,game.away_team_id)
-        finished,verified=game_result_state(db,game)
+        if related is not None:
+            game=related.get('game');link=related.get('link');market=related.get('market');outcome=related.get('outcome')
+            home=related.get('home');away=related.get('away');binding=related.get('binding')
+            finished=game.status=='finished'
+            verified=bool(binding and binding.state=='bound' and finished
+                          and game.home_score is not None and game.away_score is not None)
+        else:
+            game=db.get(Game,intent.game_id);link=db.get(MarketLink,intent.market_link_id);market=db.get(PolyMarket,link.market_id);outcome=db.get(MarketOutcome,intent.outcome_id)
+            home=db.get(Team,game.home_team_id);away=db.get(Team,game.away_team_id)
+            finished,verified=game_result_state(db,game)
         blocked,reason=close_decision(score_verified=verified,accepting_orders=market.accepting_orders)
         won,basis=judge_score_detail(sport=game.sport,question=market.question,outcome_label=outcome.label,
             home=getattr(home,'source_name',None),away=getattr(away,'source_name',None),

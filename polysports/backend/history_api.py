@@ -17,8 +17,9 @@ from sqlalchemy import exists, func, literal, select, tuple_, union_all
 from sqlalchemy.orm import Session
 
 from . import auth
-from .combo_api import combo_data
-from .models import AuditEvent, ComboLeg, ComboRFQ, Game, Job, SyncRun, TradeFill, TradeIntent, WorkerHeartbeat
+from .combo_api import combo_data, combo_prefetch
+from .models import AuditEvent, ComboLeg, ComboRFQ, Game, Job, MarketLink, MarketOutcome, PolyMarket, ResultBindingRequest, SyncRun, Team, TradeFill, TradeIntent, WorkerHeartbeat
+from .prefetch import objects_by_id, rows_by_attr
 from .scheduler import db_now
 from .sports_api import cursor_decode, cursor_encode, game_data
 from .trading import as_data
@@ -90,13 +91,54 @@ def trade_query(sport,start,end,wallet_id=None,kind=None,state=None):
     return union_all(single,combo).subquery()
 
 
-def trade_data(db,kind,ident):
+def trade_prefetch(db,rows):
+    rows=list(rows)
+    single_ids=[row.id for row in rows if row.kind=='single']
+    combo_ids=[row.id for row in rows if row.kind=='combo']
+    intents=objects_by_id(db,TradeIntent,single_ids)
+    combos=objects_by_id(db,ComboRFQ,combo_ids)
+    combo_maps=combo_prefetch(db,combos.values())
+    game_ids={intent.game_id for intent in intents.values()}
+    link_ids={intent.market_link_id for intent in intents.values()}
+    outcome_ids={intent.outcome_id for intent in intents.values()}
+    games=objects_by_id(db,Game,game_ids);games.update(combo_maps['games'])
+    links=objects_by_id(db,MarketLink,link_ids);links.update(combo_maps['links'])
+    markets=objects_by_id(db,PolyMarket,{link.market_id for link in links.values()});markets.update(combo_maps['markets'])
+    outcomes=objects_by_id(db,MarketOutcome,outcome_ids);outcomes.update(combo_maps['outcomes'])
+    teams=objects_by_id(db,Team,
+                        {game.home_team_id for game in games.values()} |
+                        {game.away_team_id for game in games.values()})
+    teams.update(combo_maps['teams'])
+    bindings={binding.game_id:binding for binding in db.scalars(select(ResultBindingRequest).where(ResultBindingRequest.game_id.in_(game_ids)))} if game_ids else {}
+    bindings.update(combo_maps['bindings'])
+    fill_rows=rows_by_attr(db,TradeFill,'intent_id',single_ids)
+    fills={intent_id:[{'size':fill.size,'price':fill.price,'status':fill.status} for fill in values]
+           for intent_id,values in fill_rows.items()}
+    confirmed_counts={intent_id:sum(1 for fill in values if str(fill.status).upper()=='CONFIRMED')
+                      for intent_id,values in fill_rows.items()}
+    singles={}
+    for intent_id,intent in intents.items():
+        link=links.get(intent.market_link_id)
+        singles[intent_id]={'game':games.get(intent.game_id),'link':link,
+                            'market':markets.get(link.market_id) if link else None,
+                            'outcome':outcomes.get(intent.outcome_id),
+                            'home':teams.get(games[intent.game_id].home_team_id) if intent.game_id in games else None,
+                            'away':teams.get(games[intent.game_id].away_team_id) if intent.game_id in games else None,
+                            'binding':bindings.get(intent.game_id)}
+    return {'intents':intents,'combos':combos,'combo':combo_maps,'singles':singles,
+            'fills':fills,'confirmed_counts':confirmed_counts}
+
+
+def trade_data(db,kind,ident,prefetch=None):
     if kind=='single':
-        row=db.get(TradeIntent,ident)
-        data=as_data(row,db);data['kind']='single'
-        data['confirmed_fills']=db.scalar(select(func.count(TradeFill.id)).where(TradeFill.intent_id==ident,func.upper(TradeFill.status)=='CONFIRMED'))
+        row=prefetch['intents'].get(ident) if prefetch is not None else db.get(TradeIntent,ident)
+        fills=prefetch['fills'].get(ident,[]) if prefetch is not None else None
+        data=as_data(row,db,fills=fills,related=prefetch['singles'].get(ident) if prefetch is not None else None);data['kind']='single'
+        data['confirmed_fills']=(prefetch['confirmed_counts'].get(ident,0) if prefetch is not None
+                                 else db.scalar(select(func.count(TradeFill.id)).where(TradeFill.intent_id==ident,func.upper(TradeFill.status)=='CONFIRMED')))
         return data
-    data=combo_data(db,db.get(ComboRFQ,ident));data['kind']='combo';data['confirmed_fills']=None
+    row=prefetch['combos'].get(ident) if prefetch is not None else db.get(ComboRFQ,ident)
+    data=combo_data(db,row,prefetch=prefetch['combo'] if prefetch is not None else None);data['kind']='combo';data['confirmed_fills']=None
     return data
 
 
@@ -131,7 +173,8 @@ def history_trades(request:Request,sport:Literal['football','nba']|None=None,sta
     except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
         rows=list(db.execute(query.order_by(source.c.created_at.desc(),source.c.id.desc(),source.c.kind.desc()).limit(limit+1)));items=rows[:limit]
-        return envelope(request,{'items':[trade_data(db,x.kind,x.id) for x in items],'next_cursor':cursor_encode([items[-1].created_at.isoformat(),str(items[-1].id)+':'+items[-1].kind]) if len(rows)>limit else None})
+        prefetch=trade_prefetch(db,items)
+        return envelope(request,{'items':[trade_data(db,x.kind,x.id,prefetch) for x in items],'next_cursor':cursor_encode([items[-1].created_at.isoformat(),str(items[-1].id)+':'+items[-1].kind]) if len(rows)>limit else None})
 
 
 @router.get('/statistics',response_model=StatisticsResponse)
@@ -179,6 +222,15 @@ def export_trade_row(data):
 def safe_row(values):return [spreadsheet_text(x) if not isinstance(x,(int,float,Decimal)) else x for x in values]
 
 
+def batched(rows,size=200):
+    batch=[]
+    for row in rows:
+        batch.append(row)
+        if len(batch)>=size:
+            yield batch;batch=[]
+    if batch:yield batch
+
+
 def output_rows(engine,kind,sport,start,end,status,wallet_id,trade_kind):
     with Session(engine) as db:
         if kind=='games':
@@ -187,7 +239,9 @@ def output_rows(engine,kind,sport,start,end,status,wallet_id,trade_kind):
         else:
             source=trade_query(sport,start,end,wallet_id,trade_kind,status)
             rows=db.execute(select(source).order_by(source.c.created_at.desc(),source.c.id.desc(),source.c.kind.desc()).execution_options(yield_per=200))
-            for row in rows:yield safe_row(export_trade_row(trade_data(db,row.kind,row.id)))
+            for batch in batched(rows):
+                prefetch=trade_prefetch(db,batch)
+                for row in batch:yield safe_row(export_trade_row(trade_data(db,row.kind,row.id,prefetch)))
 
 
 def csv_bytes(headers,rows):

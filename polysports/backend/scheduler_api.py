@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from . import auth
 from .models import AuditEvent, ComboLeg, ComboRFQ, Game, Job, JobRun, MarketOutcome, ScheduleRevision, SyncRun, SyncSchedule, Team, TradeIntent, WatchedGame, WorkerHeartbeat
 from .scheduler import db_now, watch_game
+from .prefetch import objects_by_id, rows_by_attr
 from .sports_api import cursor_decode,cursor_encode
 
 router=APIRouter(prefix='/api/v1')
@@ -23,12 +24,61 @@ def team_name(team):
     return (team.name_zh or team.source_name) if team else '未知球队'
 
 
+def game_target_data(game,home,away):
+    return {'type':'game','game_id':str(game.id),'label':team_name(home)+' 对 '+team_name(away),
+            'starts_at':game.starts_at.isoformat(),'game_status':game.status,'sport':game.sport}
+
+
 def game_target(db, game_id):
     game=db.get(Game,game_id)
     if not game: return None
-    home=db.get(Team,game.home_team_id); away=db.get(Team,game.away_team_id)
-    return {'type':'game','game_id':str(game.id),'label':team_name(home)+' 对 '+team_name(away),
-            'starts_at':game.starts_at.isoformat(),'game_status':game.status,'sport':game.sport}
+    return game_target_data(game,db.get(Team,game.home_team_id),db.get(Team,game.away_team_id))
+
+
+def job_targets(db, jobs):
+    jobs=list(jobs)
+    if not jobs: return {}
+    watches=objects_by_id(db,WatchedGame,{job.watched_game_id for job in jobs if job.kind=='result_poll'})
+    intents=objects_by_id(db,TradeIntent,{job.trade_intent_id for job in jobs if job.kind=='trade_reconcile'})
+    combos=objects_by_id(db,ComboRFQ,{job.combo_rfq_id for job in jobs if job.kind=='combo_reconcile'})
+    runs=objects_by_id(db,SyncRun,{job.sync_run_id for job in jobs if job.kind=='sync'})
+    combo_legs=rows_by_attr(db,ComboLeg,'rfq_id',list(combos))
+    game_ids={watch.game_id for watch in watches.values()} | {intent.game_id for intent in intents.values()} | {leg.game_id for values in combo_legs.values() for leg in values}
+    games=objects_by_id(db,Game,game_ids)
+    teams=objects_by_id(db,Team,
+                        {game.home_team_id for game in games.values()} |
+                        {game.away_team_id for game in games.values()})
+    outcomes=objects_by_id(db,MarketOutcome,{intent.outcome_id for intent in intents.values()})
+
+    def for_game(game_id):
+        game=games.get(game_id)
+        return game_target_data(game,teams.get(game.home_team_id),teams.get(game.away_team_id)) if game else None
+
+    result={}
+    for job in jobs:
+        target=None
+        if job.kind=='result_poll':
+            watch=watches.get(job.watched_game_id)
+            target=for_game(watch.game_id) if watch else None
+        elif job.kind=='trade_reconcile':
+            intent=intents.get(job.trade_intent_id)
+            if intent:
+                target=for_game(intent.game_id) or {'type':'game','label':'比赛不可用'}
+                outcome=outcomes.get(intent.outcome_id)
+                target.update({'type':'trade','intent_id':str(intent.id),'trade_state':intent.state,
+                               'side':intent.side,'label':target['label']+(' · '+outcome.label if outcome else '')})
+        elif job.kind=='combo_reconcile':
+            combo=combos.get(job.combo_rfq_id)
+            if combo:
+                targets=[x for x in (for_game(leg.game_id) for leg in combo_legs.get(combo.id,[])) if x]
+                target={'type':'combo','combo_id':str(combo.id),'state':combo.state,
+                        'label':'；'.join(x['label'] for x in targets) if targets else '组合腿不可用',
+                        'starts_at':min((x['starts_at'] for x in targets),default=None),'legs':targets}
+        elif job.kind=='sync':
+            run=runs.get(job.sync_run_id)
+            if run: target={'type':'sync','run_id':str(run.id),'state':run.status,'label':run.sport+' · '+run.provider}
+        result[job.id]=target
+    return result
 
 
 def job_target(db, job):
@@ -173,7 +223,8 @@ def jobs(request: Request,kind:Literal['sync','result_poll','trade_reconcile','c
     except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
         rows=list(db.scalars(query.order_by(Job.due_at,Job.id).limit(limit+1)));items=rows[:limit]
-        return ok(request,{'items':[{'id':str(x.id),'kind':x.kind,'status':x.status,'due_at':x.due_at.isoformat(),'attempt_count':x.attempt_count,'failure_count':x.failure_count,'last_error_code':x.last_error_code,'last_error_summary':x.last_error_summary,'watched_game_id':str(x.watched_game_id) if x.watched_game_id else None,'target':job_target(db,x)} for x in items],'window':{'from':start.isoformat(),'to':end.isoformat()},'next_cursor':cursor_encode([items[-1].due_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
+        targets=job_targets(db,items)
+        return ok(request,{'items':[{'id':str(x.id),'kind':x.kind,'status':x.status,'due_at':x.due_at.isoformat(),'attempt_count':x.attempt_count,'failure_count':x.failure_count,'last_error_code':x.last_error_code,'last_error_summary':x.last_error_summary,'watched_game_id':str(x.watched_game_id) if x.watched_game_id else None,'target':targets.get(x.id)} for x in items],'window':{'from':start.isoformat(),'to':end.isoformat()},'next_cursor':cursor_encode([items[-1].due_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None})
 
 
 @router.get('/jobs/{job_id}/runs')

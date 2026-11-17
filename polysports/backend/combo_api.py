@@ -69,6 +69,7 @@ from datetime import datetime
 from .sports_api import cursor_decode, cursor_encode
 from .combo_service import request_quote, accept_quote, discard_unaccepted_quote
 from .models import ComboRFQ, ComboLeg, ComboEvent, ComboFill, Game, Team, WatchedGame, ResultBindingRequest, Job
+from .prefetch import objects_by_id, rows_by_attr
 
 
 class ComboLegBody(BaseModel):
@@ -93,18 +94,60 @@ class AcceptBody(BaseModel):
 _MISSING = object()
 
 
-def combo_data(db,row,fill=_MISSING):
+def combo_prefetch(db, rows):
+    """一次性加载组合列表所需的关联对象，供 combo_data 复用。"""
+    rows=list(rows)
+    if not rows:
+        return {'legs':{},'games':{},'links':{},'markets':{},'outcomes':{},'teams':{},
+                'watches':{},'bindings':{},'jobs':{},'fills':{}}
+    rfq_ids=[row.id for row in rows]
+    legs_by_rfq=rows_by_attr(db,ComboLeg,'rfq_id',rfq_ids)
+    legs=[leg for values in legs_by_rfq.values() for leg in values]
+    game_ids={leg.game_id for leg in legs}
+    link_ids={leg.market_link_id for leg in legs}
+    outcome_ids={leg.outcome_id for leg in legs}
+    games=objects_by_id(db,Game,game_ids)
+    links=objects_by_id(db,MarketLink,link_ids)
+    markets=objects_by_id(db,PolyMarket,{link.market_id for link in links.values()})
+    outcomes=objects_by_id(db,MarketOutcome,outcome_ids)
+    teams=objects_by_id(db,Team,
+                        {game.home_team_id for game in games.values()} |
+                        {game.away_team_id for game in games.values()})
+    watches={watch.game_id:watch for watch in db.scalars(select(WatchedGame).where(WatchedGame.game_id.in_(game_ids)))} if game_ids else {}
+    bindings={binding.game_id:binding for binding in db.scalars(select(ResultBindingRequest).where(ResultBindingRequest.game_id.in_(game_ids)))} if game_ids else {}
+    watch_ids={watch.id for watch in watches.values()}
+    jobs={job.watched_game_id:job for job in db.scalars(select(Job).where(Job.watched_game_id.in_(watch_ids),Job.kind=='result_poll'))} if watch_ids else {}
+    fills={fill.rfq_id:fill for fill in db.scalars(select(ComboFill).where(ComboFill.rfq_id.in_(rfq_ids),ComboFill.state=='confirmed'))}
+    return {'legs':legs_by_rfq,'games':games,'links':links,'markets':markets,'outcomes':outcomes,
+            'teams':teams,'watches':watches,'bindings':bindings,'jobs':jobs,'fills':fills}
+
+
+def combo_data(db,row,fill=_MISSING,prefetch=None):
     """组合记录自带逐腿赛果判断（纯本地只读）；各腿市场终态另由 /resolution 查询。
 
-    ``fill`` 由列表接口批量传入以避免 N+1；单条接口未传时按 rfq_id 自行查询。
+    ``fill`` 由列表接口批量传入以避免 N+1；``prefetch`` 由 combo_prefetch 生成，
+    可把一页内所有腿的关联对象合并为固定数量的 IN 查询。
     """
-    legs=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==row.id)))
+    legs=prefetch['legs'].get(row.id,[]) if prefetch is not None else list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==row.id)))
     details=[]
     for leg in legs:
-        game=db.get(Game,leg.game_id); link=db.get(MarketLink,leg.market_link_id); market=db.get(PolyMarket,link.market_id); outcome=db.get(MarketOutcome,leg.outcome_id); home=db.get(Team,game.home_team_id); away=db.get(Team,game.away_team_id)
-        watch=db.scalar(select(WatchedGame).where(WatchedGame.game_id==game.id))
-        binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id))
-        job=db.scalar(select(Job).where(Job.watched_game_id==watch.id,Job.kind=='result_poll')) if watch else None
+        if prefetch is not None:
+            game=prefetch['games'].get(leg.game_id)
+            link=prefetch['links'].get(leg.market_link_id)
+            market=prefetch['markets'].get(link.market_id) if link else None
+            outcome=prefetch['outcomes'].get(leg.outcome_id)
+            home=prefetch['teams'].get(game.home_team_id) if game else None
+            away=prefetch['teams'].get(game.away_team_id) if game else None
+            watch=prefetch['watches'].get(game.id) if game else None
+            binding=prefetch['bindings'].get(game.id) if game else None
+            job=prefetch['jobs'].get(watch.id) if watch else None
+        else:
+            game=db.get(Game,leg.game_id); link=db.get(MarketLink,leg.market_link_id); market=db.get(PolyMarket,link.market_id); outcome=db.get(MarketOutcome,leg.outcome_id); home=db.get(Team,game.home_team_id); away=db.get(Team,game.away_team_id)
+            watch=db.scalar(select(WatchedGame).where(WatchedGame.game_id==game.id))
+            binding=db.scalar(select(ResultBindingRequest).where(ResultBindingRequest.game_id==game.id))
+            job=db.scalar(select(Job).where(Job.watched_game_id==watch.id,Job.kind=='result_poll')) if watch else None
+        if not game or not market or not outcome or not home or not away:
+            continue
         verified=bool(binding and binding.state=='bound' and game.status=='finished'
                       and game.home_score is not None and game.away_score is not None)
         # 与单场及 /resolution 完全共用同一套严格规则，不从比分猜测无法识别的命题。
@@ -126,7 +169,7 @@ def combo_data(db,row,fill=_MISSING):
             'net_receive':str(row.quote_receive) if row.quote_receive is not None else None}
            if row.quote_id and row.quote_expires_at else None)
     if fill is _MISSING:
-        fill=db.scalar(select(ComboFill).where(ComboFill.rfq_id==row.id,ComboFill.state=='confirmed'))
+        fill=prefetch['fills'].get(row.id) if prefetch is not None else db.scalar(select(ComboFill).where(ComboFill.rfq_id==row.id,ComboFill.state=='confirmed'))
     fill_data=fill_payload(fill)
     pnl=combo_pnl(direction=row.direction,by_score=score_summary['by_score'],
                   quantity=row.quantity,quote=quote,fill=fill_data)
@@ -136,6 +179,10 @@ def combo_data(db,row,fill=_MISSING):
             'close_blocked':close_reason is not None,'close_block_reason':close_reason,
             'quote':quote,'fill':fill_data,'pnl':pnl,
             'buy_summary':combo_buy_summary(row.direction,quote,fill_data)}
+
+
+def combo_data_one(db,row):
+    return combo_data(db,row,prefetch=combo_prefetch(db,[row]))
 
 
 def failure(request,exc):
@@ -229,7 +276,7 @@ def create_combo(request: Request,body:ComboBody,idempotency_key:str=Header(...,
         if body.auto_accept:auto_accept_current_quote(request,ident,created)
         with Session(request.app.state.engine) as db:
             row=db.get(ComboRFQ,ident);status=202 if row.state in ('requesting','unknown','accepting','executing') else 201 if created else 200
-            return JSONResponse(status_code=status,content={'data':combo_data(db,row),'request_id':request.state.request_id})
+            return JSONResponse(status_code=status,content={'data':combo_data_one(db,row),'request_id':request.state.request_id})
     except TradingError as exc:return failure(request,exc)
 
 
@@ -268,13 +315,9 @@ def list_combos(request:Request,limit:int=50,cursor:str | None=None,state:Litera
     except (ValueError,TypeError):return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
         rows=list(db.scalars(query.order_by(ComboRFQ.created_at.desc(),ComboRFQ.id.desc()).limit(limit+1)));items=rows[:limit]
-        # 一次取出本页全部已确认成交明细，避免每张组合卡片各查一次。
-        fill_map={}
-        if items:
-            for fill in db.scalars(select(ComboFill).where(ComboFill.rfq_id.in_([x.id for x in items]),ComboFill.state=='confirmed')):
-                fill_map[fill.rfq_id]=fill
+        prefetch=combo_prefetch(db,items)
         next_cursor=cursor_encode([items[-1].created_at.isoformat(),str(items[-1].id)]) if len(rows)>limit else None
-        return {'data':{'items':[combo_data(db,row,fill_map.get(row.id)) for row in items],'next_cursor':next_cursor},'request_id':request.state.request_id}
+        return {'data':{'items':[combo_data(db,row,prefetch=prefetch) for row in items],'next_cursor':next_cursor},'request_id':request.state.request_id}
 
 
 @router.get('/combo-rfqs/by-key/{key}')
@@ -282,7 +325,7 @@ def combo_by_key(request:Request,key:uuid.UUID,wallet_id:uuid.UUID):
     with Session(request.app.state.engine) as db:
         row=db.scalar(select(ComboRFQ).where(ComboRFQ.wallet_id==wallet_id,ComboRFQ.client_request_id==key))
         if not row:return auth.error(request,404,'NOT_FOUND','询价记录不存在，不能据此推断外部请求状态')
-        return {'data':combo_data(db,row),'request_id':request.state.request_id}
+        return {'data':combo_data_one(db,row),'request_id':request.state.request_id}
 
 
 @router.get('/combo-rfqs/{ident}')
@@ -290,7 +333,7 @@ def get_combo(request:Request,ident:uuid.UUID):
     with Session(request.app.state.engine) as db:
         row=db.get(ComboRFQ,ident)
         if not row:return auth.error(request,404,'NOT_FOUND','组合询价不存在')
-        return {'data':combo_data(db,row),'request_id':request.state.request_id}
+        return {'data':combo_data_one(db,row),'request_id':request.state.request_id}
 
 
 @router.get('/combo-rfqs/{ident}/close-context')
@@ -307,7 +350,7 @@ def accept_combo(request:Request,ident:uuid.UUID,body:AcceptBody):
         accept_quote(request.app.state.engine,request.app.state.settings,ident,body.quote_id)
         with Session(request.app.state.engine) as db:
             row=db.get(ComboRFQ,ident);status=202 if row.state in ('accepting','executing','unknown') else 200
-            return JSONResponse(status_code=status,content={'data':combo_data(db,row),'request_id':request.state.request_id})
+            return JSONResponse(status_code=status,content={'data':combo_data_one(db,row),'request_id':request.state.request_id})
     except TradingError as exc:return failure(request,exc)
 
 

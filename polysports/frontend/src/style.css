@@ -38,6 +38,14 @@
 .game-filled{display:inline-block;margin:8px 0;padding:4px 9px;border-radius:6px;background:#e4f5eb;color:#14764c;font-size:12px;font-weight:700}
 .game-name-note{margin-left:7px;padding:1px 7px;border-radius:999px;background:#fff6e5;color:#8a6d1f;font-size:11px;font-weight:700;white-space:nowrap}
 .game-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.game-scoreboard{display:flex;flex-direction:column;align-items:center;gap:4px;width:fit-content;min-width:170px;margin:12px auto 10px;padding:9px 22px 10px;border:1px solid #e1ebe4;border-radius:12px;background:linear-gradient(180deg,#f9fcfa,#eef5f1);box-shadow:inset 0 1px 0 #fff}
+.game-score-label{font-size:10px;font-weight:700;letter-spacing:.14em;color:#7d9085}
+.game-score-line{display:flex;align-items:baseline;gap:9px;font-family:Manrope,system-ui,sans-serif;line-height:1}
+.game-score-line strong{font-size:30px;font-weight:800;letter-spacing:-.04em;color:#53675c}
+.game-score-line strong.score-winner{color:#143f35}
+.game-score-line strong.score-loser{color:#84958c}
+.game-score-sep{font-size:20px;font-weight:700;color:#9aaba1}
+@media(max-width:600px){.game-score-line strong{font-size:26px}.game-scoreboard{min-width:150px;padding:8px 18px 9px}}
 .team-maintain{margin-top:2px;font-size:11px;font-weight:600}
 .job-target{flex:1 1 100%;margin-top:2px;font-size:12px;line-height:1.6;color:#53675c;overflow-wrap:anywhere}
 

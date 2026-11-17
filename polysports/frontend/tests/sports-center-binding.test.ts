@@ -78,6 +78,17 @@ it('赛事卡合并重复的队名提示，并把球队维护移入详情',async
   view.unmount()
 })
 
+it('完赛卡片用比分板显示全场比分并突出获胜方',async()=>{
+  const finished={...game,status:'finished',home_score:120,away_score:136}
+  const {view}=setup(undefined,[finished]);await flushPromises()
+  const board=view.get('.game-scoreboard')
+  expect(board.text()).toContain('全场比分')
+  expect(board.findAll('strong').map(item=>item.text())).toEqual(['120','136'])
+  expect(board.get('.score-winner').text()).toBe('136')
+  expect(board.attributes('aria-label')).toBe('全场比分：瑞士 120 比 136 苏格兰')
+  view.unmount()
+})
+
 it('有中文名时不因目录来源标记队名待核对',async()=>{
   const directoryTeam=(id:string,zh:string)=>({...team(id),name_zh:zh,name_zh_source:'sportsmatch'})
   const directoryGame={...game,home_team:directoryTeam('Lithuania','立陶宛'),away_team:directoryTeam('Liechtenstein','列支敦士登')}

@@ -24,6 +24,7 @@ const title=()=>sport()==='football'?'足球赛事中心':'NBA 赛事中心'
 const dateFormat=(value:string)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value))
 const name=(team:Team)=>team.name_zh || team.source_name
 const teamNameNote=(game:Game)=>[game.home_team,game.away_team].some(team=>!team.name_zh)?'中文名待补充':''
+const scoreLabel=(game:Game)=>game.status==='finished'?'全场比分':game.status==='live'?'当前比分':'比分'
 const bindingName=(state:string|null)=>({bound:'赛果已绑定',pending:'赛果匹配中',needs_review:'赛果待确认'} as Record<string,string>)[state || ''] || '赛果未绑定'
 const statusName=(status:string)=>({scheduled:'未开始',live:'进行中',finished:'已完赛',postponed:'已延期',cancelled:'已取消',interrupted:'已中断',unknown:'状态未知'} as Record<string,string>)[status] || '状态未知'
 const orderState=(state:string)=>({submitting:'提交中',pending:'已接受，待核对',partially_filled:'部分成交',filled:'全部成交',rejected:'已拒绝',cancelled:'已撤单',unknown:'结果未知'} as Record<string,string>)[state]||'状态未知'
@@ -205,8 +206,15 @@ watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRan
             <small v-if="sport()==='nba' && team.name_zh">{{team.source_name}}</small>
           </div>
         </div>
+        <div v-if="game.home_score!==null && game.away_score!==null" class="game-scoreboard" :aria-label="`${scoreLabel(game)}：${name(game.home_team)} ${game.home_score} 比 ${game.away_score} ${name(game.away_team)}`">
+          <span class="game-score-label">{{scoreLabel(game)}}</span>
+          <div class="game-score-line">
+            <strong :class="game.home_score>game.away_score?'score-winner':game.home_score<game.away_score?'score-loser':''">{{game.home_score}}</strong>
+            <span class="game-score-sep">:</span>
+            <strong :class="game.away_score>game.home_score?'score-winner':game.away_score<game.home_score?'score-loser':''">{{game.away_score}}</strong>
+          </div>
+        </div>
         <p v-if="game.has_matched_order" class="game-filled">● 已成交</p>
-        <p v-if="game.home_score!==null && game.away_score!==null">{{game.home_score}} : {{game.away_score}}</p>
         <div class="game-actions">
           <button class="text-button" @click="showDetail(game)">查看详情</button>
           <button v-if="game.provider!=='polymarket'" class="text-button" @click="followGame(game)">关注赛事</button>

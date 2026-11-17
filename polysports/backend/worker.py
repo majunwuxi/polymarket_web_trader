@@ -196,13 +196,15 @@ def main():
                 if now-last_heartbeat>=HEARTBEAT_SECONDS:
                     heartbeat(engine,worker_id,'running'); last_heartbeat=now
                 if now-last_schedule>=SCHEDULE_SECONDS:
-                    ensure_scheduled(engine); last_schedule=now
+                    try: ensure_scheduled(engine)
+                    except Exception: log.exception('scheduler_failed')
+                    last_schedule=now
                 worked=process_one(engine,settings,str(worker_id),client=client)
                 from .result_binding import process_pending_binding
                 bound=process_pending_binding(engine,settings,client)
                 if not worked and not bound: stopping.wait(IDLE_SECONDS)
             except Exception as exc:
-                log.error('worker_iteration_failed type=%s',type(exc).__name__); stopping.wait(5)
+                log.exception('worker_iteration_failed type=%s',type(exc).__name__); stopping.wait(5)
     finally:
         client.close()
         try: heartbeat(engine,worker_id,'stopping')

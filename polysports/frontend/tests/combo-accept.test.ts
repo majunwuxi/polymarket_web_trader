@@ -50,6 +50,18 @@ describe('组合一键下单反馈（模拟接口）',()=>{
     expect(view.text()).toContain('已清空待下单组合腿')
     view.unmount()
   })
+  it('执行中的组合可以重新安排外部对账',async()=>{
+    const combo=placed('executing')
+    const {view,fetchMock}=setup(()=>Promise.resolve(json({data:{combo_id:'mock-rfq',status:'pending'}})),[combo])
+    await flushPromises()
+    const button=view.findAll('button').find(item=>item.text()==='重新核对外部状态')
+    expect(button).toBeTruthy()
+    await button!.trigger('click');await flushPromises()
+    const reconcile=fetchMock.mock.calls.find(([url])=>String(url).endsWith('/combo-rfqs/mock-rfq/reconcile'))!
+    expect(reconcile[1]?.method).toBe('POST')
+    expect(view.text()).toContain('已重新安排对账')
+    view.unmount()
+  })
   it('可以一次性清空全部待下单组合腿',async()=>{
     twoLegs()
     const {view}=setup(()=>Promise.resolve(json({data:placed('executing')})))

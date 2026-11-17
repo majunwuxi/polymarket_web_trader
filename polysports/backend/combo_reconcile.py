@@ -1,9 +1,10 @@
 from datetime import timedelta
+import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .combo_gateway import ComboGateway
 from .combo_service import record, rfq_failure_code
-from .models import ComboRFQ, ComboLeg
+from .models import ComboRFQ, ComboLeg, ComboEvent
 from .scheduler import db_now, finish_attempt, retry_or_fail
 from .trading import wallet_for
 from .trading_gateway import TradingError
@@ -34,7 +35,7 @@ def apply_combo(db,job,payload,error=None):
         if str(payload.rfq_id)!=row.external_rfq_id:error='rfq_mismatch'
         else:
             status=str(payload.status).upper().split('.')[-1]
-            target={'CONFIRMED':'confirmed','FILLED':'confirmed','FAILED':'failed','EXPIRED':'expired','CANCELED':'rejected','AWAITING_MAKER_CONFIRMATION':'executing','EXECUTING':'executing','MINED':'executing','RETRYING':'executing'}.get(status)
+            target={'CONFIRMED':'confirmed','FILLED':'confirmed','FAILED':'failed','EXPIRED':'expired','CANCELED':'rejected','AWAITING_REQUESTER_ACCEPTANCE':'executing','AWAITING_MAKER_CONFIRMATION':'executing','EXECUTING':'executing','MATCHED':'executing','MINED':'executing','RETRYING':'executing'}.get(status)
             if not target:error='rfq_status_unknown'
             elif row.state not in ('confirmed','failed','expired','rejected'):
                 if target!=row.state:
@@ -62,6 +63,9 @@ def apply_combo(db,job,payload,error=None):
         finish_attempt(db,job,now,'succeeded',reset_failures=False)
         job.failure_count=(job.failure_count or 0)+1
         if job.failure_count>=MAX_COMBO_PENDING_CHECKS:
+            if row.state not in ('confirmed','failed','expired','rejected'):
+                row.state='unknown';row.error_code='reconcile_stale';row.updated_at=now
+                db.add(ComboEvent(id=uuid.uuid4(),rfq_id=row.id,state='unknown',code='reconcile_stale'))
             job.status='failed'
             job.last_error_code='reconcile_stale'
             job.last_error_summary=f'组合对账 {job.failure_count} 次仍未到终态，已停止自动重试'

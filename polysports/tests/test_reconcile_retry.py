@@ -55,13 +55,34 @@ def test_nonterminal_success_can_preserve_pending_streak():
     assert row.failure_count == 4
 
 
-def test_combo_reconcile_stops_after_pending_limit():
+def test_combo_matched_status_stays_executing():
     class SequenceDb:
         def __init__(self, *values):
             self.values = iter(values)
 
         def scalar(self, query):
             return next(self.values)
+
+    now = datetime.now(timezone.utc)
+    combo = S(id=uuid.uuid4(), state='executing', external_rfq_id='ext', quote_expires_at=None)
+    row = job()
+    row.combo_rfq_id = combo.id
+    apply_combo(SequenceDb(combo, now, attempt()), row, S(rfq_id='ext', status='MATCHED'))
+    assert row.status == 'pending'
+    assert combo.state == 'executing'
+
+
+def test_combo_reconcile_stops_after_pending_limit():
+    class SequenceDb:
+        def __init__(self, *values):
+            self.values = iter(values)
+            self.added = []
+
+        def scalar(self, query):
+            return next(self.values)
+
+        def add(self, value):
+            self.added.append(value)
 
     now = datetime.now(timezone.utc)
     combo = S(id=uuid.uuid4(), state='executing', external_rfq_id='ext', quote_expires_at=None)
@@ -73,3 +94,5 @@ def test_combo_reconcile_stops_after_pending_limit():
     assert row.failure_count == MAX_COMBO_PENDING_CHECKS
     assert row.last_error_code == 'reconcile_stale'
     assert '停止自动重试' in row.last_error_summary
+    assert combo.state == 'unknown' and combo.error_code == 'reconcile_stale'
+    assert db.added and db.added[-1].state == 'unknown'

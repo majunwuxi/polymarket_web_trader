@@ -239,6 +239,7 @@ COMBO_ERROR_TEXT = {
     'request_unknown': '询价结果未知，请勿重复提交',
     'no_quote': '本次没有收到报价，未成交',
     'quote_expired': '报价已过期，未成交',
+    'reconcile_stale': '组合对账已停止自动重试，请到 Polymarket 核对后重新安排对账',
 }
 
 

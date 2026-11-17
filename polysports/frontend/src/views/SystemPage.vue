@@ -2,6 +2,7 @@
 import { onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { session, logout, clearSession, ApiError } from '../auth'
+import { formatDateTime } from '../utils/format'
 type Schedule = {sport:'football'|'nba';provider:'polymarket'|'balldontlie';utc_time:string;enabled:boolean}
 type Job = {id:string;kind:string;status:string;due_at:string;attempt_count:number;failure_count:number;last_error_code:string|null;last_error_summary:string|null;target?:{label?:string;starts_at?:string;game_status?:string;state?:string;trade_state?:string}|null}
 type Worker = {id:string;state:string;last_seen_at:string}
@@ -9,7 +10,7 @@ const router=useRouter(), menuOpen=ref(false), revision=ref(0), items=ref<Schedu
 const utc8=(v:string)=>{const [h,m]=v.split(':').map(Number);return String((h+8)%24).padStart(2,'0')+':'+String(m).padStart(2,'0')}
 const jobKind=(kind:string)=>({sync:'赛程同步',result_poll:'赛果查询',trade_reconcile:'订单对账',combo_reconcile:'组合对账'} as Record<string,string>)[kind]||kind
 const jobStatus=(status:string)=>({pending:'待执行',leased:'执行中',done:'已完成',failed:'已停止',cancelled:'已取消'} as Record<string,string>)[status]||status
-const format=(v:string)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v))
+const format=formatDateTime
 async function api(path:string, options:RequestInit={}) { const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options}); const body=await response.json(); if(!response.ok) throw new Error(body?.error?.message || '服务暂不可用'); return body.data }
 async function load(){
   const now=Date.now()

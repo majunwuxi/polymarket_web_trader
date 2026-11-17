@@ -2,6 +2,13 @@
 import {onMounted,ref,watch,computed} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {session,logout,clearSession,ApiError} from '../auth'
+import AppSidebar from '../components/AppSidebar.vue'
+import AppTopbar from '../components/AppTopbar.vue'
+import OrderPendingPanel from '../components/OrderPendingPanel.vue'
+import CloseOrderPanel from '../components/CloseOrderPanel.vue'
+import OpenOrderForm from '../components/OpenOrderForm.vue'
+import OrderPreviewPanel from '../components/OrderPreviewPanel.vue'
+import OrderResultPanel from '../components/OrderResultPanel.vue'
 
 const route=useRoute(),router=useRouter()
 const menuOpen=ref(false),wallets=ref<any[]>([]),wallet=ref('')
@@ -31,9 +38,8 @@ const previewExpired=computed(()=>{
   const expiry=Date.parse(preview.value.expires_at)
   return !Number.isFinite(expiry)||expiry<=Date.now()
 })
-const stateName=(s:string)=>({submitting:'提交中',pending:'已接受，待核对',partially_filled:'部分成交',filled:'全部成交',rejected:'已拒绝',cancelled:'已撤单',unknown:'结果未知'} as Record<string,string>)[s]||'未知'
-const errorName=(s:string)=>({engine_restarting:'撮合引擎正在重启，系统未自动重发',post_only_mode:'市场处于 post-only 模式，系统未自动改变或重发订单',signed_order_mismatch:'签名参数不一致，订单未发送'} as Record<string,string>)[s]||s
-const time=(v:string)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v))
+const closeWalletLabel=computed(()=>wallets.value.find((w:any)=>w.id===closeContext.value?.wallet_id)?.label)
+const previewWallet=computed(()=>wallets.value.find((w:any)=>w.id===preview.value?.wallet_id))
 
 async function api(path:string,options:RequestInit={}){
   const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options})
@@ -141,16 +147,9 @@ watch(()=>[route.params.link,route.params.outcome,route.query.close],()=>{draftR
 
 <template>
 <div class="app-layout">
-  <header class="mobile-header"><div class="brand"><span class="brand-mark">P</span> PolySports</div><button class="menu-button" :aria-expanded="menuOpen" aria-controls="primary-nav" @click="menuOpen=!menuOpen">菜单</button></header>
-  <aside id="primary-nav" class="sidebar" :class="{open:menuOpen}">
-    <div class="brand sidebar-brand"><span class="brand-mark">P</span> PolySports</div>
-    <p class="nav-label">工作台</p>
-    <nav aria-label="主导航">
-      <RouterLink to="/">总览</RouterLink><RouterLink to="/sports/football">足球赛事</RouterLink><RouterLink to="/sports/nba">NBA 赛事</RouterLink><RouterLink to="/combos">组合交易</RouterLink><RouterLink to="/orders">交易记录</RouterLink><RouterLink to="/history">历史与导出</RouterLink><RouterLink to="/wallets">钱包状态</RouterLink><RouterLink to="/system">系统管理</RouterLink>
-    </nav>
-  </aside>
+  <AppSidebar :open="menuOpen" @toggle="menuOpen=!menuOpen" />
   <main class="workspace">
-    <div class="workspace-top"><span class="breadcrumb">工作台 / {{closing?'立即平仓':'单场订单'}}</span><div class="account"><span>{{session.username}}</span><button class="text-button" @click="signOut">退出</button></div></div>
+    <AppTopbar :breadcrumb="'工作台 / '+(closing?'立即平仓':'单场订单')" :username="session.username" @sign-out="signOut" />
     <div class="page-heading">
       <div>
         <p class="eyebrow">REAL FUNDS</p>
@@ -160,77 +159,15 @@ watch(()=>[route.params.link,route.params.outcome,route.query.close],()=>{draftR
     </div>
     <p role="status" class="form-message">{{message}}</p>
 
-    <section v-if="pending" class="welcome-card">
-      <h2>有一笔结果待核对</h2><p>系统保留了原幂等键。查询结果前请勿重复下单。</p>
-      <button class="text-button" @click="lookup">按原键查询</button>
-      <p>仅在已到 Polymarket 独立核实、并理解重复下单风险后，才清除本机记录。</p>
-      <label><input v-model="clearAcknowledged" type="checkbox">我已独立核实订单状态</label>
-      <button class="text-button" :disabled="!clearAcknowledged" @click="clearPending">清除本机记录</button>
-    </section>
+    <OrderPendingPanel v-if="pending" v-model:acknowledged="clearAcknowledged" @lookup="lookup" @clear="clearPending" />
 
-    <section v-if="closing" class="welcome-card detail">
-      <template v-if="closeContext">
-        <p>钱包：{{wallets.find(w=>w.id===closeContext.wallet_id)?.label}} · {{closeContext.wallet_address}}</p>
-        <p>原订单已成交 {{closeContext.matched_shares}} · 钱包持仓 {{closeContext.wallet_shares}} · 本次平仓 {{closeContext.candidate_shares}} 份</p>
-        <p v-if="marketCloseReady">当前市价 {{closeContext.market_price}} · 预计收入约 {{closeContext.estimated_proceeds}} pUSD</p>
-        <p v-if="closeContext.market_close_reason" class="form-message">{{closeContext.market_close_reason}}</p>
-        <p>FOK 卖出：全部成交或不成交；盘口变化需重新获取市价，接受不代表成交。</p>
-        <p>{{closeContext.notice}}</p>
-        <button class="text-button" :disabled="busy || !marketCloseReady" @click="makePreview()">刷新市价</button>
-        <button class="text-button" :disabled="busy || !!pending || !preview || previewExpired" @click="submit">确认按市价平仓</button>
-        <p v-if="preview && !previewExpired">市价有效期至 {{preview.expires_at}}；提交时再次核验盘口与钱包。</p>
-        <p v-else-if="preview">市价已过期，请点击「刷新市价」重新获取。</p>
-      </template>
-      <p v-else>正在核实真实持仓与盘口…</p>
-    </section>
+    <CloseOrderPanel v-if="closing" :context="closeContext" :wallet-label="closeWalletLabel" :market-close-ready="marketCloseReady" :busy="busy" :pending="pending" :preview="preview" :preview-expired="previewExpired" @refresh="makePreview()" @submit="submit" />
 
-    <section v-else class="welcome-card detail">
-      <p v-if="context">{{context.home}} 对 {{context.away}} · {{context.market_question}} · 选项：{{context.outcome_label}} · {{time(context.starts_at)}} UTC+8</p>
-      <p v-if="context" class="id-text">资产 ID：{{context.asset_id}} · 协议：{{context.protocol_version}}</p>
-      <p v-if="book">价格增量 {{book.tick_size}} · 最小份额 {{book.min_order_size}} · 盘口时间 {{book.observed_at}}</p>
-      <p v-else>真实盘口不可用。</p>
-      <form @submit.prevent="makePreview()">
-        <label for="wallet">钱包</label>
-        <select id="wallet" v-model="wallet" required @change="preview=null"><option v-for="w in wallets" :key="w.id" :value="w.id">{{w.label}} · {{w.wallet_address}}</option></select>
-        <label for="side">方向</label>
-        <select id="side" v-model="side" @change="preview=null"><option value="BUY">买入</option><option value="SELL">卖出</option></select>
-        <label for="price">限价</label>
-        <input id="price" v-model="price" inputmode="decimal" required @input="preview=null">
-        <template v-if="side==='BUY'">
-          <label for="input-mode">输入方式</label>
-          <select id="input-mode" v-model="inputMode"><option value="amount">购买金额（pUSD）</option><option value="shares">购买份额</option></select>
-        </template>
-        <template v-if="side==='BUY' && inputMode==='amount'">
-          <label for="budget">购买金额上限（pUSD）</label>
-          <input id="budget" v-model="budget" inputmode="decimal" required>
-          <p>按限价计算的份额：{{orderSize || '请填写有效金额与限价'}}；份额向下取两位小数，手续费另计。</p>
-        </template>
-        <template v-else>
-          <label for="size">份额</label>
-          <input id="size" v-model="size" inputmode="decimal" required @input="preview=null">
-        </template>
-        <button class="text-button" :disabled="busy || !wallet || !book">验证并预览</button>
-      </form>
-    </section>
+    <OpenOrderForm v-else v-model:wallet="wallet" v-model:side="side" v-model:price="price" v-model:size="size" v-model:budget="budget" v-model:input-mode="inputMode" :wallets="wallets" :book="book" :context="context" :order-size="orderSize" :busy="busy" @preview="makePreview()" />
 
-    <section v-if="preview && !closing" class="welcome-card detail">
-      <h2>确认真实资金订单</h2>
-      <p>钱包：{{wallets.find(w=>w.id===preview.wallet_id)?.label}} · {{wallets.find(w=>w.id===preview.wallet_id)?.wallet_address}}</p>
-      <p v-if="preview.context_snapshot">{{preview.context_snapshot.home}} 对 {{preview.context_snapshot.away}} · {{preview.context_snapshot.market_question}} · {{preview.context_snapshot.outcome_label}} · {{time(preview.context_snapshot.starts_at)}} UTC+8</p>
-      <p>方向：{{preview.side}} · 价格：{{preview.limit_price}} · 份额：{{preview.size}}</p>
-      <p>限价金额：{{preview.estimated_notional}} pUSD；手续费未知，实际成交以交易所记录为准。</p>
-      <p>预览有效期至 {{preview.expires_at}}；提交时将再次检查盘口和钱包。</p>
-      <button class="text-button" :disabled="busy || !!pending || previewExpired" @click="submit">确认并提交真实订单</button>
-      <p v-if="previewExpired">预览已过期，请重新验证并预览。</p>
-    </section>
+    <OrderPreviewPanel v-if="preview && !closing" :preview="preview" :wallet="previewWallet" :busy="busy" :pending="!!pending" :preview-expired="previewExpired" @submit="submit" />
 
-    <section v-if="result" class="welcome-card detail">
-      <h2>订单状态</h2>
-      <p>状态：{{stateName(result.state)}} · 已成交份额：{{result.matched_size ?? '未知'}}</p>
-      <p v-if="result.error_code">状态说明：{{errorName(result.error_code)}}</p>
-      <p v-if="result.retry_after_seconds!=null">建议等待：{{result.retry_after_seconds}} 秒</p>
-      <RouterLink to="/orders">查看交易记录</RouterLink>
-    </section>
+    <OrderResultPanel v-if="result" :result="result" />
   </main>
 </div>
 </template>

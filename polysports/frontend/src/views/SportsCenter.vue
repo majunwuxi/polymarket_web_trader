@@ -2,6 +2,12 @@
 import { ref, watch, nextTick, computed, onActivated } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { session, logout, clearSession, ApiError } from '../auth'
+import AppSidebar from '../components/AppSidebar.vue'
+import AppTopbar from '../components/AppTopbar.vue'
+import ResultBindingSummary from '../components/ResultBindingSummary.vue'
+import GameCard from '../components/GameCard.vue'
+import { formatDateTime } from '../utils/format'
+import { gameStatusName, orderStateName, resultBadge } from '../utils/labels'
 
 type Team = { id: string; source_name: string; name_zh: string | null; translation_status: string; name_zh_source?: string | null; logo_url: string | null }
 type Game = { id: string; provider: string; starts_at: string; status: string; home_team: Team; away_team: Team; home_score: number | null; away_score: number | null; league: {name:string} | null; last_synced_at:string | null; result_binding_state:string | null; has_matched_order:boolean }
@@ -21,14 +27,8 @@ const marketGroups=computed(()=>{const defs=[{type:'moneyline',football:'全场�
 let detailRequest=0
 const sport=()=>String(route.params.sport)
 const title=()=>sport()==='football'?'足球赛事中心':'NBA 赛事中心'
-const dateFormat=(value:string)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value))
 const name=(team:Team)=>team.name_zh || team.source_name
-const teamNameNote=(game:Game)=>[game.home_team,game.away_team].some(team=>!team.name_zh)?'中文名待补充':''
 const scoreLabel=(game:any)=>game.status==='finished'?'全场比分':game.status==='live'?'当前比分':'比分'
-const resultBadge=(won:any)=>won===true?{cls:'result-win',text:'选项获胜'}:won===false?{cls:'result-loss',text:'选项失败'}:null
-const bindingName=(state:string|null)=>({bound:'赛果已绑定',pending:'赛果匹配中',needs_review:'赛果待确认'} as Record<string,string>)[state || ''] || '赛果未绑定'
-const statusName=(status:string)=>({scheduled:'未开始',live:'进行中',finished:'已完赛',postponed:'已延期',cancelled:'已取消',interrupted:'已中断',unknown:'状态未知'} as Record<string,string>)[status] || '状态未知'
-const orderState=(state:string)=>({submitting:'提交中',pending:'已接受，待核对',partially_filled:'部分成交',filled:'全部成交',rejected:'已拒绝',cancelled:'已撤单',unknown:'结果未知'} as Record<string,string>)[state]||'状态未知'
 async function api(path:string, options:RequestInit={}) {
   const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options})
   const payload=await response.json()
@@ -151,78 +151,14 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
 </script>
 <template>
 <div class="app-layout">
-  <header class="mobile-header"><div class="brand"><span class="brand-mark">P</span> PolySports</div><button class="menu-button" :aria-expanded="menuOpen" aria-controls="primary-nav" @click="menuOpen=!menuOpen">菜单</button></header>
-  <aside id="primary-nav" class="sidebar" :class="{open:menuOpen}"><div class="brand sidebar-brand"><span class="brand-mark">P</span> PolySports</div><p class="nav-label">工作台</p><nav aria-label="主导航"><RouterLink to="/">总览</RouterLink><RouterLink to="/sports/football">足球赛事</RouterLink><RouterLink to="/sports/nba">NBA 赛事</RouterLink><RouterLink to="/combos">组合交易</RouterLink><RouterLink to="/orders">交易记录</RouterLink><RouterLink to="/history">历史与导出</RouterLink><RouterLink to="/wallets">钱包状态</RouterLink><RouterLink to="/system">系统管理</RouterLink></nav></aside>
-  <main class="workspace"><div class="workspace-top"><span class="breadcrumb">工作台 / {{title()}}</span><div class="account"><span>{{session.username}}</span><button class="text-button" @click="signOut">退出</button></div></div>
+  <AppSidebar :open="menuOpen" @toggle="menuOpen=!menuOpen" />
+  <main class="workspace"><AppTopbar :breadcrumb="'工作台 / '+title()" :username="session.username" @sign-out="signOut" />
     <div class="page-heading"><div><p class="eyebrow">MATCH CENTER · UTC+8</p><h1>{{title()}}</h1><p class="muted">时间显示为北京时间；赛事由配置的数据源提供。</p></div></div>
-    <section v-if="sport()==='football'" class="welcome-card binding-summary" aria-label="足球赛果绑定状态">
-  <div class="binding-summary-head"><div><p class="eyebrow">RESULT BINDING</p><h2>足球赛果绑定状态</h2></div><button class="text-button" :disabled="bindingSummaryLoading" @click="loadBindingSummary">刷新绑定状态</button></div>
-  <p v-if="bindingSummaryLoading" role="status">正在加载赛果绑定状态…</p>
-  <p v-else-if="bindingSummaryError" role="alert" class="form-message">{{bindingSummaryError}}</p>
-  <template v-else-if="bindingSummary">
-    <div class="info-grid binding-metrics">
-      <div><span>待确认</span><strong>{{bindingSummary.totals.needs_review}}</strong></div>
-      <div><span>自动匹配中</span><strong>{{bindingSummary.totals.pending}}</strong></div>
-      <div><span>已绑定</span><strong>{{bindingSummary.totals.bound}}</strong></div>
-    </div>
-    <p class="muted">后台会自动查询 API-FOOTBALL，找到候选后进入待确认。</p>
-    <p v-if="bindingActionError" role="alert" class="form-message">{{bindingActionError}}</p>
-    <div v-if="bindingSummary.items.length" class="binding-unbound">
-      <span class="binding-unbound-label">未绑定球队</span>
-      <div class="binding-team-links">
-        <button v-for="item in bindingSummary.items" :key="item.game_id" class="binding-team-link" :disabled="!!bindingBusy" :title="item.candidates.length===1?'点击直接绑定唯一的赛果候选':'多个候选，点击展开选择'" @click="openSummaryBinding(item)">
-          {{item.home}} 对 {{item.away}}
-          <small v-if="item.candidates.length>1">（{{item.candidates.length}} 个候选）</small>
-        </button>
-      </div>
-    </div>
-    <p v-if="!bindingSummary.totals.total" class="muted">暂无需要绑定赛果的足球赛事。</p>
-    <p v-else-if="!bindingSummary.items.length && bindingSummary.totals.pending" class="muted">当前没有可直接绑定的未绑定球队；自动匹配中的赛事找到候选后会显示为链接。</p>
-    <p v-else-if="!bindingSummary.items.length" class="muted">当前没有可直接绑定的未绑定球队。</p>
-    <div v-if="bindingSummary.items.length" class="binding-queue">
-      <template v-for="item in bindingSummary.items" :key="item.game_id">
-        <article v-if="expandedBinding===item.game_id" class="binding-row">
-          <div class="binding-row-head"><strong>{{item.home}} 对 {{item.away}} · 选择候选</strong><span>{{item.league || '联赛未知'}} · {{dateFormat(item.starts_at)}} UTC+8</span></div>
-          <p class="muted">Polymarket 来源 ID：{{item.external_id}} · 必须选择与这场比赛对应的候选</p>
-          <div class="binding-candidates">
-            <div v-for="candidate in item.candidates" :key="candidate.id" class="binding-candidate">
-              <span>{{candidate.home}} 对 {{candidate.away}} · {{dateFormat(candidate.starts_at)}} UTC+8 · {{candidate.league || '联赛未知'}}</span>
-              <button class="text-button" :disabled="!!bindingBusy" @click="confirmSummaryBinding(item,candidate)">{{bindingBusy===item.game_id+':'+candidate.id?'绑定中…':'确认绑定'}}</button>
-            </div>
-          </div>
-        </article>
-      </template>
-    </div>
-    <p v-if="bindingSummary.has_more" class="muted">仅显示前 20 条待确认赛事，处理后刷新可查看其余记录。</p>
-  </template>
-</section>
+    <ResultBindingSummary v-if="sport()==='football'" :summary="bindingSummary" :loading="bindingSummaryLoading" :error="bindingSummaryError" :action-error="bindingActionError" :busy="bindingBusy" :expanded="expandedBinding" @refresh="loadBindingSummary" @open="openSummaryBinding" @confirm="confirmSummaryBinding" />
 <div class="game-tools"><label for="range">赛事范围</label><select id="range" v-model="selectedRange" @change="load()"><option value="upcoming">{{sport()==='football'?'过去 2 小时 30 分至未来 36 小时':'过去 3 小时至未来 36 小时'}}</option><option value="history">历史赛事</option></select><button class="text-button" @click="load()">刷新</button></div>
-    <p class="muted" v-if="lastSync">{{lastSync.started_at ? '最近同步' : '计划同步'}}：{{dateFormat(lastSync.started_at || lastSync.scheduled_for)}} UTC+8 · {{lastSync.status === 'succeeded' ? '成功' : lastSync.status === 'failed' ? '失败' : lastSync.status === 'queued' ? '排队中' : lastSync.status === 'running' ? '进行中' : '未知'}}<span v-if="lastSync.error_code">（{{lastSync.error_code}}）</span></p><p class="muted" v-else>尚无同步记录。</p><p v-if="!detail" role="status" class="form-message">{{message}}</p><p v-if="loading && !games.length">正在加载…</p><p v-else-if="!games.length && !message" class="muted">暂无已保存赛事。若尚未同步，请先配置数据源并运行同步命令。</p>
+    <p class="muted" v-if="lastSync">{{lastSync.started_at ? '最近同步' : '计划同步'}}：{{formatDateTime(lastSync.started_at || lastSync.scheduled_for)}} UTC+8 · {{lastSync.status === 'succeeded' ? '成功' : lastSync.status === 'failed' ? '失败' : lastSync.status === 'queued' ? '排队中' : lastSync.status === 'running' ? '进行中' : '未知'}}<span v-if="lastSync.error_code">（{{lastSync.error_code}}）</span></p><p class="muted" v-else>尚无同步记录。</p><p v-if="!detail" role="status" class="form-message">{{message}}</p><p v-if="loading && !games.length">正在加载…</p><p v-else-if="!games.length && !message" class="muted">暂无已保存赛事。若尚未同步，请先配置数据源并运行同步命令。</p>
     <div class="games-list">
-      <article v-for="game in games" :key="game.id" class="game-card">
-        <div class="game-meta">{{game.league?.name || (sport()==='nba'?'NBA':'足球')}} · <template v-if="game.provider==='polymarket'">{{sport()==='football'?'Polymarket 胜平负':'Polymarket NBA'}} · {{bindingName(game.result_binding_state)}} · </template>{{dateFormat(game.starts_at)}} · {{statusName(game.status)}}<span v-if="teamNameNote(game)" class="game-name-note">{{teamNameNote(game)}}</span></div>
-        <div class="matchup">
-          <div v-for="team in [game.home_team,game.away_team]" :key="team.id" class="team">
-            <img v-if="team.logo_url" :src="team.logo_url" alt="" @error="team.logo_url=null">
-            <span v-else class="logo-placeholder">队徽待补充</span>
-            <strong>{{name(team)}}</strong>
-            <small v-if="sport()==='nba' && team.name_zh">{{team.source_name}}</small>
-          </div>
-        </div>
-        <div v-if="game.home_score!==null && game.away_score!==null" class="game-scoreboard" :aria-label="`${scoreLabel(game)}：${name(game.home_team)} ${game.home_score} 比 ${game.away_score} ${name(game.away_team)}`">
-          <span class="game-score-label">{{scoreLabel(game)}}</span>
-          <div class="game-score-line">
-            <strong :class="game.home_score>game.away_score?'score-winner':game.home_score<game.away_score?'score-loser':''">{{game.home_score}}</strong>
-            <span class="game-score-sep">:</span>
-            <strong :class="game.away_score>game.home_score?'score-winner':game.away_score<game.home_score?'score-loser':''">{{game.away_score}}</strong>
-          </div>
-        </div>
-        <p v-if="game.has_matched_order" class="game-filled">● 已成交</p>
-        <div class="game-actions">
-          <button class="text-button" @click="showDetail(game)">查看详情</button>
-          <button v-if="game.provider!=='polymarket'" class="text-button" @click="followGame(game)">关注赛事</button>
-        </div>
-      </article>
+      <GameCard v-for="game in games" :key="game.id" :game="game" :sport="sport()" @detail="showDetail" @follow="followGame" />
     </div>
     <button v-if="next" class="primary more" :disabled="loading" @click="load(true)">加载更多</button>
     <dialog ref="detailDialog" class="game-dialog" aria-labelledby="game-dialog-title" @close="closeDetail">
@@ -231,9 +167,9 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
         <header class="dialog-heading"><div><p class="eyebrow">MATCH CENTRE <span> / </span> UTC+8</p><h2 id="game-dialog-title">赛事详情</h2></div><button class="dialog-close" autofocus aria-label="关闭详情" @click="closeDetail">×</button></header>
         <p v-if="message" role="status" class="form-message">{{message}}</p>
         <section class="match-summary" aria-label="比赛信息">
-          <div class="summary-meta"><span>{{detail.league?.name || (sport()==='nba'?'NBA':'足球')}}</span><span>·</span><span>{{detail.starts_at ? dateFormat(detail.starts_at)+' UTC+8' : '开赛时间未知'}}</span><span class="summary-status">{{statusName(detail.status)}}</span></div>
+          <div class="summary-meta"><span>{{detail.league?.name || (sport()==='nba'?'NBA':'足球')}}</span><span>·</span><span>{{detail.starts_at ? formatDateTime(detail.starts_at)+' UTC+8' : '开赛时间未知'}}</span><span class="summary-status">{{gameStatusName(detail.status)}}</span></div>
           <div v-if="detail.home_team && detail.away_team" class="summary-teams"><div class="summary-team"><img v-if="detail.home_team.logo_url" :src="detail.home_team.logo_url" alt=""><span v-else class="summary-logo">主</span><div><small>主队</small><strong>{{name(detail.home_team)}}</strong><button class="text-button team-maintain" @click="editFromDetail(detail.home_team)">维护名称</button></div></div><div v-if="detail.home_score!==null && detail.away_score!==null" class="game-scoreboard summary-scoreboard" :aria-label="`${scoreLabel(detail)}：${name(detail.home_team)} ${detail.home_score} 比 ${detail.away_score} ${name(detail.away_team)}`"><span class="game-score-label">{{scoreLabel(detail)}}</span><div class="game-score-line"><strong :class="detail.home_score>detail.away_score?'score-winner':detail.home_score<detail.away_score?'score-loser':''">{{detail.home_score}}</strong><span class="game-score-sep">:</span><strong :class="detail.away_score>detail.home_score?'score-winner':detail.away_score<detail.home_score?'score-loser':''">{{detail.away_score}}</strong></div></div><span v-else class="summary-versus">VS</span><div class="summary-team away"><div><small>客队</small><strong>{{name(detail.away_team)}}</strong><button class="text-button team-maintain" @click="editFromDetail(detail.away_team)">维护名称</button></div><img v-if="detail.away_team.logo_url" :src="detail.away_team.logo_url" alt=""><span v-else class="summary-logo">客</span></div></div>
-          <div class="summary-foot"><span>来源：{{detail.provider}} · 来源 ID：{{detail.external_id}}</span><span>最近同步：{{detail.last_synced_at ? dateFormat(detail.last_synced_at)+' UTC+8' : '未知'}}</span></div>
+          <div class="summary-foot"><span>来源：{{detail.provider}} · 来源 ID：{{detail.external_id}}</span><span>最近同步：{{detail.last_synced_at ? formatDateTime(detail.last_synced_at)+' UTC+8' : '未知'}}</span></div>
         </section>
         </div>
         <section class="welcome-card detail match-orders" aria-label="本场订单明细">
@@ -243,10 +179,10 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
           <p v-if="comboError" role="alert">{{comboError}} <button class="text-button" @click="loadMatchOrders('combo',detail.id,detailRequest)">重试</button></p>
           <p v-if="!singleLoading && !comboLoading && !singleError && !comboError && !matchSingle.length && !matchCombo.length">暂无本场订单。</p>
           <article v-for="order in matchSingle" :key="order.id" class="match-order-card">
-            <strong>单场{{order.side==='BUY'?'买入':'卖出'}} · {{orderState(order.state)}}<span v-if="resultBadge(order.result_won)" class="result-badge" :class="resultBadge(order.result_won)?.cls">{{resultBadge(order.result_won)?.text}}</span></strong>
+            <strong>单场{{order.side==='BUY'?'买入':'卖出'}} · {{orderStateName(order.state)}}<span v-if="resultBadge(order.result_won)" class="result-badge" :class="resultBadge(order.result_won)?.cls">{{resultBadge(order.result_won)?.text}}</span></strong>
             <p>{{order.market_question}} · {{order.outcome_label}}</p>
             <p>限价 {{order.limit_price}} · 份额 {{order.size}} · 已成交 {{order.matched_size ?? '未知'}}</p>
-            <p>创建时间：{{dateFormat(order.created_at)}} UTC+8</p>
+            <p>创建时间：{{formatDateTime(order.created_at)}} UTC+8</p>
             <p>订单编号：{{order.external_order_id || '尚未取得'}}</p>
           </article>
           <button v-if="singleCursor" class="text-button" :disabled="singleLoading" @click="loadMatchOrders('single',detail.id,detailRequest,true)">加载更多单场订单</button>
@@ -254,15 +190,15 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
             <strong>组合{{combo.direction==='BUY'?'买入':'卖出'}} · 已确认</strong>
             <p v-for="leg in combo.legs.filter((item:any)=>item.game_id===detail?.id)" :key="leg.outcome_id">本场选项：{{leg.market_question || '市场信息未知'}} · {{leg.outcome_label || '选项信息未知'}}<span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span></p>
             <p>组合预算或份额：{{combo.quantity}}<span v-if="combo.quote"> · 组合报价：{{combo.quote.price}} · 报价所需：{{combo.quote.total_required}}</span></p>
-            <p>创建时间：{{dateFormat(combo.created_at)}} UTC+8</p>
+            <p>创建时间：{{formatDateTime(combo.created_at)}} UTC+8</p>
             <p>组合 RFQ：{{combo.external_rfq_id || '未知'}}<span v-if="combo.tx_hash"> · 交易哈希：{{combo.tx_hash}}</span></p>
           </article>
           <button v-if="comboCursor" class="text-button" :disabled="comboLoading" @click="loadMatchOrders('combo',detail.id,detailRequest,true)">加载更多组合订单</button>
           <RouterLink v-if="matchSingle.length || matchCombo.length" to="/orders">查看全部交易记录</RouterLink>
         </section>
-        <section v-if="binding" class="welcome-card detail"><h3>外部赛果绑定</h3><p>状态：{{binding.state}} <span v-if="binding.error_code">· {{binding.error_code}}</span></p><p v-for="candidate in binding.candidates" :key="candidate.id">{{candidate.home}} 对 {{candidate.away}} · {{dateFormat(candidate.starts_at)}} UTC+8 · {{candidate.league || 'NBA'}} <button v-if="binding.state==='needs_review'" class="text-button" @click="confirmBinding(candidate.id)">确认绑定</button></p></section>
+        <section v-if="binding" class="welcome-card detail"><h3>外部赛果绑定</h3><p>状态：{{binding.state}} <span v-if="binding.error_code">· {{binding.error_code}}</span></p><p v-for="candidate in binding.candidates" :key="candidate.id">{{candidate.home}} 对 {{candidate.away}} · {{formatDateTime(candidate.starts_at)}} UTC+8 · {{candidate.league || 'NBA'}} <button v-if="binding.state==='needs_review'" class="text-button" @click="confirmBinding(candidate.id)">确认绑定</button></p></section>
         <aside v-if="detail.provider==='polymarket'" class="bet-notice"><div><strong>下单说明</strong><p>点击选项可单场下单，或点击“＋组合”加入组合单；订单确认后开始匹配外部赛果。</p></div><span>接受不等于成交</span></aside>
-        <section class="market-panel" aria-label="Polymarket 市场信息"><div class="market-panel-heading"><div><p class="eyebrow">POLYMARKET</p><h3>市场信息</h3></div><span v-if="liveData" class="market-time">{{dateFormat(liveData.observed_at)}} UTC+8 更新</span></div>
+        <section class="market-panel" aria-label="Polymarket 市场信息"><div class="market-panel-heading"><div><p class="eyebrow">POLYMARKET</p><h3>市场信息</h3></div><span v-if="liveData" class="market-time">{{formatDateTime(liveData.observed_at)}} UTC+8 更新</span></div>
           <p class="market-caption">参考价格以查询时来源数据为准，不保证成交。<span v-if="liveData?.match_status==='candidate'"> · 球队与时间匹配的候选，尚未确认。</span></p>
           <p v-if="liveLoading" role="status" class="market-empty">正在查询市场…</p><p v-else-if="liveError" role="alert" class="market-empty">{{liveError}}</p>
           <template v-else-if="liveData">
@@ -270,7 +206,7 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
             <section v-for="group in marketGroups" :key="group.type" class="classified-markets"><div class="market-category-heading"><h4>{{group.label}}</h4><span>{{group.events.reduce((count:number,event:any)=>count+event.markets.length,0)}} 个市场</span></div><p v-if="!group.events.length" class="market-empty">暂无该类市场。</p><article v-for="event in group.events" :key="event.id" class="market-group"><div class="market-group-heading"><strong>{{event.title || '市场事件'}}</strong><a v-if="event.slug" :href="'https://polymarket.com/event/'+event.slug" target="_blank" rel="noopener noreferrer">在 Polymarket 查看 ↗</a></div><div class="moneyline-grid"><div v-for="market in event.markets" :key="market.id" class="market-tile"><h4>{{market.group || market.question || '市场'}}</h4><p v-if="market.group && market.question" class="market-question">{{market.question}}</p><span class="market-state">{{market.closed === true ? '已关闭' : market.accepting_orders === true ? '接收订单' : market.accepting_orders === false ? '暂不接单' : '状态未知'}}</span><div v-if="market.outcomes.length" class="outcome-list"><span v-for="(outcome,index) in market.outcomes" :key="index" class="outcome-choice"><button type="button" class="outcome-button" :disabled="mappingBusy || detail.provider!=='polymarket' || liveData?.match_status!=='source_identity' || market.closed!==false || market.accepting_orders!==true" @click="selectOutcome(event,market,outcome,index)">{{outcome.label}} <b>{{outcome.price === null ? '未知' : (Number(outcome.price)*100).toFixed(1)+'%'}}</b></button><button type="button" class="combo-add" :disabled="mappingBusy || detail.provider!=='polymarket' || liveData?.match_status!=='source_identity' || market.closed!==false || market.accepting_orders!==true" :aria-label="'将'+outcome.label+'加入组合'" @click="addComboOutcome(event,market,outcome,index)">＋组合</button></span></div><p v-else>选项数据暂不可用。</p></div></div></article></section>
           </template>
         </section>
-<details class="match-history"><summary>赛事来源与变更记录</summary><p v-if="detail.watch">关注状态：{{detail.watch.state}}<span v-if="detail.watch.next_due_at"> · 下次查询：{{dateFormat(detail.watch.next_due_at)}} UTC+8</span></p><p v-if="!detail.recent_revisions.length">暂无变更记录</p><p v-for="(revision,index) in detail.recent_revisions" :key="index">{{dateFormat(revision.observed_at)}} · {{revision.old_status}} → {{revision.new_status}}<span v-if="revision.old_starts_at !== revision.new_starts_at"> · 时间已调整</span></p></details>
+<details class="match-history"><summary>赛事来源与变更记录</summary><p v-if="detail.watch">关注状态：{{detail.watch.state}}<span v-if="detail.watch.next_due_at"> · 下次查询：{{formatDateTime(detail.watch.next_due_at)}} UTC+8</span></p><p v-if="!detail.recent_revisions.length">暂无变更记录</p><p v-for="(revision,index) in detail.recent_revisions" :key="index">{{formatDateTime(revision.observed_at)}} · {{revision.old_status}} → {{revision.new_status}}<span v-if="revision.old_starts_at !== revision.new_starts_at"> · 时间已调整</span></p></details>
 </div></dialog>
     <section v-if="editor" class="welcome-card detail"><h2>维护球队：{{editor.source_name}}</h2><label for="chinese">已确认中文名（留空表示待补充）</label><input id="chinese" v-model="chinese" maxlength="200"><label for="alias">中文别名（可选）</label><input id="alias" v-model="alias" maxlength="200"><div><button class="text-button" @click="editor=null">取消</button><button class="text-button" @click="saveTeam">保存</button></div></section>
   </main>

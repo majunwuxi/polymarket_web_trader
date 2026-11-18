@@ -99,6 +99,24 @@ def test_preview_and_submit_atomic_idempotent(env):
         assert c.execute(text('SELECT count(*) FROM trade_submissions')).scalar_one()==1
 
 
+def test_one_step_submit_without_preview_token(env):
+    """一步式下单：不需要先取预览令牌，服务端在本次幂等请求内核对盘口后直接提交。"""
+    pg,client,headers,body=env
+    key=str(uuid.uuid4());h={**headers,'Idempotency-Key':key}
+    result=client.post('/api/v1/single-orders',json=body,headers=h)
+    assert result.status_code==201,result.text
+    data=result.json()['data']['intent'];assert data['state']=='pending'
+    assert MockGateway.posts==1
+    # 同一幂等键重放不重复提交；不同参数仍按幂等冲突处理。
+    again=client.post('/api/v1/single-orders',json=body,headers=h)
+    assert again.status_code==200 and again.json()['data']['intent']['id']==data['id']
+    assert MockGateway.posts==1
+    assert client.post('/api/v1/single-orders',json={**body,'size':'6.00'},headers=h).status_code==409
+    # 相同参数的新幂等键受未解决指纹唯一约束保护。
+    other=client.post('/api/v1/single-orders',json=body,headers={**headers,'Idempotency-Key':str(uuid.uuid4())})
+    assert other.status_code==409 and MockGateway.posts==1
+
+
 def test_unknown_submission_never_reposts_and_worker_restart(env):
     pg,client,headers,body=env
     payload=preview(client,headers,body);MockGateway.post_error=TimeoutError('mock timeout')

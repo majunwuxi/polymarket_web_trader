@@ -211,16 +211,19 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
     with Session(engine) as db:
         existing=get_existing(db,body.wallet_id,request_id,fp)
         if existing: return existing.id,False
-    token=decode_token(settings,body.preview_token)
+    # 一步式提交不带令牌时，服务端在本次请求内直接核对实时盘口；带令牌时仍按旧流程校验，
+    # 保持与「预览 → 提交」旧客户端及既有测试的兼容。
+    token=decode_token(settings,body.preview_token) if getattr(body,'preview_token',None) else None
     with Session(engine) as db:
         now=db_now(db)
-        if token.get('fingerprint')!=fp or type(token.get('expires_at')) is not int or token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期或订单参数改变')
+        if token and (token.get('fingerprint')!=fp or type(token.get('expires_at')) is not int or token['expires_at']<=int(now.timestamp())): raise TradingError('preview_stale','预览已过期或订单参数改变')
         verify_close_origin(db,body,size)
         link,market,outcome=resolve(db,body,closing)
         event=inspection_event(db,link,market,closing)
         with gateway_cls(settings,wallet) as gateway:
             context=gateway.inspect(market,outcome,body.side,price,size,event)
-            if not context.get('hash') or context['hash']!=token.get('book_hash'): raise TradingError('preview_stale','盘口变化，请重新预览')
+            if not context.get('hash'): raise TradingError('book_unavailable','订单簿缺少有效版本标识')
+            if token and context['hash']!=token.get('book_hash'): raise TradingError('preview_stale','盘口变化，请重新预览')
             try:
                 with Session(engine) as tx, tx.begin():
                     existing=get_existing(tx,body.wallet_id,request_id,fp)

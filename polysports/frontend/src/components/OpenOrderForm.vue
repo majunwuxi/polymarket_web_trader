@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { formatDateTime } from '../utils/format'
 
-defineProps<{ wallets: any[]; book: any; context: any; orderSize: string; busy: boolean }>()
+defineProps<{ wallets: any[]; book: any; context: any; orderSize: string; busy: boolean; estimatedNotional: string; pending: any }>()
 const wallet = defineModel<string>('wallet', { required: true })
 const side = defineModel<string>('side', { required: true })
 const price = defineModel<string>('price', { required: true })
 const size = defineModel<string>('size', { required: true })
 const budget = defineModel<string>('budget', { required: true })
 const inputMode = defineModel<'amount' | 'shares'>('inputMode', { required: true })
-const emit = defineEmits<{ preview: [] }>()
+const emit = defineEmits<{ submit: [] }>()
 </script>
 
 <template>
@@ -17,7 +17,7 @@ const emit = defineEmits<{ preview: [] }>()
     <p v-if="context" class="id-text">资产 ID：{{ context.asset_id }} · 协议：{{ context.protocol_version }}</p>
     <p v-if="book">价格增量 {{ book.tick_size }} · 最小份额 {{ book.min_order_size }} · 盘口时间 {{ book.observed_at }}</p>
     <p v-else>真实盘口不可用。</p>
-    <form @submit.prevent="emit('preview')">
+    <form @submit.prevent="emit('submit')">
       <label for="wallet">钱包</label>
       <select id="wallet" v-model="wallet" required><option v-for="w in wallets" :key="w.id" :value="w.id">{{ w.label }} · {{ w.wallet_address }}</option></select>
       <label for="side">方向</label>
@@ -37,7 +37,9 @@ const emit = defineEmits<{ preview: [] }>()
         <label for="size">份额</label>
         <input id="size" v-model="size" inputmode="decimal" required>
       </template>
-      <button class="text-button" :disabled="busy || !wallet || !book">验证并预览</button>
+      <p v-if="estimatedNotional">预计限价金额 {{ estimatedNotional }} pUSD；手续费未知，实际成交以交易所记录为准。</p>
+      <p>点击「按当前价直接下单」将按当前盘口立即提交真实资金订单，不设二次确认；执行中不代表成交。</p>
+      <button class="text-button" :disabled="busy || !!pending || !wallet || !book || !orderSize">按当前价直接下单</button>
     </form>
   </section>
 </template>

@@ -5,8 +5,6 @@ defineProps<{
   marketCloseReady: boolean
   busy: boolean
   pending: any
-  preview: any
-  previewExpired: boolean
 }>()
 const emit = defineEmits<{ refresh: []; submit: [] }>()
 </script>
@@ -20,10 +18,9 @@ const emit = defineEmits<{ refresh: []; submit: [] }>()
       <p v-if="context.market_close_reason" class="form-message">{{ context.market_close_reason }}</p>
       <p>FOK 卖出：全部成交或不成交；盘口变化需重新获取市价，接受不代表成交。</p>
       <p>{{ context.notice }}</p>
-      <button class="text-button" :disabled="busy || !marketCloseReady" @click="emit('refresh')">刷新市价</button>
-      <button class="text-button" :disabled="busy || !!pending || !preview || previewExpired" @click="emit('submit')">确认按市价平仓</button>
-      <p v-if="preview && !previewExpired">市价有效期至 {{ preview.expires_at }}；提交时再次核验盘口与钱包。</p>
-      <p v-else-if="preview">市价已过期，请点击「刷新市价」重新获取。</p>
+      <button class="text-button" :disabled="busy" @click="emit('refresh')">刷新市价</button>
+      <button class="text-button" :disabled="busy || !!pending || !marketCloseReady" @click="emit('submit')">按当前市价直接平仓</button>
+      <p>当前市价来自服务端读取的真实盘口，点击即按该市价提交 FOK 卖单；盘口变化请先刷新市价。全部成交或不成交，执行中不代表成交。</p>
     </template>
     <p v-else>正在核实真实持仓与盘口…</p>
   </section>

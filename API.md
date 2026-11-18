@@ -117,7 +117,7 @@
 | `GET /outcomes/{outcome_id}/book` | 无 | `200`：`{ "outcome_id": "...", "bids": [{"price":"...","size":"..."}], "asks": [...], "tick_size": "...", "min_order_size": "...", "observed_at": "..." }` | 来自真实上游订单簿，按实际可用性返回错误；价格和份额为字符串 |
 | `POST /single-orders/preview` | `{ "wallet_id":"uuid", "market_link_id":"uuid", "outcome_id":"uuid", "side":"BUY", "limit_price":"0.52", "size":"10" }` | `200`：`{ "preview_token":"...", "expires_at":"...", "game_id":"...", "market_link_id":"...", "outcome_id":"...", "side":"BUY", "limit_price":"0.52", "size":"10", "estimated_notional":"5.20", "fee_estimate":null, "book_observed_at":"...", "warnings":[] }` | 不签名、不发送订单、不创建关注；确认映射、市场规则、钱包/可用性；预览 token 是短期、不可篡改、绑定上述规范化字段与过期时间的服务端认证令牌，不含秘密和上游签名 |
 
-预览示例数值只是模拟，`estimated_notional` 是限价乘份额，并非已成交金额；服务费不可确认时为 null。预览 token 只表示先前校验和用户看到的订单参数，不能锁定盘口、余额或上游报价。确认时必须重新校验，失效返回 `409 PREVIEW_STALE` 并要求重新预览；不得悄然修改价格或份额。
+预览示例数值只是模拟，`estimated_notional` 是限价乘份额，并非已成交金额；服务费不可确认时为 null。预览 token 只表示先前校验和用户看到的订单参数，不能锁定盘口、余额或上游报价。**一步式下单不使用该 token**：`POST /single-orders` 的 `preview_token` 为可选字段，缺省时服务端在本次幂等请求内重新核对实时盘口后直接签名提交，与组合订单的一步流程一致；仍支持旧客户端传入 token（此时继续校验指纹、过期时间和盘口版本，失效返回 `409 PREVIEW_STALE`）。不得悄然修改价格或份额。
 
 ### 5.1.1 立即平仓（单场）
 
@@ -125,9 +125,9 @@
 | --- | --- | --- | --- |
 | `GET /trade-intents/{intent_id}/close-context` | 无 | `200`：`{ "wallet_id", "market_link_id", "outcome_id", "asset_id", "wallet_shares", "matched_shares", "closed_shares", "candidate_shares", "market_price", "estimated_proceeds", "market_close_reason", "bids", "tick_size", "min_order_size", "notice" }` | 只读核实原买入订单、链上余额与真实盘口。`market_price` 由降序买盘逐档累计至能覆盖 `candidate_shares` 的最低价格；买盘深度不足或份额低于最小下单量时为 `null` 并给出 `market_close_reason`。`estimated_proceeds` 为按档累计的保守估计，不承诺实际收入 |
 | `POST /single-orders/preview` | 平仓时带 `order_type:"FOK"`、`parent_trade_id`，`side:"SELL"`，`limit_price` 与 `size` 取自 `close-context` | 与 5.1 相同 | 平仓跳过赛事映射的 15 分钟确认与 Gamma 赛事实时核对，仍校验市场/资产身份、盘口规则、余额、授权、原订单未平仓份额及是否已有未解决的平仓请求 |
-| `POST /single-orders` | 同上并附 `preview_token` 与 `Idempotency-Key` | 与 5.2 相同 | 以 FOK 提交，全部成交或不成交；提交结果未知时不得重发 |
+| `POST /single-orders` | 同上并附 `Idempotency-Key`；`preview_token` 可选，一步式平仓不需要 | 与 5.2 相同 | 以 FOK 提交，全部成交或不成交；提交结果未知时不得重发 |
 
-平仓页面不提供方向、限价、金额或份额输入，价格与份额全部由服务端从真实盘口和持仓计算，用户只确认一次；预览有效期 30 秒。
+平仓页面不提供方向、限价、金额或份额输入，价格与份额全部由服务端从真实盘口和持仓计算，用户点一次「按当前市价直接平仓」即提交；无 30 秒市价令牌，盘口变化请先刷新市价再下单。
 
 **平仓准入（5.1.1a）**：比赛结果已确认或市场已进入结算/停止接单时，不得再发起平仓。判据统一由 `backend/close_policy.py` 给出：`score_verified`（`games.status='finished'` + 已绑定 `bound` 的赛果 + 比分非空）或 `poly_markets.accepting_orders is False` 任一成立即禁止；`accepting_orders` 为 `None`（未知）不推断为已结算。列表接口 `GET /trade-intents` 与 `GET /combo-rfqs` 返回只读字段 `close_blocked` / `close_block_reason` 供界面禁用按钮，组合按「任一腿赛果已确认或任一腿停单」判定。前端禁用之外，`GET /trade-intents/{id}/close-context`、`POST /single-orders/preview` / `/single-orders` 的 FOK 平仓、以及 `POST /combo-rfqs` / `accept` 的带 `parent_combo_id` 平仓都会再做一次硬校验，拒绝时返回 `409 POSITION_SETTLED`，防止绕过界面直接调用接口。组合各腿的终态由 `/resolution` 实时查询，列表接口不访问上游。组合平仓不走本接口，使用 `POST /combo-rfqs` 的 SELL 报价流程：带 `parent_combo_id` 时，请求报价与接受报价都不要求赛事映射在 15 分钟内确认，仅核验组合腿的市场与资产身份、原组合成交份额、官方 Combo 目录 `position_id`、卖出报价资产、余额与授权。
 
@@ -178,11 +178,10 @@
 
 ### 5.2 提交、查询和撤单
 
-`POST /single-orders` 要求 `Idempotency-Key: <UUID>`、会话和 CSRF。请求：
+`POST /single-orders` 要求 `Idempotency-Key: <UUID>`、会话和 CSRF。`preview_token` 可选：页面的默认一步式下单不发送该字段，服务端在本次请求内重新核对盘口后直接提交；保留该字段仅供旧版两步流程使用。请求：
 
 ```json
 {
-  "preview_token": "<模拟预览令牌>",
   "wallet_id": "00000000-0000-4000-8000-000000000010",
   "market_link_id": "00000000-0000-4000-8000-000000000011",
   "outcome_id": "00000000-0000-4000-8000-000000000012",
@@ -192,7 +191,7 @@
 }
 ```
 
-这是模拟请求。所有字段必须与预览令牌绑定的规范化值相同；幂等键映射 `trade_intents.client_request_id`，与钱包组成唯一键并计算不含 token 的业务参数指纹。同钱包、同键、同指纹重复请求返回原意图及当前状态，绝不再次发送；同键不同指纹返回 `409 IDEMPOTENCY_CONFLICT`。请求进入对外发送阶段前，以事务创建意图、唯一提交记录、关注和首次赛果任务；先提交事务再调用 SDK。若无法明确证明请求未发出，状态 `unknown` 并对账，不自动重试。
+这是模拟请求。若传入 `preview_token`，其他字段必须与令牌绑定的规范化值相同；不传时由服务端在本次请求内重新校验。幂等键映射 `trade_intents.client_request_id`，与钱包组成唯一键并计算不含 token 的业务参数指纹。同钱包、同键、同指纹重复请求返回原意图及当前状态，绝不再次发送；同键不同指纹返回 `409 IDEMPOTENCY_CONFLICT`。请求进入对外发送阶段前，以事务创建意图、唯一提交记录、关注和首次赛果任务；先提交事务再调用 SDK。若无法明确证明请求未发出，状态 `unknown` 并对账，不自动重试。
 
 | 方法与路径 | 请求 | 成功响应 | 业务规则 |
 | --- | --- | --- | --- |

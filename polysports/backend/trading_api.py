@@ -28,7 +28,9 @@ class OrderBody(BaseModel):
     parent_trade_id:uuid.UUID|None=None
 
 class SubmitBody(OrderBody):
-    preview_token:StrictStr=Field(min_length=1,max_length=3000)
+    # 一步式下单不需要预览令牌：服务端在本次幂等请求内重新核对实时盘口后直接签名提交。
+    # 保留该字段以兼容仍使用「预览 → 提交」两步流程的旧客户端与自动化测试。
+    preview_token:StrictStr|None=Field(default=None,max_length=3000)
 
 
 def ok(request,data):return {'data':data,'request_id':request.state.request_id}

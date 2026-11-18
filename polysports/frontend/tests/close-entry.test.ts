@@ -18,12 +18,11 @@ const closeContext={
   bids:[{price:'0.4',size:'5'}],notice:'模拟共享份额'
 }
 
-it('单场平仓按市价自动取价，不显示开仓字段，不依赖赛事映射或公开盘口',async()=>{
+it('单场平仓按市价自动取价，一步直接提交，不显示开仓字段，不依赖赛事映射或公开盘口',async()=>{
   await router.push('/orders/new/mock-link/mock-outcome?close=mock-original');await router.isReady()
-  const mock=vi.fn((url:string,options?:RequestInit)=>{
+  const mock=vi.fn((url:string)=>{
     if(url.includes('/close-context'))return Promise.resolve(json(closeContext))
     if(url.endsWith('/wallets'))return Promise.resolve(json({items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'mock'}]}))
-    if(url.includes('/single-orders/preview'))return Promise.resolve(json({...JSON.parse(String(options?.body)),preview_token:'mock-token',expires_at:new Date(Date.now()+30000).toISOString(),estimated_notional:'0.8'}))
     if(url==='/api/v1/single-orders')return Promise.resolve(json({intent:{state:'pending',matched_size:null}}))
     throw Error('unexpected mock request: '+url)
   })
@@ -40,25 +39,27 @@ it('单场平仓按市价自动取价，不显示开仓字段，不依赖赛事�
   expect(text).not.toContain('方向：')
   expect(mock.mock.calls.some(([url])=>url.includes('/order-context/'))).toBe(false)
   expect(mock.mock.calls.some(([url])=>url.includes('/book'))).toBe(false)
-  const preview=mock.mock.calls.find(([url])=>url.includes('/single-orders/preview'))!
-  expect(JSON.parse(String(preview[1]?.body))).toMatchObject({side:'SELL',order_type:'FOK',parent_trade_id:'mock-original',size:'2',limit_price:'0.4'})
+  expect(mock.mock.calls.some(([url])=>url.includes('/single-orders/preview'))).toBe(false)
   expect(mock.mock.calls.some(([url])=>url==='/api/v1/single-orders')).toBe(false)
-  await view.findAll('button').find(button=>button.text()==='确认按市价平仓')!.trigger('click');await flushPromises()
+  await view.findAll('button').find(button=>button.text()==='按当前市价直接平仓')!.trigger('click');await flushPromises()
   const submitted=mock.mock.calls.find(([url])=>url==='/api/v1/single-orders')!
-  expect(JSON.parse(String(submitted[1]?.body))).toMatchObject({side:'SELL',order_type:'FOK',parent_trade_id:'mock-original',preview_token:'mock-token'})
+  expect(JSON.parse(String(submitted[1]?.body))).toMatchObject({side:'SELL',order_type:'FOK',parent_trade_id:'mock-original',size:'2',limit_price:'0.4'})
+  expect(JSON.parse(String(submitted[1]?.body))).not.toHaveProperty('preview_token')
+  expect(submitted[1]?.headers).toMatchObject({'Idempotency-Key':'mock-request'})
   view.unmount()
 })
 
-it('开仓表单在金额与份额模式间切换并提交预览',async()=>{
+it('开仓表单在金额与份额模式间切换后一步直接下单，无预览令牌',async()=>{
   await router.push('/orders/new/mock-link/mock-outcome');await router.isReady()
-  const mock=vi.fn((url:string,options?:RequestInit)=>{
+  const mock=vi.fn((url:string)=>{
     if(url.endsWith('/wallets'))return Promise.resolve(json({items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'mock'}]}))
     if(url.includes('/outcomes/mock-outcome/book'))return Promise.resolve(json({tick_size:'0.01',min_order_size:'1',asset_id:'123',condition_id:'mock-condition',observed_at:'2026-11-16T00:00:00Z',bids:[],asks:[]}))
     if(url.includes('/order-context/'))return Promise.resolve(json({home:'甲',away:'乙',market_question:'模拟市场',outcome_label:'甲',starts_at:'2026-11-16T00:00:00Z',asset_id:'123',protocol_version:'v1'}))
-    if(url.includes('/single-orders/preview'))return Promise.resolve(json({...JSON.parse(String(options?.body)),preview_token:'mock-token',expires_at:new Date(Date.now()+30000).toISOString(),estimated_notional:'1'}))
+    if(url==='/api/v1/single-orders')return Promise.resolve(json({intent:{state:'pending',matched_size:null}}))
     throw Error('unexpected mock request: '+url)
   })
   vi.stubGlobal('fetch',mock)
+  vi.stubGlobal('crypto',{randomUUID:()=> 'mock-request'})
   const view=mount(OrderEntry,{global:{plugins:[router]}});await flushPromises()
   expect(view.find('#budget').exists()).toBe(true)
   await view.get('#input-mode').setValue('shares');await flushPromises()
@@ -67,8 +68,10 @@ it('开仓表单在金额与份额模式间切换并提交预览',async()=>{
   await view.get('#price').setValue('0.5')
   await view.get('#size').setValue('2')
   await view.get('form').trigger('submit.prevent');await flushPromises()
-  const preview=mock.mock.calls.find(([url])=>url.includes('/single-orders/preview'))!
-  expect(JSON.parse(String(preview[1]?.body))).toMatchObject({side:'BUY',limit_price:'0.5',size:'2'})
+  const submit=mock.mock.calls.find(([url])=>url==='/api/v1/single-orders')!
+  expect(JSON.parse(String(submit[1]?.body))).toMatchObject({wallet_id:'mock-wallet',market_link_id:'mock-link',outcome_id:'mock-outcome',side:'BUY',limit_price:'0.5',size:'2'})
+  expect(JSON.parse(String(submit[1]?.body))).not.toHaveProperty('preview_token')
+  expect(mock.mock.calls.some(([url])=>url.includes('/single-orders/preview'))).toBe(false)
   view.unmount()
 })
 
@@ -82,7 +85,7 @@ it('买盘深度不足时禁用平仓，不生成预览也不提交',async()=>{
   vi.stubGlobal('fetch',mock)
   const view=mount(OrderEntry,{global:{plugins:[router]}});await flushPromises()
   expect(view.text()).toContain('当前买盘深度不足')
-  expect(view.findAll('button').find(button=>button.text()==='确认按市价平仓')!.attributes('disabled')).toBeDefined()
+  expect(view.findAll('button').find(button=>button.text()==='按当前市价直接平仓')!.attributes('disabled')).toBeDefined()
   expect(mock.mock.calls.some(([url])=>url.includes('/single-orders'))).toBe(false)
   view.unmount()
 })

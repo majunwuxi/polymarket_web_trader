@@ -21,19 +21,22 @@ beforeEach(async()=>{
 })
 afterEach(()=>vi.unstubAllGlobals())
 
-function setup(postResponses:Response[]){
+function setup(postResponses:Response[]=[],options:{records?:any[];byKey?:()=>Response}={}){
   const posts:{key:string;body:any}[]=[]
-  const fetchMock=vi.fn((url:string,options?:RequestInit)=>{
+  const deletes:string[]=[]
+  const fetchMock=vi.fn((url:string,init?:RequestInit)=>{
     if(url.startsWith('/api/v1/wallets'))return Promise.resolve(ok({items:[wallet]}))
-    if(url.startsWith('/api/v1/combo-rfqs')&&(!options||options.method!=='POST'))return Promise.resolve(ok({items:[],next_cursor:null}))
-    if(url==='/api/v1/combo-rfqs'&&options?.method==='POST'){
-      posts.push({key:String((options.headers as Record<string,string>)['Idempotency-Key']),body:JSON.parse(String(options.body))})
+    if(url.startsWith('/api/v1/combo-rfqs/by-key/'))return Promise.resolve(options.byKey?options.byKey():ok(null))
+    if(url.startsWith('/api/v1/combo-rfqs/')&&init?.method==='DELETE'){deletes.push(url.split('/').pop()!);return Promise.resolve(ok({deleted:'r1'}))}
+    if(url==='/api/v1/combo-rfqs'&&init?.method==='POST'){
+      posts.push({key:String((init.headers as Record<string,string>)['Idempotency-Key']),body:JSON.parse(String(init.body))})
       return Promise.resolve(postResponses[posts.length-1])
     }
+    if(url.startsWith('/api/v1/combo-rfqs')&&(!init||init.method!=='POST'))return Promise.resolve(ok({items:options.records??[],next_cursor:null}))
     return Promise.resolve(ok(null))
   })
   vi.stubGlobal('fetch',fetchMock)
-  return {view:mount(Combos,{global:{plugins:[router]}}),posts}
+  return {view:mount(Combos,{global:{plugins:[router]}}),posts,deletes}
 }
 
 async function submit(view:ReturnType<typeof mount>){
@@ -78,5 +81,48 @@ it('余额不足等其它错误不会自动重试',async()=>{
   await submit(view)
   expect(posts).toHaveLength(1)
   expect(view.text()).toContain('组合交易余额不足')
+  view.unmount()
+})
+
+it('组合记录显示下单时间',async()=>{
+  const {view}=setup([],{records:[record({state:'unknown',error_code:'rfq_not_found',created_at:'2026-11-18T14:30:00Z'})]})
+  await flushPromises()
+  expect(view.text()).toContain('下单时间：2026/11/18 22:30:00 UTC+8')
+  view.unmount()
+})
+
+it('删除未成交记录需先勾选确认，再调用删除接口',async()=>{
+  const {view,deletes}=setup([],{records:[record({state:'unknown',error_code:'rfq_not_found'})]})
+  await flushPromises()
+  const ask=view.findAll('button').find(item=>item.text()==='确认 Polymarket 无此订单并删除')
+  expect(ask).toBeTruthy()
+  await ask!.trigger('click')
+  const checkbox=view.find('input[type="checkbox"]')
+  expect(checkbox.exists()).toBe(true)
+  const confirm=view.findAll('button').find(item=>item.text()==='确认删除')!
+  expect(confirm.attributes('disabled')).toBeDefined()
+  await checkbox.setValue(true)
+  await confirm.trigger('click');await flushPromises()
+  expect(deletes).toEqual(['r1'])
+  expect(view.text()).toContain('已删除该组合记录。')
+  view.unmount()
+})
+
+it('已确认成交的记录不显示删除按钮',async()=>{
+  const {view}=setup([],{records:[record({state:'confirmed'})]})
+  await flushPromises()
+  expect(view.findAll('button').some(item=>item.text()==='确认 Polymarket 无此订单并删除')).toBe(false)
+  view.unmount()
+})
+
+it('查询原请求返回 404 时自动清除本机待查标记',async()=>{
+  localStorage.setItem('polysports_combo_pending',JSON.stringify({key:'k1',wallet_id:'w1'}))
+  const {view}=setup([],{byKey:()=>fail('NOT_FOUND','询价记录不存在，不能据此推断外部请求状态',404)})
+  await flushPromises()
+  const lookup=view.findAll('button').find(item=>item.text()==='查询原请求')
+  expect(lookup).toBeTruthy()
+  await lookup!.trigger('click');await flushPromises()
+  expect(localStorage.getItem('polysports_combo_pending')).toBeNull()
+  expect(view.text()).toContain('本机待查标记已清除')
   view.unmount()
 })

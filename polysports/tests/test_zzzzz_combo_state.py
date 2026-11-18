@@ -10,7 +10,7 @@ from test_z_auth_integration import pg  # noqa: F401
 from test_zzz_trading_integration import env  # noqa: F401
 from backend import combo_service
 from backend.combo_api import ComboBody
-from backend.models import ComboRFQ, Job, MarketLink, MarketOutcome, PolyMarket
+from backend.models import ComboRFQ, ComboLeg, Job, MarketLink, MarketOutcome, PolyMarket
 from backend.trading_gateway import TradingError
 
 
@@ -343,3 +343,30 @@ def test_old_expiry_timer_cannot_delete_newer_quote():
     assert _quotes[ident][0]==new
     expire_cached_quote(ident,new)
     assert ident not in _quotes
+
+
+def test_admin_can_delete_unresolved_combo_with_children(sample,monkeypatch):
+    engine,client,headers,body=sample;settings=client.app.state.settings
+    monkeypatch.setattr(combo_service,'credential_fingerprint',lambda settings,wallet:b'mock-credential-fingerprint')
+    ident,_=combo_service.request_quote(engine,settings,body,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE combo_rfqs SET state='unknown',error_code='rfq_not_found' WHERE id=:id"),{'id':ident})
+    response=client.delete(f'/api/v1/combo-rfqs/{ident}',headers=headers)
+    assert response.status_code==200,response.text
+    with Session(engine) as db:
+        assert db.get(ComboRFQ,ident) is None
+        assert db.scalar(select(ComboLeg).where(ComboLeg.rfq_id==ident)) is None
+        assert db.scalar(select(Job).where(Job.combo_rfq_id==ident)) is None
+
+
+def test_unresolved_or_confirmed_combo_cannot_be_deleted(sample,monkeypatch):
+    engine,client,headers,body=sample;settings=client.app.state.settings
+    monkeypatch.setattr(combo_service,'credential_fingerprint',lambda settings,wallet:b'mock-credential-fingerprint')
+    ident,_=combo_service.request_quote(engine,settings,body,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE combo_rfqs SET state='executing' WHERE id=:id"),{'id':ident})
+    response=client.delete(f'/api/v1/combo-rfqs/{ident}',headers=headers)
+    assert response.status_code==409
+    assert response.json()['error']['code']=='COMBO_NOT_DELETABLE'
+    with Session(engine) as db:
+        assert db.get(ComboRFQ,ident) is not None

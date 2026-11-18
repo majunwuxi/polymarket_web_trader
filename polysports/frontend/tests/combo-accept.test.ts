@@ -7,7 +7,7 @@ import Combos from '../src/views/Combos.vue'
 const json=(body:unknown,status=200)=>({ok:status>=200&&status<300,status,json:async()=>body}) as Response
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/',component:Combos}]})
 const wallet={id:'mock-wallet',label:'模拟钱包',wallet_address:'mock'}
-const placed=(state:string,extra:Record<string,unknown>={})=>({id:'mock-rfq',state,direction:'BUY',quantity:'1',wallet_address:'mock',error_code:null,legs:[],quote:{id:'mock-quote',expires_at:new Date(Date.now()+60_000).toISOString(),price:'0.5',total_required:'1',net_receive:'2'},...extra})
+const placed=(state:string,extra:Record<string,unknown>={})=>({id:'mock-rfq',state,direction:'BUY',quantity:'1',wallet_address:'mock',error_code:null,created_at:'2026-11-18T14:30:00Z',updated_at:'2026-11-18T14:30:00Z',legs:[],quote:{id:'mock-quote',expires_at:new Date(Date.now()+60_000).toISOString(),price:'0.5',total_required:'1',net_receive:'2'},...extra})
 
 beforeEach(async()=>{
   localStorage.clear()

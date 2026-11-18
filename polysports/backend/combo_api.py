@@ -64,11 +64,11 @@ from typing import Literal
 from fastapi import Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StrictStr
-from sqlalchemy import and_,or_,select,tuple_
+from sqlalchemy import and_,delete,or_,select,tuple_
 from datetime import datetime
 from .sports_api import cursor_decode, cursor_encode
 from .combo_service import request_quote, accept_quote, discard_unaccepted_quote
-from .models import ComboRFQ, ComboLeg, ComboEvent, ComboFill, Game, Team, WatchedGame, ResultBindingRequest, Job
+from .models import AuditEvent, ComboRFQ, ComboLeg, ComboEvent, ComboFill, Game, Job, JobRun, RedeemRequest, Team, WatchedGame, ResultBindingRequest
 from .prefetch import objects_by_id, rows_by_attr
 
 
@@ -337,6 +337,35 @@ def get_combo(request:Request,ident:uuid.UUID):
         row=db.get(ComboRFQ,ident)
         if not row:return auth.error(request,404,'NOT_FOUND','组合询价不存在')
         return {'data':combo_data_one(db,row),'request_id':request.state.request_id}
+
+
+@router.delete('/combo-rfqs/{ident}')
+def delete_combo(request:Request,ident:uuid.UUID):
+    """删除管理员已到 Polymarket 核实不存在的组合记录。
+
+    只允许删除未确认成交的终态记录；任何已确认成交、仍有平仓/赎回关联或
+    存在未解决子记录的组合都拒绝删除，避免丢失可核验的资金往来轨迹。
+    """
+    with Session(request.app.state.engine) as db, db.begin():
+        row=db.scalar(select(ComboRFQ).where(ComboRFQ.id==ident).with_for_update())
+        if not row:return auth.error(request,404,'NOT_FOUND','组合记录不存在')
+        if row.state not in ('unknown','failed','expired','rejected'):
+            return auth.error(request,409,'COMBO_NOT_DELETABLE','只有结果未知、未成交、已过期或已拒绝的记录可以删除')
+        if db.scalar(select(ComboFill.id).where(ComboFill.rfq_id==ident,ComboFill.state=='confirmed')):
+            return auth.error(request,409,'COMBO_NOT_DELETABLE','该组合已有确认成交明细，不能删除')
+        if db.scalar(select(ComboRFQ.id).where(ComboRFQ.parent_combo_id==ident).limit(1)):
+            return auth.error(request,409,'COMBO_NOT_DELETABLE','该组合存在平仓记录，不能删除')
+        if db.scalar(select(RedeemRequest.id).where(RedeemRequest.combo_rfq_id==ident).limit(1)):
+            return auth.error(request,409,'COMBO_NOT_DELETABLE','该组合存在赎回记录，不能删除')
+        jobs=list(db.scalars(select(Job).where(Job.combo_rfq_id==ident)))
+        if jobs:db.execute(delete(JobRun).where(JobRun.job_id.in_([job.id for job in jobs])))
+        for job in jobs:db.delete(job)
+        db.execute(delete(ComboFill).where(ComboFill.rfq_id==ident))
+        db.execute(delete(ComboEvent).where(ComboEvent.rfq_id==ident))
+        db.execute(delete(ComboLeg).where(ComboLeg.rfq_id==ident))
+        db.add(AuditEvent(id=uuid.uuid4(),actor_id=request.state.admin_session['admin_id'],action='combo_rfq_deleted',entity_type='combo_rfq',entity_id=ident,details={'state':row.state,'external_rfq_id':row.external_rfq_id}))
+        db.delete(row)
+    return {'data':{'deleted':str(ident)},'request_id':request.state.request_id}
 
 
 @router.get('/combo-rfqs/{ident}/close-context')

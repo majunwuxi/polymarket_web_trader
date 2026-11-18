@@ -25,6 +25,17 @@ function setup(liveResponse:()=>Promise<Response>=()=>Promise.resolve(json(liveM
   return {view:mount(SportsCenter,{global:{plugins:[router]}}),fetchMock}
 }
 
+it('已成交的比赛卡片使用淡粉色背景，未成交保持默认',async()=>{
+  const traded={...game,id:'g2',external_id:'90108496',has_matched_order:true}
+  const {view}=setup(undefined,[game,traded]);await flushPromises()
+  const cards=view.findAll('.game-card')
+  expect(cards).toHaveLength(2)
+  expect(cards[0].classes()).not.toContain('has-matched-order')
+  expect(cards[1].classes()).toContain('has-matched-order')
+  expect(cards[1].text()).toContain('已成交')
+  view.unmount()
+})
+
 it('比赛卡片提供 Polymarket 与 Google 搜索入口',async()=>{
   const {view}=setup();await flushPromises()
   const card=view.get('.game-card')

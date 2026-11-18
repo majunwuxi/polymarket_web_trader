@@ -36,6 +36,7 @@
 .classified-markets{margin-top:18px;padding-top:14px;border-top:1px solid #edf2ee}.market-category-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.market-category-heading h4{margin:0;color:#244739;font-size:14px}.market-category-heading span{color:#829589;font-size:11px}.classified-markets .market-group{margin-top:10px}
 
 .game-filled{display:inline-block;margin:8px 0;padding:4px 9px;border-radius:6px;background:#e4f5eb;color:#14764c;font-size:12px;font-weight:700}
+.game-card.has-matched-order{background:#fdeef4;border-color:#f3c4d6;box-shadow:0 5px 18px rgba(180,60,110,.08),0 1px 4px rgba(180,60,110,.05)}
 .game-name-note{margin-left:7px;padding:1px 7px;border-radius:999px;background:#fff6e5;color:#8a6d1f;font-size:11px;font-weight:700;white-space:nowrap}
 .game-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.game-actions a.text-button{color:#397b62;text-decoration:none}
 .game-scoreboard{display:flex;flex-direction:column;align-items:center;gap:4px;width:fit-content;min-width:170px;margin:12px auto 10px;padding:9px 22px 10px;border:1px solid #e1ebe4;border-radius:12px;background:linear-gradient(180deg,#f9fcfa,#eef5f1);box-shadow:inset 0 1px 0 #fff}

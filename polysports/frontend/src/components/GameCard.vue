@@ -19,7 +19,7 @@ const googleSearchUrl = (game: Game) => {
 </script>
 
 <template>
-  <article class="game-card">
+  <article class="game-card" :class="{ 'has-matched-order': game.has_matched_order }">
     <div class="game-meta">{{ game.league?.name || (sport === 'nba' ? 'NBA' : '足球') }} · <template v-if="game.provider === 'polymarket'">{{ sport === 'football' ? 'Polymarket 胜平负' : 'Polymarket NBA' }} · {{ gameBindingName(game.result_binding_state) }} · </template>{{ formatDateTime(game.starts_at) }} · {{ gameStatusName(game.status) }}<span v-if="teamNameNote(game)" class="game-name-note">{{ teamNameNote(game) }}</span></div>
     <div class="matchup">
       <div v-for="team in [game.home_team, game.away_team]" :key="team.id" class="team">

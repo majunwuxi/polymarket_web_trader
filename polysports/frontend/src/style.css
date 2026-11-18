@@ -125,3 +125,37 @@
 .detail-row{font-size:12px;line-height:1.6;color:#53675c;overflow-wrap:anywhere}
 .detail-label{display:inline-block;min-width:96px;font-weight:700;color:#7b8d82}
 .detail-note{color:#8a9b91;font-size:11px}
+
+/* 组合记录：带阴影的卡片，按订单聚合展示腿、报价与成交 */
+.combo-record{padding:18px 20px;background:#fff;border:1px solid #e6eee8;border-radius:14px;box-shadow:0 5px 18px rgba(34,69,50,.08),0 1px 4px rgba(34,69,50,.05);transition:box-shadow .2s ease}
+.combo-record+.combo-record{margin-top:14px}
+.combo-record:hover{box-shadow:0 10px 24px rgba(34,69,50,.12),0 2px 6px rgba(34,69,50,.06)}
+.combo-record-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.combo-record-title{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.state-pill{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#eef3f0;color:#4a675a;letter-spacing:.02em}
+.state-pill.state-confirmed{background:#e4f5eb;color:#14764c}
+.state-pill.state-executing{background:#e8f1fb;color:#2a5d9f}
+.state-pill.state-unknown{background:#fff6e5;color:#8a6d1f}
+.state-pill.state-failed,.state-pill.state-rejected{background:#fdecec;color:#a33b3b}
+.state-pill.state-expired{background:#eef0f2;color:#5f6b73}
+.combo-side{font-size:13px;font-weight:700;color:#244638}
+.combo-leg-count{font-size:12px;color:#829589}
+.combo-record-time{font-size:12px;color:#829589;font-variant-numeric:tabular-nums}
+.combo-record-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 0;font-size:13px;color:#53675c}
+.combo-record-meta span{color:#b3c0b8}
+.combo-leg-list{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
+.combo-leg{display:flex;gap:10px;padding:10px 12px;background:#f7faf8;border:1px solid #e9f0eb;border-radius:10px}
+.combo-leg-no{display:grid;place-items:center;width:22px;height:22px;border-radius:999px;background:#dcefe4;color:#17694f;font-size:12px;font-weight:800;flex:none}
+.combo-leg-body{display:grid;gap:2px;font-size:13px;line-height:1.5;color:#53675c;min-width:0}
+.combo-leg-body strong{color:#1c2d29}
+.combo-leg-body small{color:#8a9b91}
+.combo-record-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0 0}
+.combo-record-facts div{padding:9px 12px;background:#f9fbfa;border:1px solid #edf2ee;border-radius:10px}
+.combo-record-facts dt{font-size:11px;font-weight:700;letter-spacing:.04em;color:#7d9085}
+.combo-record-facts dd{margin:3px 0 0;font-size:15px;font-weight:700;color:#1c2d29;font-variant-numeric:tabular-nums}
+.combo-record-note{margin:10px 0 0;font-size:12px;line-height:1.6;color:#7b8c83}
+.combo-record-warn{margin:10px 0 0;padding:7px 11px;border-radius:8px;background:#fff6e5;color:#8a6d1f;font-size:12.5px;font-weight:600}
+.combo-record-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid #eef3ef}
+.combo-rfq{font-size:11px;color:#94a49a;overflow-wrap:anywhere;font-family:monospace}
+.combo-record-actions{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+@media(prefers-reduced-motion:reduce){.combo-record{transition:none}}

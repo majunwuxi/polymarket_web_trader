@@ -68,8 +68,9 @@ def create_app() -> FastAPI:
             else:
                 response = await call_next(request)
         except Exception as exc:
-            logger.error("request_failed type=%s request_id=%s", type(exc).__name__, request_id)
-            response = auth.error(request, 503, "SERVICE_UNAVAILABLE", "服务暂不可用")
+            # 未捕获异常必须记录完整堆栈，否则下单 503 只剩类型名，无法定位真实原因。
+            logger.exception("request_failed request_id=%s method=%s path=%s", request_id, request.method, path)
+            response = auth.error(request, 503, "SERVICE_UNAVAILABLE", "服务暂不可用（"+type(exc).__name__+"）")
         if path.startswith("/api/v1/auth/"):
             response.headers["Cache-Control"] = "no-store"
         response.headers["X-Request-ID"] = request_id

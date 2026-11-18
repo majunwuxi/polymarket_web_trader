@@ -236,7 +236,8 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
                     verified,_,_=resolve(tx,body,closing)
                     verify_close_origin(tx,body,size)
                     now=db_now(tx)
-                    if token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期，请重新预览')
+                    # 一步式下单没有预览令牌（token=None），过期复检只适用于带令牌的旧两步流程。
+                    if token and token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期，请重新预览')
                     intent=TradeIntent(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=request_id,request_fingerprint=fp,game_id=verified.game_id,market_link_id=verified.id,outcome_id=body.outcome_id,side=body.side,limit_price=price,requested_size=size,state='submitting',order_type=getattr(body,'order_type','GTC'),parent_trade_id=getattr(body,'parent_trade_id',None))
                     tx.add(intent);tx.flush()
                     game=tx.get(Game,intent.game_id)

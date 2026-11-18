@@ -4,7 +4,8 @@ from contextlib import nullcontext
 from types import SimpleNamespace as S
 
 import pytest
-from backend.result_binding import match_fixture_candidates, unique_nba_fixture_id
+from backend.result_binding import (match_fixture_candidates, match_fixture_candidates_detailed,
+                                    unique_nba_fixture_id)
 from backend.sports_sources import SourceGame, SourceTeam, SourceError
 
 START=datetime(2026,1,1,tzinfo=timezone.utc)
@@ -47,6 +48,22 @@ def test_nba_explicit_alias_and_ambiguity_remain_visible():
     rows=[fixture('1','New Orleans Pelicans','Denver Nuggets',sport='nba'),
           fixture('2','New Orleans Pelicans','Denver Nuggets',sport='nba',offset=30)]
     assert [x.external_id for x in match_fixture_candidates('nba',START,'Pelicans','Nuggets',rows)]==['1','2']
+
+
+def test_diagnostics_distinguish_reversed_order_from_missing_fixture():
+    reversed_row=fixture('42','Utah Jazz','LA Clippers',sport='nba')
+    matches,info=match_fixture_candidates_detailed('nba',START,'Clippers','Jazz',[reversed_row])
+    assert matches==[] and info['reversed_order']==1
+    assert info['time_window_rows']==1 and info['home_matches']==0
+
+    unrelated=fixture('43','Boston Celtics','Utah Jazz',sport='nba')
+    matches,info=match_fixture_candidates_detailed('nba',START,'Clippers','Jazz',[unrelated])
+    assert matches==[] and info['reversed_order']==0 and info['home_matches']==0
+
+    # 时间窗口外不应计入候选，但仍能在诊断里看出行数差异。
+    late=fixture('44','LA Clippers','Utah Jazz',sport='nba',offset=121)
+    matches,info=match_fixture_candidates_detailed('nba',START,'Clippers','Jazz',[late])
+    assert matches==[] and info['provider_rows']==1 and info['time_window_rows']==0
 
 
 def test_nba_directory_aliases_bridge_polymarket_and_balldontlie_names():

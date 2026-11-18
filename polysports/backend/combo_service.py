@@ -1,6 +1,7 @@
 """组合询价状态机；所有外部发送均先保存不可重放状态。"""
 from __future__ import annotations
 import hashlib, hmac, json, threading, uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, localcontext
 from polymarket import RequestRejectedError
@@ -246,13 +247,20 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
         verify_quote(quote,rfq_id=row.external_rfq_id,direction=row.direction,quantity=row.quantity,now_ms=int(datetime.now(timezone.utc).timestamp()*1000))
         saved=list(db.scalars(select(ComboLeg).where(ComboLeg.rfq_id==ident)))
         current=resolve_legs(db,[(str(x.market_link_id),str(x.outcome_id)) for x in saved],closing)
-        positions=catalog([x[1] for x in current],[x[2] for x in current])
+        markets=[x[1] for x in current];outcomes=[x[2] for x in current]
+        saved_pairs=[(str(x.market_link_id),str(x.outcome_id)) for x in saved]
+    # 报价有效期只有数秒：官方目录核验与资金/授权校验互相独立，
+    # 并行执行以免串行等待耗尽有效期，导致接受请求在窗口关闭后才发出。
+    with gateway_cls(settings,wallet) as gateway:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            positions_future=pool.submit(catalog,markets,outcomes)
+            gateway.ensure_funding(quote, row.direction)
+            positions=positions_future.result()
         if any(positions[x.outcome_id]!=x.position_id for x in saved):raise TradingError('combo_market_mismatch','组合市场已变更')
         if row.parent_combo_id:
-            origin=verify_combo_close_origin(db,row.parent_combo_id,row.wallet_id,[(str(x.market_link_id),str(x.outcome_id)) for x in saved],row.quantity,positions,exclude_id=row.id)
-            if origin.combo_position_id is not None and row.combo_position_id!=origin.combo_position_id:raise TradingError('combo_quote_mismatch','组合平仓资产不一致')
-    with gateway_cls(settings,wallet) as gateway:
-        gateway.ensure_funding(quote, row.direction)
+            with Session(engine) as db:
+                origin=verify_combo_close_origin(db,row.parent_combo_id,row.wallet_id,saved_pairs,row.quantity,positions,exclude_id=row.id)
+                if origin.combo_position_id is not None and row.combo_position_id!=origin.combo_position_id:raise TradingError('combo_quote_mismatch','组合平仓资产不一致')
         with Session(engine) as tx,tx.begin():
             job=tx.scalar(select(Job).where(Job.combo_rfq_id==ident).with_for_update())
             row=tx.scalar(select(ComboRFQ).where(ComboRFQ.id==ident).with_for_update())
@@ -283,7 +291,11 @@ def accept_quote(engine,settings,ident,quote_id,gateway_cls=ComboGateway,catalog
             accept_hash=str(result.taker_order_hash) if getattr(result,'taker_order_hash',None) else None
             state='executing' if result.status=='executing' and str(result.rfq_id)==external_id else 'rejected' if result.status=='failed' and str(result.rfq_id)==external_id else 'unknown'
             code=None if state=='executing' else rfq_failure_code(result) if state=='rejected' else 'accept_unknown'
-        except Exception:state='unknown';code='accept_unknown'
+        except Exception as exc:
+            state='unknown'
+            # 保留上游拒绝的 HTTP 状态，便于事后区分「接受窗口已关闭」与其他异常。
+            status=getattr(exc,'status',None)
+            code='accept_http_'+str(status) if isinstance(exc,RequestRejectedError) and isinstance(status,int) else 'accept_unknown'
         with Session(engine) as tx,tx.begin():
             job=tx.scalar(select(Job).where(Job.combo_rfq_id==ident).with_for_update())
             row=tx.scalar(select(ComboRFQ).where(ComboRFQ.id==ident).with_for_update())

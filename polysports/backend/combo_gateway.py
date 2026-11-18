@@ -1,7 +1,31 @@
 """已验证钱包的 Combo Builder SDK 客户端。"""
+import threading
+import time
+
 from polymarket import BuilderApiKey
 
 from .trading_gateway import Gateway, TradingError
+
+# 组合报价有效期只有数秒，资金校验处在关键路径上：复用 Web3 连接与
+# chain_id 校验结果，避免每个报价都重新建立连接和发起链 ID 查询。
+_WEB3_CACHE: dict[str, tuple[object, float]] = {}
+_WEB3_LOCK = threading.Lock()
+WEB3_TTL_SECONDS = 60
+
+
+def _polygon_web3(url):
+    now = time.monotonic()
+    with _WEB3_LOCK:
+        entry = _WEB3_CACHE.get(url)
+        if entry is not None and entry[1] > now:
+            return entry[0]
+    from web3 import Web3
+    w3 = Web3(Web3.HTTPProvider(url, request_kwargs={'timeout': 10}))
+    if w3.eth.chain_id != 137:
+        raise ValueError('wrong chain')
+    with _WEB3_LOCK:
+        _WEB3_CACHE[url] = (w3, time.monotonic() + WEB3_TTL_SECONDS)
+    return w3
 
 
 class ComboGateway(Gateway):
@@ -39,8 +63,7 @@ class ComboGateway(Gateway):
         from .trading_gateway import TradingError
         try:
             url=self.settings.polygon_rpc_url.get_secret_value()
-            w3=Web3(Web3.HTTPProvider(url,request_kwargs={'timeout':10}))
-            if w3.eth.chain_id!=137:raise ValueError('wrong chain')
+            w3=_polygon_web3(url)
             wallet=Web3.to_checksum_address(self.wallet.wallet_address)
             exchange=Web3.to_checksum_address('0xe3333700cA9d93003F00f0F71f8515005F6c00Aa')
             with localcontext() as ctx:

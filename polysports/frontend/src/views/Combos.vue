@@ -19,21 +19,36 @@ async function place(){
   if(busy.value)return
   busy.value=true;message.value=''
   if(localStorage.getItem(pendingKey)){message.value='上次下单结果未确认，请先查询记录，勿重复下单。';busy.value=false;return}
-  const id=crypto.randomUUID()
-  try{localStorage.setItem(pendingKey,JSON.stringify({key:id,wallet_id:wallet.value}));pending.value={key:id,wallet_id:wallet.value}}
-  catch{message.value='无法保存请求标识，未发送下单请求。';busy.value=false;return}
+  // 官方组合报价的有效期只有数秒（由上游报价的 expires_at 决定），而一步下单
+  // 在服务端做完资金与目录校验后才发出接受请求。这些错误在发出接受之前即已确定、
+  // 从未真正下单，因此可以安全地重新询价一次；其余错误绝不自动重试。
+  const quoteExpiryCodes=['COMBO_QUOTE_EXPIRED','QUOTE_UNAVAILABLE']
+  const post=(id:string)=>api('/combo-rfqs',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf,'Idempotency-Key':id},body:JSON.stringify({wallet_id:wallet.value,direction:direction.value,quantity:quantity.value,auto_accept:true,legs:legs.value.map(x=>({market_link_id:x.market_link_id,outcome_id:x.outcome_id})),...(closeOriginal.value?{parent_combo_id:closeOriginal.value.id}:{})})})
+  let retried=false
   try{
-    const data=await api('/combo-rfqs',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf,'Idempotency-Key':id},body:JSON.stringify({wallet_id:wallet.value,direction:direction.value,quantity:quantity.value,auto_accept:true,legs:legs.value.map(x=>({market_link_id:x.market_link_id,outcome_id:x.outcome_id})),...(closeOriginal.value?{parent_combo_id:closeOriginal.value.id}:{})})})
-    if(!['requesting','unknown'].includes(data.state)){localStorage.removeItem(pendingKey);pending.value=null}
-    items.value=[data,...items.value.filter((x:any)=>x.id!==data.id)]
-    const submitted=['accepting','executing','confirmed'].includes(data.state)
-    if(submitted&&!closeOriginal.value)clearLegs(false)
-    message.value=(['requesting','unknown'].includes(data.state)?'下单结果未确认，请查询原记录，不要重复提交。':submitted?'已按当前市场价提交，执行中不代表成交。':data.error_code==='no_quote'?'本次没有获得市场报价，未成交。':data.error_text?'下单未成交：'+data.error_text:data.state==='rejected'?'上游拒绝本次下单，未能成交。':'组合下单未成交，请查看记录。')+(submitted&&!closeOriginal.value?' 已清空待下单组合腿。':'')
-  }catch(e){
-    const known=safeCodes.includes((e as any)?.code)
-    if(known){localStorage.removeItem(pendingKey);pending.value=null}
-    await load()
-    message.value=known?(e instanceof Error?e.message:'下单前检查未通过。')+'（本次未发送下单请求）':'下单结果未核实，请查询记录，不要重复提交。'
+    for(;;){
+      const id=crypto.randomUUID()
+      try{localStorage.setItem(pendingKey,JSON.stringify({key:id,wallet_id:wallet.value}));pending.value={key:id,wallet_id:wallet.value}}
+      catch{message.value='无法保存请求标识，未发送下单请求。';break}
+      try{
+        const data=await post(id)
+        if(!['requesting','unknown'].includes(data.state)){localStorage.removeItem(pendingKey);pending.value=null}
+        const expired=data.state==='expired'||data.error_code==='quote_expired'
+        if(expired&&!retried){retried=true;items.value=[data,...items.value.filter((x:any)=>x.id!==data.id)];continue}
+        items.value=[data,...items.value.filter((x:any)=>x.id!==data.id)]
+        const submitted=['accepting','executing','confirmed'].includes(data.state)
+        if(submitted&&!closeOriginal.value)clearLegs(false)
+        message.value=(['requesting','unknown'].includes(data.state)?'下单结果未确认，请查询原记录，不要重复提交。':submitted?'已按当前市场价提交，执行中不代表成交。':data.error_code==='no_quote'?'本次没有获得市场报价，未成交。':data.error_text?'下单未成交：'+data.error_text:data.state==='rejected'?'上游拒绝本次下单，未能成交。':'组合下单未成交，请查看记录。')+(submitted&&!closeOriginal.value?' 已清空待下单组合腿。':'')+(retried?'（此前报价已过期，已自动重新询价一次）':'')
+        break
+      }catch(e){
+        const known=safeCodes.includes((e as any)?.code)
+        if(known){localStorage.removeItem(pendingKey);pending.value=null}
+        if(known&&quoteExpiryCodes.includes((e as any)?.code)&&!retried){retried=true;continue}
+        await load()
+        message.value=known?(e instanceof Error?e.message:'下单前检查未通过。')+'（本次未发送下单请求）':'下单结果未核实，请查询记录，不要重复提交。'
+        break
+      }
+    }
   }finally{busy.value=false}
 }
 async function lookup(){if(!pending.value)return;try{const data=await api('/combo-rfqs/by-key/'+pending.value.key+'?wallet_id='+encodeURIComponent(pending.value.wallet_id));if(!['requesting','unknown'].includes(data.state)){localStorage.removeItem(pendingKey);pending.value=null}await load();message.value='已找到记录，状态：'+stateName(data.state)}catch{message.value='未能找到记录，请独立核对，不要重新下单。'}}

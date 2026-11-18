@@ -278,7 +278,7 @@ def create_combo(request: Request,body:ComboBody,idempotency_key:str=Header(...,
         ident,created=request_quote(request.app.state.engine,request.app.state.settings,body,key)
         if body.auto_accept:auto_accept_current_quote(request,ident,created)
         with Session(request.app.state.engine) as db:
-            row=db.get(ComboRFQ,ident);status=202 if row.state in ('requesting','unknown','accepting','executing') else 201 if created else 200
+            row=db.get(ComboRFQ,ident);status=202 if created and row.state in ('requesting','unknown','accepting','executing') else 201 if created else 200
             return JSONResponse(status_code=status,content={'data':combo_data_one(db,row),'request_id':request.state.request_id})
     except TradingError as exc:return failure(request,exc)
 

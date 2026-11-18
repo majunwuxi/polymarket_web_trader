@@ -102,7 +102,11 @@ def test_combo_hidden_only_when_last_leg_old_and_any_leg_settled(env):
                                      asset_kind='ctf_token')
         late_link = MarketLink(id=late_link_id, game_id=late_game_id, market_id=late_market_id,
                                state='confirmed', match_method='manual', evidence=link.evidence)
-        db.add_all([late_game, late_market, late_outcome, late_link])
+        db.add_all([late_game, late_market, late_outcome])
+        # flush 的插入顺序只按 relationship() 排序，纯列级外键不参与；
+        # 先落父表，再插子表 market_links，避免外键检查时父行尚不存在。
+        db.flush()
+        db.add(late_link)
         db.flush()
         db.add(ComboRFQ(id=rfq_id, wallet_id=wallet_id, wallet_address='0x' + '1' * 40,
                         client_request_id=uuid.uuid4(), fingerprint=uuid.uuid4().hex,

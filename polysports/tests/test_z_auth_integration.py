@@ -185,6 +185,18 @@ def test_sports_sync_idempotency_history_concurrency_and_api(pg):
         assert client.get('/api/v1/sync-runs').json()['data']['items'][0]['status'] in ('succeeded','failed')
 
 
+def seed_schedules(pg):
+    """重建迁移内置的调度计划种子：4 条启用的 polymarket 计划与版本单例。
+
+    pg 夹具每个测试都清空全部业务表，依赖种子数据的测试须自行恢复，不依赖执行顺序。
+    """
+    with pg.begin() as conn:
+        conn.execute(text("INSERT INTO schedule_revisions (id,revision) VALUES (1,1)"))
+        for index,(sport,utc) in enumerate((('football','00:00'),('football','08:00'),('nba','00:00'),('nba','08:00')),1):
+            conn.execute(text("INSERT INTO sync_schedules (id,provider,sport,utc_time,enabled) VALUES (:id,'polymarket',:sport,:utc::time,true)"),
+                {'id':f'00000000-0000-4000-8000-{index:012d}','sport':sport,'utc':utc})
+
+
 def setup_scheduler_game(pg, sport='football'):
     from datetime import datetime, timedelta, timezone
     import httpx
@@ -264,6 +276,7 @@ def test_scheduler_reschedules_unchecked_event_and_api_revision(pg):
     from backend.sports_sync import upsert_game
     from backend.sports_sources import football_game
     game_id,row=setup_scheduler_game(pg)
+    seed_schedules(pg)
     with Session(pg) as db, db.begin(): watch=watch_game(db,game_id); watch_id=watch.id
     with pg.begin() as conn: conn.execute(text("UPDATE jobs SET due_at=clock_timestamp()-interval '1 second'"))
     job_id,token=claim_next(pg,'mock-worker')
@@ -279,7 +292,7 @@ def test_scheduler_reschedules_unchecked_event_and_api_revision(pg):
         csrf=client.get('/api/v1/auth/session').json()['data']['csrf_token']; headers={'origin':ORIGIN,'x-csrf-token':csrf}
         first=client.get('/api/v1/sync-schedules').json()['data']
         assert len(first['items'])==4
-        body={'revision':first['revision'],'items':[{'provider':'polymarket','sport':'football','utc_time':'01:00:00','enabled':True},{'provider':'balldontlie','sport':'nba','utc_time':'09:00:00','enabled':True}]}
+        body={'revision':first['revision'],'items':[{'provider':'polymarket','sport':'football','utc_time':'01:00:00','enabled':True},{'provider':'polymarket','sport':'nba','utc_time':'09:00:00','enabled':True}]}
         assert client.put('/api/v1/sync-schedules',json=body,headers=headers).status_code==200
         assert client.put('/api/v1/sync-schedules',json=body,headers=headers).status_code==409
         assert client.post('/api/v1/games/'+str(game_id)+'/watch',json={},headers=headers).json()['data']['id']==str(watch_id)
@@ -315,6 +328,7 @@ def test_scheduled_jobs_survive_restart_and_future_schedule_changes(pg):
     from datetime import timedelta
     from backend.scheduler import ensure_scheduled, claim_next
     setup_scheduler_game(pg)
+    seed_schedules(pg)
     ensure_scheduled(pg)
     with pg.connect() as conn:
         before=conn.execute(text("SELECT count(*) FROM jobs WHERE kind='sync'")).scalar_one()
@@ -326,7 +340,7 @@ def test_scheduled_jobs_survive_restart_and_future_schedule_changes(pg):
         assert log_in(client).status_code==200
         csrf=client.get('/api/v1/auth/session').json()['data']['csrf_token']; headers={'origin':ORIGIN,'x-csrf-token':csrf}
         plan=client.get('/api/v1/sync-schedules').json()['data']
-        body={'revision':plan['revision'],'items':[{'provider':'polymarket','sport':'football','utc_time':'03:01:00','enabled':True},{'provider':'balldontlie','sport':'nba','utc_time':'03:02:00','enabled':True}]}
+        body={'revision':plan['revision'],'items':[{'provider':'polymarket','sport':'football','utc_time':'03:01:00','enabled':True},{'provider':'polymarket','sport':'nba','utc_time':'03:02:00','enabled':True}]}
         assert client.put('/api/v1/sync-schedules',json=body,headers=headers).status_code==200
         with pg.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM jobs WHERE kind='sync' AND status='cancelled'")).scalar_one()==before

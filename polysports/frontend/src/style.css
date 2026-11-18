@@ -9,6 +9,10 @@
 .detail form label,.detail form input,.detail form select{display:block;margin:10px 0}.detail form select{max-width:100%;padding:9px;border:1px solid #d9e5de;border-radius:7px}
 
 .combo-page select,.combo-page input{max-width:100%;box-sizing:border-box}.combo-page p{overflow-wrap:anywhere}.combo-page label{display:block;margin:12px 0}.combo-page .leg-tools{margin:8px 0 4px}
+.combo-submit-status{margin:10px 0 0;padding:9px 12px;border-radius:8px;background:#eef5f1;color:#244638;font-size:13px;font-weight:700}
+.combo-pending-block{margin-top:12px;padding:12px 14px;border:1px solid #f0c9a8;border-radius:10px;background:#fff6ec}
+.combo-pending-block>p{margin:0 0 8px;color:#8a4b1f;font-size:13px;font-weight:700}
+.combo-pending-block label{margin:10px 0}
 .match-orders p{overflow-wrap:anywhere}.match-orders .market-card strong{font-size:13px}.match-orders .market-card p{margin:6px 0}
 /* 交易记录：桌面左右两列，窄屏回退为上下单列；列内卡片各自独立滚动内容。 */
 .order-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start;margin-top:20px}

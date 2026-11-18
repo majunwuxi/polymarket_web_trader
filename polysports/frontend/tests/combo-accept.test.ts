@@ -86,6 +86,24 @@ describe('组合一键下单反馈（模拟接口）',()=>{
     expect(posts(fetchMock)).toHaveLength(2)
     view.unmount()
   })
+  it('下单反馈与待核对处理紧跟下单按钮，不再放在页面顶部',async()=>{
+    twoLegs()
+    const {view}=setup(()=>Promise.resolve(json({data:placed('unknown')})))
+    await flushPromises()
+    const form=view.findAll('section.welcome-card')[0]
+    const submitButton=form.findAll('button').find(button=>button.text()==='按当前市价直接下单')!
+    // 提交前顶部不应出现待核对块
+    expect(view.find('.combo-pending-block').exists()).toBe(false)
+    await submit(view)
+    const status=form.find('.combo-pending-block')
+    expect(status.exists()).toBe(true)
+    expect(status.text()).toContain('查询原请求')
+    // 反馈与待核对块必须与按钮同属下单表单区块，且位于按钮之后
+    const nodes=Array.from(form.element.children)
+    expect(nodes.indexOf(submitButton.element)).toBeLessThan(nodes.indexOf(status.element))
+    expect(form.find('.combo-submit-status').text()).toContain('下单结果未确认')
+    view.unmount()
+  })
   it('下单结果未知时保留待查记录并阻止重复提交',async()=>{
     twoLegs()
     const {view,fetchMock}=setup(()=>Promise.resolve(json({data:placed('unknown')})))

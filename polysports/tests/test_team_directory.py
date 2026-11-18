@@ -42,6 +42,30 @@ def test_football_directory_exact_aliases_are_bidirectional():
     assert football_name_variants('Unknown National Team') == set()
 
 
+def test_football_directory_aliases_display_source_full_names():
+    # 巴甲 Gamma 使用球队全名；别名键同样命中显示资料。
+    flamengo=display_team(team('CR Flamengo'))
+    assert flamengo['name_zh']=='弗拉门戈' and flamengo['name_zh_source']=='sportsmatch'
+    assert flamengo['logo_url']=='https://media.api-sports.io/football/teams/127.png'
+    assert display_team(team('Clube do Remo'))['name_zh']=='雷莫'
+    assert display_team(team('São Paulo FC'))['name_zh']=='圣保罗'
+
+
+def test_football_alias_collisions_stay_conservative():
+    # 别名与另一支球队的键冲突时，冲突键回退为不匹配，不猜测归属。
+    alpha={'name_en':'Alpha FC','name_zh':'甲队','aliases':['Shared Name']}
+    beta={'name_en':'Shared Name','name_zh':'乙队'}
+    index=build_index('football',[alpha,beta],include_aliases=True)
+    assert index['shared name'] is None
+    assert index['alpha fc']['name_zh']=='甲队'
+    # 同一记录的名称与别名重复不视为冲突。
+    gamma={'name_en':'Gamma FC','name_zh':'丙队','aliases':['Gamma FC']}
+    assert build_index('football',[gamma],include_aliases=True)['gamma fc']['name_zh']=='丙队'
+    # 未开启别名索引时别名键不进入索引；NBA 目录不受影响。
+    assert 'shared name' not in build_index('football',[alpha])
+    assert 'shared name' not in build_index('nba',[{**alpha,'league':'nba'}])
+
+
 def test_polymarket_nba_short_names_have_chinese_and_keep_source_icon():
     assert len(NBA_SHORT_NAMES)==30
     for short,full in NBA_SHORT_NAMES.items():

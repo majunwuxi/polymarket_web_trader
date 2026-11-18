@@ -71,19 +71,24 @@ def football_name_variants(name: str) -> set[str]:
     return set(variants) if variants else set()
 
 
-def build_index(sport: str, records) -> dict[str, dict | None]:
+def build_index(sport: str, records, *, include_aliases: bool = False) -> dict[str, dict | None]:
     index: dict[str, dict | None] = {}
     for item in records:
         if not isinstance(item, dict) or (sport == 'nba' and item.get('league') != 'nba'):
             continue
         name = item.get('name_en')
         if not isinstance(name, str) or not name.strip(): continue
-        key = _normal(name)
-        # 同名记录不根据模糊线索猜测球队身份。
-        if key in index:
-            index[key] = None
-        else:
-            index[key] = item
+        keys = [_normal(name)]
+        if include_aliases:
+            aliases = item.get('aliases')
+            if isinstance(aliases, list):
+                keys.extend(_normal(value) for value in aliases if isinstance(value, str) and value.strip())
+        # 同名记录不根据模糊线索猜测球队身份；同一记录的重复键不视为冲突。
+        for key in keys:
+            if key in index and index[key] is not item:
+                index[key] = None
+            else:
+                index[key] = item
     return index
 
 
@@ -139,7 +144,7 @@ def _directories():
     for short, full in NBA_SHORT_NAMES.items():
         key,full_key=_normal(short),_normal(full)
         if key not in nba and nba.get(full_key): nba[key]=nba[full_key]
-    return {'football': build_index('football', _football_records().values()), 'nba': nba}
+    return {'football': build_index('football', _football_records().values(), include_aliases=True), 'nba': nba}
 
 
 def display_team(team) -> dict:

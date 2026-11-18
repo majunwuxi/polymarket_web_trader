@@ -552,6 +552,350 @@
     "logo": "https://media.api-sports.io/football/teams/116.png",
     "leagues": "LIGUE1"
   },
+  "118": {
+    "name_en": "Bahia",
+    "name_zh": "巴伊亚",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/118.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "EC Bahia"
+    ]
+  },
+  "119": {
+    "name_en": "Internacional",
+    "name_zh": "巴西国际",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/119.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "SC Internacional",
+      "Sport Club Internacional"
+    ]
+  },
+  "120": {
+    "name_en": "Botafogo",
+    "name_zh": "博塔弗戈",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/120.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "Botafogo FR"
+    ]
+  },
+  "121": {
+    "name_en": "Palmeiras",
+    "name_zh": "帕尔梅拉斯",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/121.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "SE Palmeiras"
+    ]
+  },
+  "123": {
+    "name_en": "Sport Recife",
+    "name_zh": "累西腓体育",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/123.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Sport",
+      "Sport Club do Recife"
+    ]
+  },
+  "124": {
+    "name_en": "Fluminense",
+    "name_zh": "弗鲁米嫩塞",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/124.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "Fluminense FC"
+    ]
+  },
+  "125": {
+    "name_en": "America Mineiro",
+    "name_zh": "米内罗美洲",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/125.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "América Mineiro",
+      "América-MG",
+      "America-MG"
+    ]
+  },
+  "126": {
+    "name_en": "Sao Paulo",
+    "name_zh": "圣保罗",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/126.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "São Paulo",
+      "São Paulo FC"
+    ]
+  },
+  "127": {
+    "name_en": "Flamengo",
+    "name_zh": "弗拉门戈",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/127.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "CR Flamengo"
+    ]
+  },
+  "128": {
+    "name_en": "Santos",
+    "name_zh": "桑托斯",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/128.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Santos FC"
+    ]
+  },
+  "129": {
+    "name_en": "Ceara",
+    "name_zh": "塞阿拉",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/129.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Ceará",
+      "Ceará SC"
+    ]
+  },
+  "130": {
+    "name_en": "Gremio",
+    "name_zh": "格雷米奥",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/130.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Grêmio",
+      "Grêmio FBPA"
+    ]
+  },
+  "131": {
+    "name_en": "Corinthians",
+    "name_zh": "科林蒂安",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/131.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "SC Corinthians Paulista"
+    ]
+  },
+  "132": {
+    "name_en": "Chapecoense-sc",
+    "name_zh": "沙佩科恩斯",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/132.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Chapecoense",
+      "Associação Chapecoense de Futebol"
+    ]
+  },
+  "133": {
+    "name_en": "Vasco DA Gama",
+    "name_zh": "瓦斯科达伽马",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/133.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Vasco da Gama",
+      "Vasco",
+      "CR Vasco da Gama"
+    ]
+  },
+  "134": {
+    "name_en": "Atletico Paranaense",
+    "name_zh": "巴拉纳竞技",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/134.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "Athletico Paranaense",
+      "Athletico-PR",
+      "Atlético Paranaense",
+      "CA Paranaense"
+    ]
+  },
+  "135": {
+    "name_en": "Cruzeiro",
+    "name_zh": "克鲁塞罗",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/135.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Cruzeiro EC"
+    ]
+  },
+  "136": {
+    "name_en": "Vitoria",
+    "name_zh": "维多利亚",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/136.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Vitória",
+      "EC Vitória"
+    ]
+  },
+  "138": {
+    "name_en": "Guarani Campinas",
+    "name_zh": "瓜拉尼",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/138.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Guarani",
+      "Guarani FC"
+    ]
+  },
+  "139": {
+    "name_en": "Ponte Preta",
+    "name_zh": "庞特普雷塔",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/139.png",
+    "leagues": "BRA_SERIEB"
+  },
+  "140": {
+    "name_en": "Criciuma",
+    "name_zh": "克里丘马",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/140.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Criciúma",
+      "Criciúma EC"
+    ]
+  },
+  "142": {
+    "name_en": "Vila Nova",
+    "name_zh": "维拉诺瓦",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/142.png",
+    "leagues": "BRA_SERIEB"
+  },
+  "144": {
+    "name_en": "Atletico Goianiense",
+    "name_zh": "戈亚尼亚竞技",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/144.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Atlético Goianiense",
+      "Atlético-GO",
+      "Atlético Clube Goianiense"
+    ]
+  },
+  "145": {
+    "name_en": "Avai",
+    "name_zh": "阿瓦伊",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/145.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Avaí",
+      "Avaí FC"
+    ]
+  },
+  "146": {
+    "name_en": "CRB",
+    "name_zh": "CRB",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/146.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Clube de Regatas Brasil"
+    ]
+  },
+  "147": {
+    "name_en": "Coritiba",
+    "name_zh": "科里蒂巴",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/147.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Coritiba FBC"
+    ]
+  },
+  "148": {
+    "name_en": "Londrina",
+    "name_zh": "隆德里纳",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/148.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Londrina EC"
+    ]
+  },
+  "149": {
+    "name_en": "Paysandu",
+    "name_zh": "帕桑杜",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/149.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Paysandu SC"
+    ]
+  },
+  "150": {
+    "name_en": "CSA",
+    "name_zh": "CSA",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/150.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Centro Sportivo Alagoano"
+    ]
+  },
+  "151": {
+    "name_en": "Goias",
+    "name_zh": "戈亚斯",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/151.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "Goiás",
+      "Goiás EC"
+    ]
+  },
+  "152": {
+    "name_en": "Juventude",
+    "name_zh": "尤文图德",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/152.png",
+    "leagues": "BRA_SERIEA,BRA_SERIEB",
+    "aliases": [
+      "EC Juventude"
+    ]
+  },
+  "154": {
+    "name_en": "Fortaleza EC",
+    "name_zh": "福塔莱萨",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/154.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "Fortaleza"
+    ]
+  },
+  "155": {
+    "name_en": "Sampaio Correa",
+    "name_zh": "桑帕约科雷亚",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/155.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Sampaio Corrêa"
+    ]
+  },
   "157": {
     "name_en": "Bayern München",
     "name_zh": "拜仁慕尼黑",
@@ -2029,6 +2373,28 @@
     "logo": "https://media.api-sports.io/football/teams/746.png",
     "leagues": "EFL_CH"
   },
+  "754": {
+    "name_en": "ABC",
+    "name_zh": "ABC",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/754.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "ABC Natal"
+    ]
+  },
+  "755": {
+    "name_en": "Nautico Recife",
+    "name_zh": "累西腓瑙蒂科",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/755.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Náutico",
+      "Náutico Recife",
+      "Clube Náutico Capibaribe"
+    ]
+  },
   "759": {
     "name_en": "Viking",
     "name_zh": "维京",
@@ -2152,6 +2518,17 @@
     "logo": "https://media.api-sports.io/football/teams/785.png",
     "leagues": "BUND2"
   },
+  "794": {
+    "name_en": "RB Bragantino",
+    "name_zh": "红牛布拉甘蒂诺",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/794.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "Red Bull Bragantino",
+      "Bragantino"
+    ]
+  },
   "798": {
     "name_en": "Mallorca",
     "name_zh": "马略卡",
@@ -2200,6 +2577,20 @@
     "country": "Turkey",
     "logo": "https://thumb.wikimedia.org/wikipedia/en/thumb/d/de/Trabzonspor_Amblem.svg/960px-Trabzonspor_Amblem.svg.png?utm_source=en.wikipedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
     "leagues": "UEFA"
+  },
+  "1062": {
+    "name_en": "Atletico-MG",
+    "name_zh": "米内罗竞技",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/1062.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "Atlético-MG",
+      "Atlético Mineiro",
+      "Atletico Mineiro",
+      "Clube Atlético Mineiro",
+      "CA Mineiro"
+    ]
   },
   "1063": {
     "name_en": "Saint Etienne",
@@ -2450,6 +2841,49 @@
     "logo": "https://media.api-sports.io/football/teams/1166.png",
     "leagues": "VEIK"
   },
+  "1193": {
+    "name_en": "Cuiaba",
+    "name_zh": "库亚巴",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/1193.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "Cuiabá",
+      "Cuiabá EC"
+    ]
+  },
+  "1198": {
+    "name_en": "Remo",
+    "name_zh": "雷莫",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/1198.png",
+    "leagues": "BRA_SERIEA",
+    "aliases": [
+      "Clube do Remo"
+    ]
+  },
+  "1211": {
+    "name_en": "Brusque",
+    "name_zh": "布鲁斯克",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/1211.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Brusque FC"
+    ]
+  },
+  "1223": {
+    "name_en": "Operario-PR",
+    "name_zh": "奥佩拉里奥",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/1223.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Operário-PR",
+      "Operário Ferroviário",
+      "Operario Ferroviario"
+    ]
+  },
   "1297": {
     "name_en": "PAU",
     "name_zh": "波城",
@@ -2639,6 +3073,16 @@
     "logo": "https://media.api-sports.io/football/teams/2176.png",
     "leagues": "ALLSV"
   },
+  "2227": {
+    "name_en": "Tombense",
+    "name_zh": "通贝斯",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/2227.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Tombense FC"
+    ]
+  },
   "2240": {
     "name_en": "Mjallby AIF",
     "name_zh": "米亚尔比",
@@ -2666,6 +3110,17 @@
     "country": "Moldova",
     "logo": "https://media.api-sports.io/football/teams/2271.png",
     "leagues": "UCL"
+  },
+  "2618": {
+    "name_en": "Botafogo SP",
+    "name_zh": "博塔弗戈SP",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/2618.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Botafogo-SP",
+      "Botafogo Ribeirão Preto"
+    ]
   },
   "2746": {
     "name_en": "Gangwon FC",
@@ -2886,6 +3341,46 @@
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/7012.png",
     "leagues": "ELITES"
+  },
+  "7779": {
+    "name_en": "Ituano",
+    "name_zh": "伊图阿诺",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/7779.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Ituano FC"
+    ]
+  },
+  "7834": {
+    "name_en": "Novorizontino",
+    "name_zh": "诺沃里松蒂诺",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/7834.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Grêmio Novorizontino"
+    ]
+  },
+  "7848": {
+    "name_en": "Mirassol",
+    "name_zh": "米拉索尔",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/7848.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Mirassol FC"
+    ]
+  },
+  "10862": {
+    "name_en": "Amazonas",
+    "name_zh": "亚马孙",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/teams/10862.png",
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Amazonas FC"
+    ]
   },
   "12733": {
     "name_en": "Ballkani",

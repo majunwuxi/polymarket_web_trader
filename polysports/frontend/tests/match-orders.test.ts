@@ -60,6 +60,27 @@ it('完赛详情显示最终比分，本场订单使用卡片和胜负徽标',as
   view.unmount()
 })
 
+it('赛事详情在主客队中文名下方显示 Polymarket 英文队名',async()=>{
+  const named={...game,home_team:{...team('Spurs'),source_name:'Spurs',name_zh:'圣安东尼奥马刺'},away_team:{...team('Pistons'),source_name:'Pistons',name_zh:'底特律活塞'}}
+  vi.stubGlobal('fetch',vi.fn((url:string)=>{
+    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[named],next_cursor:null}))
+    if(url.includes('/sync-runs'))return Promise.resolve(json({items:[]}))
+    if(url.includes('/live-markets'))return Promise.resolve(json({events:[],observed_at:'2026-11-14T00:00:00Z'}))
+    if(url.includes('/result-binding'))return Promise.resolve(json(null))
+    if(url.includes('/trade-intents?'))return Promise.resolve(json({items:[],next_cursor:null}))
+    if(url.includes('/combo-rfqs?'))return Promise.resolve(json({items:[],next_cursor:null}))
+    return Promise.resolve(json(named))
+  }))
+  const view=mount(SportsCenter,{global:{plugins:[router]}});await flushPromises()
+  await view.findAll('button').find(button=>button.text()==='查看详情')!.trigger('click');await flushPromises()
+  const sourceNames=view.findAll('.summary-source-name').map(item=>item.text())
+  expect(sourceNames).toEqual(['Spurs','Pistons'])
+  const summary=view.get('.match-summary').text()
+  expect(summary).toContain('圣安东尼奥马刺')
+  expect(summary).toContain('底特律活塞')
+  view.unmount()
+})
+
 it('赛事详情不展示 spread 让分市场，大小分按盘口升序排列',async()=>{
   const live={events:[{id:'event-1',title:'Mock Event',slug:'mock-event',markets:[
     {id:'money',type:'moneyline',question:'Mock Home vs Mock Away',group:'胜负',closed:false,accepting_orders:true,outcomes:[{label:'Mock Home',price:'0.55'}]},

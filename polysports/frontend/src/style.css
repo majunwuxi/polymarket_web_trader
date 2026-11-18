@@ -59,6 +59,7 @@
 .match-orders .match-order-card .result-badge{margin-left:2px}
 @media(max-width:600px){.summary-scoreboard{min-width:0;margin:0 4px;padding:6px 10px}.summary-scoreboard .game-score-line strong{font-size:22px}}
 .team-maintain{margin-top:2px;font-size:11px;font-weight:600}
+.summary-source-name{display:block;margin-top:2px;color:#7d9085;font-size:11px;font-weight:600;letter-spacing:.02em}
 .job-target{flex:1 1 100%;margin-top:2px;font-size:12px;line-height:1.6;color:#53675c;overflow-wrap:anywhere}
 
 .outcome-list .outcome-choice{display:inline-flex;align-items:stretch;padding:0;background:transparent;gap:3px}.combo-add{border:1px solid #bcdac7;background:white;color:#17694f;border-radius:8px;padding:6px;font-size:11px;font-weight:700;cursor:pointer}.combo-add:disabled{opacity:.55;cursor:not-allowed}

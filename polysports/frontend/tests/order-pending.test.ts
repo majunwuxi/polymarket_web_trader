@@ -73,3 +73,37 @@ it('发送前即可确定的错误安全清除标记并说明未发送下单请�
   expect(localStorage.getItem('polysports_pending_order')).toBeNull()
   view.unmount()
 })
+
+it('按原键查询返回404时在面板内说明未创建订单并保留本机标记',async()=>{
+  await router.push('/orders/new/mock-link/mock-outcome');await router.isReady()
+  localStorage.setItem('polysports_pending_order',JSON.stringify({key:'lost-key',wallet_id:'mock-wallet'}))
+  const mock=baseMock((url)=>{
+    if(url.includes('/trade-intents/by-key/'))return Promise.resolve(({ok:false,status:404,json:async()=>({error:{code:'NOT_FOUND',message:'订单不存在'}})}) as Response)
+    return undefined
+  })
+  vi.stubGlobal('fetch',mock)
+  const view=mount(OrderEntry,{global:{plugins:[router]}});await flushPromises()
+  expect(view.text()).toContain('有一笔结果待核对')
+  expect(view.text()).toContain('那笔下单请求未创建订单')
+  expect(localStorage.getItem('polysports_pending_order')).toContain('lost-key')
+  view.unmount()
+})
+
+it('服务端已确定的重复订单错误同样安全清除标记',async()=>{
+  await router.push('/orders/new/mock-link/mock-outcome');await router.isReady()
+  const mock=baseMock((url)=>{
+    if(url==='/api/v1/single-orders')return Promise.resolve(fail('DUPLICATE_UNRESOLVED','已有相同参数的未解决订单'))
+    return undefined
+  })
+  vi.stubGlobal('fetch',mock)
+  vi.stubGlobal('crypto',{randomUUID:()=> 'new-request'})
+  const view=mount(OrderEntry,{global:{plugins:[router]}});await flushPromises()
+  await view.get('#input-mode').setValue('shares')
+  await view.get('#price').setValue('0.5')
+  await view.get('#size').setValue('5')
+  await view.get('form').trigger('submit.prevent');await flushPromises()
+  expect(view.text()).not.toContain('有一笔结果待核对')
+  expect(view.text()).toContain('已有相同参数的未解决订单（本次未发送下单请求）')
+  expect(localStorage.getItem('polysports_pending_order')).toBeNull()
+  view.unmount()
+})

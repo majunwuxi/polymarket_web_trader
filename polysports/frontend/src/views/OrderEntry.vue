@@ -14,6 +14,7 @@ const menuOpen=ref(false),wallets=ref<any[]>([]),wallet=ref('')
 const side=ref('BUY'),price=ref(''),size=ref(''),budget=ref(''),inputMode=ref<'amount'|'shares'>('amount')
 const book=ref<any>(null),context=ref<any>(null),closeContext=ref<any>(null)
 const message=ref(''),busy=ref(false),result=ref<any>(null),pending=ref<any>(null),clearAcknowledged=ref(false)
+const lookupBusy=ref(false),lookupNote=ref('')
 const closing=computed(()=>typeof route.query.close==='string' && !!route.query.close)
 const pendingKey='polysports_pending_order'
 let loadRevision=0
@@ -26,7 +27,8 @@ const SAFE_CODES=[
   'WALLET_NOT_FOUND','WALLET_MISMATCH','SIGNER_MISMATCH','WALLET_UNDEPLOYED','WALLET_DEPLOYMENT_UNKNOWN',
   'WALLET_INVALID','RPC_WRONG_CHAIN','CREDENTIALS_MISSING','BALANCE_INSUFFICIENT','ALLOWANCE_INSUFFICIENT',
   'BALANCE_UNAVAILABLE','BOOK_UNAVAILABLE','BOOK_OR_BALANCE_UNAVAILABLE','BOOK_MISMATCH','ENGINE_RESTARTING',
-  'ASSET_VERSION_MISMATCH','POSITION_UNAVAILABLE','POSITION_MISMATCH','SIGNED_ORDER_MISMATCH'
+  'ASSET_VERSION_MISMATCH','POSITION_UNAVAILABLE','POSITION_MISMATCH','SIGNED_ORDER_MISMATCH',
+  'DUPLICATE_UNRESOLVED','SDK_UNAVAILABLE','ALLOWANCE_UNKNOWN','POST_ONLY_MODE'
 ]
 const stateName=(state:string)=>({submitting:'提交中',pending:'挂单中',partially_filled:'部分成交',filled:'已成交',rejected:'已拒绝',cancelled:'已取消',unknown:'结果未知'} as Record<string,string>)[state]||state
 const reconcilable=computed(()=>!!result.value?.id && result.value.state==='unknown')
@@ -54,13 +56,14 @@ const closeWalletLabel=computed(()=>wallets.value.find((w:any)=>w.id===closeCont
 
 async function api(path:string,options:RequestInit={}){
   const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options})
-  const body=await response.json()
+  let body:any=null
+  try{body=await response.json()}catch{body=null}
   if(!response.ok){
-    const error=new Error(body?.error?.message||'请求失败') as Error & {code?:string}
+    const error=new Error(body?.error?.message||'请求失败（HTTP '+response.status+'）') as Error & {code?:string}
     error.code=body?.error?.code
     throw error
   }
-  return body.data
+  return body?.data
 }
 
 // 平仓只依赖真实持仓上下文：不再请求开仓用的赛事映射与公开盘口接口。
@@ -105,7 +108,7 @@ async function submit(){
     :{wallet_id:wallet.value,market_link_id:route.params.link,outcome_id:route.params.outcome,
       side:side.value,limit_price:price.value,size:orderSize.value}
   if(!draft.wallet_id||!draft.limit_price||!draft.size){message.value='请核对钱包、限价与份额后再下单。';return}
-  busy.value=true;message.value=''
+  busy.value=true;message.value='';lookupNote.value=''
   const key=crypto.randomUUID()
   pending.value={key,wallet_id:draft.wallet_id}
   try{localStorage.setItem(pendingKey,JSON.stringify(pending.value))}
@@ -125,11 +128,25 @@ async function submit(){
 
 async function lookup(){
   if(!pending.value)return
+  if(busy.value){lookupNote.value='订单正在提交中，请等待本次提交结束后再查询。';return}
+  lookupBusy.value=true
   try{
     result.value=await api('/trade-intents/by-key/'+pending.value.key+'?wallet_id='+encodeURIComponent(pending.value.wallet_id))
+    lookupNote.value=''
     if(!['unknown','submitting'].includes(result.value.state)){localStorage.removeItem(pendingKey);pending.value=null}
     message.value='已查询现有订单状态：'+stateName(result.value.state)
-  }catch{message.value='尚无法确认订单是否创建，请稍后再次查询。'}
+  }catch(e){
+    const error=e as Error & {code?:string}
+    if(error.code==='NOT_FOUND'){
+      // 服务端按幂等键查无订单：该键的下单请求未创建订单（订单行在签名提交前落库，查无即未创建）。
+      // 不自动清除标记，防止页面刷新后原请求仍在服务端处理的竞态；由用户核实后手动清除。
+      lookupNote.value='服务端没有该键对应的订单记录：那笔下单请求未创建订单，也未发送到交易所。可稍后再次查询确认；确认无误后，勾选下方声明并清除本机记录，即可重新下单。'
+      message.value='服务端查无此键的订单：那笔下单请求未创建订单。'
+    }else{
+      lookupNote.value=''
+      message.value='尚无法确认订单是否创建'+(error.message?'：'+error.message:'，请稍后再次查询。')
+    }
+  }finally{lookupBusy.value=false}
 }
 async function reconcile(){
   if(!result.value?.id)return
@@ -176,6 +193,7 @@ watch(()=>[route.params.link,route.params.outcome,route.query.close],()=>{contex
 
     <OrderPendingPanel v-if="pending" v-model:acknowledged="clearAcknowledged"
       :state="result?.state||null" :reconcilable="reconcilable"
+      :note="lookupNote" :looking="lookupBusy"
       @lookup="lookup" @reconcile="reconcile" @clear="clearPending" />
 
     <CloseOrderPanel v-if="closing" :context="closeContext" :wallet-label="closeWalletLabel"

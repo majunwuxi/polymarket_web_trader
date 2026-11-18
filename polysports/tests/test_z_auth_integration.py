@@ -193,7 +193,7 @@ def seed_schedules(pg):
     with pg.begin() as conn:
         conn.execute(text("INSERT INTO schedule_revisions (id,revision) VALUES (1,1)"))
         for index,(sport,utc) in enumerate((('football','00:00'),('football','08:00'),('nba','00:00'),('nba','08:00')),1):
-            conn.execute(text("INSERT INTO sync_schedules (id,provider,sport,utc_time,enabled) VALUES (:id,'polymarket',:sport,:utc::time,true)"),
+            conn.execute(text("INSERT INTO sync_schedules (id,provider,sport,utc_time,enabled) VALUES (:id,'polymarket',:sport,CAST(:utc AS time),true)"),
                 {'id':f'00000000-0000-4000-8000-{index:012d}','sport':sport,'utc':utc})
 
 

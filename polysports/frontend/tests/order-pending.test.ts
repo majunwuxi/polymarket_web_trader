@@ -74,9 +74,9 @@ it('发送前即可确定的错误安全清除标记并说明未发送下单请�
   view.unmount()
 })
 
-it('按原键查询返回404时在面板内说明未创建订单并保留本机标记',async()=>{
+it('按原键查询返回404且标记尚新时说明请求可能仍在处理并保留本机标记',async()=>{
   await router.push('/orders/new/mock-link/mock-outcome');await router.isReady()
-  localStorage.setItem('polysports_pending_order',JSON.stringify({key:'lost-key',wallet_id:'mock-wallet'}))
+  localStorage.setItem('polysports_pending_order',JSON.stringify({key:'lost-key',wallet_id:'mock-wallet',at:Date.now()}))
   const mock=baseMock((url)=>{
     if(url.includes('/trade-intents/by-key/'))return Promise.resolve(({ok:false,status:404,json:async()=>({error:{code:'NOT_FOUND',message:'订单不存在'}})}) as Response)
     return undefined
@@ -84,8 +84,24 @@ it('按原键查询返回404时在面板内说明未创建订单并保留本机�
   vi.stubGlobal('fetch',mock)
   const view=mount(OrderEntry,{global:{plugins:[router]}});await flushPromises()
   expect(view.text()).toContain('有一笔结果待核对')
-  expect(view.text()).toContain('那笔下单请求未创建订单')
+  expect(view.text()).toContain('请求可能仍在处理中')
   expect(localStorage.getItem('polysports_pending_order')).toContain('lost-key')
+  view.unmount()
+})
+
+it('按原键查询返回404且标记已超期时自动清除本机标记允许重新下单',async()=>{
+  await router.push('/orders/new/mock-link/mock-outcome');await router.isReady()
+  // 旧版本标记没有 at 时间戳，按超期处理，与用户现存的待查记录一致
+  localStorage.setItem('polysports_pending_order',JSON.stringify({key:'lost-key',wallet_id:'mock-wallet'}))
+  const mock=baseMock((url)=>{
+    if(url.includes('/trade-intents/by-key/'))return Promise.resolve(({ok:false,status:404,json:async()=>({error:{code:'NOT_FOUND',message:'订单不存在'}})}) as Response)
+    return undefined
+  })
+  vi.stubGlobal('fetch',mock)
+  const view=mount(OrderEntry,{global:{plugins:[router]}});await flushPromises()
+  expect(view.text()).not.toContain('有一笔结果待核对')
+  expect(view.text()).toContain('本机记录已清除，可重新下单')
+  expect(localStorage.getItem('polysports_pending_order')).toBeNull()
   view.unmount()
 })
 

@@ -17,6 +17,9 @@ const message=ref(''),busy=ref(false),result=ref<any>(null),pending=ref<any>(nul
 const lookupBusy=ref(false),lookupNote=ref('')
 const closing=computed(()=>typeof route.query.close==='string' && !!route.query.close)
 const pendingKey='polysports_pending_order'
+// 404 查无后的自动清除冷却期：已中断的下单请求在服务端最多再处理数十秒，
+// 标记创建超过该时间后仍查无此键，即为确定未创建，可安全自动清除。
+const LOOKUP_GRACE_MS=180000
 let loadRevision=0
 
 // 与组合订单一致：只有能确定发生在发送下单请求之前的错误，才可安全清除本机待查记录并允许重试。
@@ -110,7 +113,7 @@ async function submit(){
   if(!draft.wallet_id||!draft.limit_price||!draft.size){message.value='请核对钱包、限价与份额后再下单。';return}
   busy.value=true;message.value='';lookupNote.value=''
   const key=crypto.randomUUID()
-  pending.value={key,wallet_id:draft.wallet_id}
+  pending.value={key,wallet_id:draft.wallet_id,at:Date.now()}
   try{localStorage.setItem(pendingKey,JSON.stringify(pending.value))}
   catch{pending.value=null;busy.value=false;message.value='无法保存查询凭据，订单未提交。';return}
   try{
@@ -139,9 +142,16 @@ async function lookup(){
     const error=e as Error & {code?:string}
     if(error.code==='NOT_FOUND'){
       // 服务端按幂等键查无订单：该键的下单请求未创建订单（订单行在签名提交前落库，查无即未创建）。
-      // 不自动清除标记，防止页面刷新后原请求仍在服务端处理的竞态；由用户核实后手动清除。
-      lookupNote.value='服务端没有该键对应的订单记录：那笔下单请求未创建订单，也未发送到交易所。可稍后再次查询确认；确认无误后，勾选下方声明并清除本机记录，即可重新下单。'
-      message.value='服务端查无此键的订单：那笔下单请求未创建订单。'
+      // 但提交后极短时间内服务端可能仍在处理已中断的请求，因此标记创建超过冷却期后查无才自动清除；
+      // 冷却期内保留标记，由用户稍后再查或核实后手动清除。旧版本标记没有时间戳，按超期处理。
+      const age=typeof pending.value.at==='number'?Date.now()-pending.value.at:Number.POSITIVE_INFINITY
+      if(age>LOOKUP_GRACE_MS){
+        localStorage.removeItem(pendingKey);pending.value=null;result.value=null;clearAcknowledged.value=false
+        message.value='服务端查无此键的订单：那笔下单请求未创建订单，也未发送到交易所。本机记录已清除，可重新下单。'
+      }else{
+        lookupNote.value='服务端暂未查到该键的订单：请求可能仍在处理中，请稍等一两分钟再次查询；若仍无记录，可勾选下方声明并清除本机记录，即可重新下单。'
+        message.value='服务端暂未查到此键的订单，请稍后再次查询。'
+      }
     }else{
       lookupNote.value=''
       message.value='尚无法确认订单是否创建'+(error.message?'：'+error.message:'，请稍后再次查询。')

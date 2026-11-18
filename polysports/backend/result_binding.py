@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .models import Game, ResultBindingRequest, Team, TeamAlias
 from .gamma import normal
-from .team_directory import NBA_SHORT_NAMES, football_name_variants
+from .team_directory import NBA_SHORT_NAMES, football_name_variants, nba_name_variants
 from .sports_sources import SourceError, fetch_schedule
 from .scheduler import db_now, watch_game
 
@@ -42,6 +42,10 @@ def _team_names(sport, name, verified_names=None):
     if sport=='nba':
         full=next((value for short,value in NBA_SHORT_NAMES.items() if normal(short)==normal(name)),None)
         if full: names.add(normal(full))
+        # Polymarket 与 balldontlie 的队名写法不同（Clippers / LA Clippers），
+        # 用目录里的精确别名把两侧统一到同一球队，不做模糊匹配。
+        names.update(nba_name_variants(name))
+        if full: names.update(nba_name_variants(full))
     return names
 
 

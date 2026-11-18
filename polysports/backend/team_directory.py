@@ -88,6 +88,50 @@ def build_index(sport: str, records) -> dict[str, dict | None]:
 
 
 @lru_cache(maxsize=1)
+def _nba_alias_indexes():
+    """Map each normalized NBA name/alias to its authoritative English name.
+
+    balldontlie reports ``LA Clippers`` while Polymarket reports ``Clippers``;
+    both resolve to ``Los Angeles Clippers`` here. Any alias shared by two
+    teams is dropped instead of guessed.
+    """
+    basketball = json.loads((Path(__file__).parent / 'team_data' / 'basketball.json').read_text(encoding='utf-8'))
+    variants_by_name: dict[str, frozenset[str] | None] = {}
+    alias_targets: dict[str, str | None] = {}
+    for item in basketball:
+        if not isinstance(item, dict) or item.get('league') != 'nba': continue
+        name = item.get('name_en')
+        if not isinstance(name, str) or not name.strip(): continue
+        primary = _normal(name)
+        raw_aliases = item.get('aliases')
+        aliases = raw_aliases if isinstance(raw_aliases, list) else []
+        variants = frozenset(
+            value for candidate in [name, *aliases]
+            if isinstance(candidate, str) and (value := _normal(candidate))
+        )
+        if not variants: continue
+        if primary in variants_by_name and variants_by_name[primary] != variants:
+            variants_by_name[primary] = None
+        else:
+            variants_by_name[primary] = variants
+        for key in variants:
+            if key in alias_targets and alias_targets[key] != primary:
+                alias_targets[key] = None
+            else:
+                alias_targets[key] = primary
+    return variants_by_name, alias_targets
+
+
+def nba_name_variants(name: str) -> set[str]:
+    """Return exact normalized aliases for one unambiguous NBA team."""
+    variants_by_name, alias_targets = _nba_alias_indexes()
+    target = alias_targets.get(_normal(name))
+    if target is None: return set()
+    variants = variants_by_name.get(target)
+    return set(variants) if variants else set()
+
+
+@lru_cache(maxsize=1)
 def _directories():
     root = Path(__file__).parent / 'team_data'
     basketball = json.loads((root / 'basketball.json').read_text(encoding='utf-8'))

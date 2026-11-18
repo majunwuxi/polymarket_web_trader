@@ -49,6 +49,19 @@ def test_nba_explicit_alias_and_ambiguity_remain_visible():
     assert [x.external_id for x in match_fixture_candidates('nba',START,'Pelicans','Nuggets',rows)]==['1','2']
 
 
+def test_nba_directory_aliases_bridge_polymarket_and_balldontlie_names():
+    # Polymarket 写 Clippers，balldontlie 写 LA Clippers；两侧必须能对上。
+    rows=[fixture('42','LA Clippers','Utah Jazz',sport='nba')]
+    assert [x.external_id for x in match_fixture_candidates('nba',START,'Clippers','Jazz',rows)]==['42']
+    reverse=[fixture('42','Los Angeles Clippers','Utah Jazz',sport='nba')]
+    assert [x.external_id for x in match_fixture_candidates('nba',START,'Clippers','Jazz',reverse)]==['42']
+    # 别名扩展仍要求主客顺序一致，且不能跨队误配。
+    swapped=[fixture('42','Utah Jazz','LA Clippers',sport='nba')]
+    assert match_fixture_candidates('nba',START,'Clippers','Jazz',swapped)==[]
+    unrelated=[fixture('42','LA Lakers','Utah Jazz',sport='nba')]
+    assert match_fixture_candidates('nba',START,'Clippers','Jazz',unrelated)==[]
+
+
 def test_nba_autobind_requires_one_valid_numeric_fixture():
     row=fixture('42','New Orleans Pelicans','Denver Nuggets',sport='nba')
     matches=match_fixture_candidates('nba',START,'Pelicans','Nuggets',[row])

@@ -47,7 +47,7 @@ def _create_filled_order(pg, client, headers, body):
     return intent_id, asset_id
 
 
-def test_single_redemption_is_eligibility_gated_and_idempotent(pg, monkeypatch):
+def test_single_redemption_is_eligibility_gated_and_idempotent(env, monkeypatch):
     pg, client, headers, body = env
     intent_id, asset_id = _create_filled_order(pg, client, headers, body)
     monkeypatch.setattr(redeem, 'fetch_redeemable_single_positions',
@@ -91,7 +91,7 @@ def test_single_redemption_is_eligibility_gated_and_idempotent(pg, monkeypatch):
         assert row.payout == Decimal('5') and row.shares == Decimal('5')
 
 
-def test_unknown_redemption_cannot_be_repeated(pg, monkeypatch):
+def test_unknown_redemption_cannot_be_repeated(env, monkeypatch):
     pg, client, headers, body = env
     intent_id, asset_id = _create_filled_order(pg, client, headers, body)
     monkeypatch.setattr(redeem, 'fetch_redeemable_single_positions',
@@ -120,7 +120,7 @@ def test_unknown_redemption_cannot_be_repeated(pg, monkeypatch):
     assert len(UnknownGateway.calls) == 1
 
 
-def test_combo_redemption_uses_position_id(pg, monkeypatch):
+def test_combo_redemption_uses_position_id(env, monkeypatch):
     pg, client, headers, body = env
     combo_id = uuid.uuid4()
     wallet_id = uuid.UUID(body['wallet_id'])

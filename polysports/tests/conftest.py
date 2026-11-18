@@ -3,6 +3,18 @@ import ipaddress
 import socket
 
 import pytest
+from sqlalchemy import inspect, text
+
+
+def wipe_tables(engine):
+    """清空全部业务表（保留 alembic_version），供各集成测试夹具统一复用。
+
+    各文件自行维护 DELETE 清单曾因新增表（combo_fills、watched_games 等）多次
+    违反外键导致整个测试文件连锁失败；TRUNCATE ... CASCADE 一次性解决清理顺序。
+    """
+    with engine.begin() as conn:
+        names=[name for name in inspect(conn).get_table_names() if name!='alembic_version']
+        if names: conn.execute(text('TRUNCATE '+', '.join(names)+' CASCADE'))
 
 
 def _loopback(host):

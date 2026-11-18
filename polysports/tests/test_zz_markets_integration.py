@@ -13,9 +13,6 @@ from test_z_auth_integration import pg, setup_scheduler_game, log_in, ORIGIN
 
 
 def prepare(pg):
-    with pg.begin() as conn:
-        for table in ('market_outcomes','market_links','market_refreshes','poly_markets','poly_events'):
-            conn.execute(text(f'DELETE FROM {table}'))
     game_id,_=setup_scheduler_game(pg,'nba')
     with pg.connect() as conn: start=conn.execute(text('SELECT starts_at FROM games WHERE id=:id'),{'id':game_id}).scalar_one()
     market=mock_market();market['gameStartTime']=start.isoformat()

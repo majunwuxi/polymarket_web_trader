@@ -25,9 +25,11 @@ def test_isolated_postgres_upgrade_downgrade_upgrade(monkeypatch):
     cfg = Config("alembic.ini")
     engine = create_engine(dsn)
     try:
-        # 避免对已有数据做破坏性迁移；调用者必须创建全新隔离数据库。
-        if inspect(engine).get_table_names():
-            pytest.fail("迁移测试数据库必须为空")
+        # pytest 按目录序而非字母序收集文件，共享库中可能已有其他测试的表；
+        # URL 守卫已把目标限制为本机 polysports_test_ 前缀库，这里清空旧表后从空库开始迁移。
+        with engine.begin() as conn:
+            names=inspect(conn).get_table_names()
+            if names: conn.execute(text('DROP TABLE '+', '.join(names)+' CASCADE'))
         command.upgrade(cfg, "64099dce6480")
         old_run,old_job,old_attempt,token=uuid.uuid4(),uuid.uuid4(),uuid.uuid4(),uuid.uuid4()
         with engine.begin() as conn:

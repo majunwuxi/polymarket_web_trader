@@ -13,6 +13,7 @@ from sqlalchemy.engine import make_url
 from backend.auth import LOGIN_COOKIE, SESSION_COOKIE, hasher
 from backend.config import get_settings
 from backend.main import create_app
+from conftest import wipe_tables
 
 MOCK_PASSWORD = "mock-password-12345"
 MOCK_SECRET = "mock-only-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -33,10 +34,9 @@ def pg(monkeypatch):
     get_settings.cache_clear()
     command.upgrade(Config("alembic.ini"), "head")
     engine=create_engine(dsn)
+    # 每个测试都从空库开始：TRUNCATE CASCADE 免去逐一维护外键清理顺序。
+    wipe_tables(engine)
     with engine.begin() as conn:
-        conn.execute(text("UPDATE market_links SET confirmed_by=NULL WHERE confirmed_by IS NOT NULL"))
-        for table in ("admin_sessions", "audit_events", "auth_rate_limits", "admin_users"):
-            conn.execute(text(f"DELETE FROM {table}"))
         conn.execute(text("INSERT INTO admin_users (id,username,password_hash) VALUES (:id,:name,:hash)"), {"id":uuid.uuid4(),"name":"mock-admin","hash":hasher.hash(MOCK_PASSWORD)})
     yield engine
     engine.dispose()
@@ -136,9 +136,6 @@ def test_sports_sync_idempotency_history_concurrency_and_api(pg):
     start=datetime(2026,1,1,12,tzinfo=timezone.utc)
     def response(row):
         return httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={'errors':[],'paging':{'current':1,'total':1},'response':[row]})))
-    with pg.begin() as conn:
-        for table in ('game_revisions','games','team_aliases','team_source_ids','teams','leagues','sync_runs'):
-            conn.execute(text(f'DELETE FROM {table}'))
     row=mock_football()
     def execute():
         with response(row) as client: return run_sync(pg,'api_football','mock-key',client=client,now=start)
@@ -193,9 +190,6 @@ def setup_scheduler_game(pg, sport='football'):
     import httpx
     from backend.sports_sync import run_sync
     from test_sports_sources import mock_football, mock_nba
-    with pg.begin() as conn:
-        for table in ('job_runs','jobs','watched_games','result_binding_requests','game_revisions','games','team_aliases','team_source_ids','teams','leagues','sync_runs'):
-            conn.execute(text(f'DELETE FROM {table}'))
     now=datetime.now(timezone.utc)
     if sport=='football':
         row=mock_football(when=(now+timedelta(hours=1)).isoformat())

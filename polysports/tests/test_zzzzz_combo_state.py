@@ -38,13 +38,9 @@ def sample(env):
         payload=ComboBody(wallet_id=body['wallet_id'],direction='BUY',quantity='10',legs=[{'market_link_id':body['market_link_id'],'outcome_id':body['outcome_id']},{'market_link_id':other.id,'outcome_id':option.id}])
     FakeGateway.calls=0
     yield engine,client,headers,payload
+    # 数据库隔离由 pg 夹具在下一个测试的 setup 统一清库（TRUNCATE CASCADE）；
+    # 这里只清理进程内报价缓存，避免已删除表行导致的外键清理顺序问题。
     combo_service._quotes.clear()
-    with engine.begin() as c:
-        c.execute(text("DELETE FROM job_runs WHERE job_id IN (SELECT id FROM jobs WHERE combo_rfq_id IS NOT NULL)"))
-        c.execute(text('DELETE FROM jobs WHERE combo_rfq_id IS NOT NULL'))
-        for table in ('combo_events','combo_legs'):c.execute(text(f'DELETE FROM {table}'))
-        c.execute(text('DELETE FROM combo_rfqs WHERE parent_combo_id IS NOT NULL'))
-        c.execute(text('DELETE FROM combo_rfqs'))
 
 
 def catalog(markets,outcomes):return {x.id:str(i+1000) for i,x in enumerate(outcomes)}

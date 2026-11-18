@@ -31,7 +31,8 @@ const SAFE_CODES=[
   'WALLET_INVALID','RPC_WRONG_CHAIN','CREDENTIALS_MISSING','BALANCE_INSUFFICIENT','ALLOWANCE_INSUFFICIENT',
   'BALANCE_UNAVAILABLE','BOOK_UNAVAILABLE','BOOK_OR_BALANCE_UNAVAILABLE','BOOK_MISMATCH','ENGINE_RESTARTING',
   'ASSET_VERSION_MISMATCH','POSITION_UNAVAILABLE','POSITION_MISMATCH','SIGNED_ORDER_MISMATCH',
-  'DUPLICATE_UNRESOLVED','SDK_UNAVAILABLE','ALLOWANCE_UNKNOWN','POST_ONLY_MODE'
+  'DUPLICATE_UNRESOLVED','SDK_UNAVAILABLE','ALLOWANCE_UNKNOWN','POST_ONLY_MODE',
+  'UNAUTHENTICATED','CSRF_INVALID','VALIDATION_ERROR'
 ]
 const stateName=(state:string)=>({submitting:'提交中',pending:'挂单中',partially_filled:'部分成交',filled:'已成交',rejected:'已拒绝',cancelled:'已取消',unknown:'结果未知'} as Record<string,string>)[state]||state
 const reconcilable=computed(()=>!!result.value?.id && result.value.state==='unknown')
@@ -62,8 +63,9 @@ async function api(path:string,options:RequestInit={}){
   let body:any=null
   try{body=await response.json()}catch{body=null}
   if(!response.ok){
-    const error=new Error(body?.error?.message||'请求失败（HTTP '+response.status+'）') as Error & {code?:string}
+    const error=new Error(body?.error?.message||'请求失败（HTTP '+response.status+'）') as Error & {code?:string,status?:number}
     error.code=body?.error?.code
+    error.status=response.status
     throw error
   }
   return body?.data
@@ -122,10 +124,13 @@ async function submit(){
     if(!['unknown','submitting'].includes(data.intent.state)){localStorage.removeItem(pendingKey);pending.value=null}
     message.value=(closing.value?'平仓订单已记录':'订单已记录')+'；'+stateName(data.intent.state)+'，请查看状态。接受不代表成交。'
   }catch(e){
-    const error=e as Error & {code?:string}
+    const error=e as Error & {code?:string,status?:number}
     const known=SAFE_CODES.includes(error.code||'')
     if(known){localStorage.removeItem(pendingKey);pending.value=null}
-    message.value=known?(error.message+'（本次未发送下单请求）'):'下单结果未核实，请按原键查询，不要重复提交。'
+    // 未知失败必须带出服务端返回的错误码与原因，否则用户只能看到"结果未核实"而无法定位。
+    message.value=known
+      ?(error.message||'下单前检查未通过')+'（本次未发送下单请求）'
+      :'下单结果未核实：'+(error.code||'HTTP '+String(error.status??'?'))+' '+(error.message||'网络或服务无响应')+'。请按原键查询，不要重复提交。'
   }finally{busy.value=false}
 }
 

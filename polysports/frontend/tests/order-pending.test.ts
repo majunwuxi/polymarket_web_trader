@@ -50,8 +50,27 @@ it('结果未知的下单失败保留本机标记，不提示可安全重试',as
   await view.get('#size').setValue('5')
   await view.get('form').trigger('submit.prevent');await flushPromises()
   expect(view.text()).toContain('有一笔结果待核对')
-  expect(view.text()).toContain('下单结果未核实，请按原键查询，不要重复提交')
+  expect(view.text()).toContain('下单结果未核实：SUBMISSION_UNKNOWN 提交结果未确认')
   expect(localStorage.getItem('polysports_pending_order')).toContain('new-request')
+  view.unmount()
+})
+
+it('登录或CSRF等请求进门即拒绝的错误安全清除标记并显示原因',async()=>{
+  await router.push('/orders/new/mock-link/mock-outcome');await router.isReady()
+  const mock=baseMock((url)=>{
+    if(url==='/api/v1/single-orders')return Promise.resolve(fail('CSRF_INVALID','请求来源或 CSRF 校验失败'))
+    return undefined
+  })
+  vi.stubGlobal('fetch',mock)
+  vi.stubGlobal('crypto',{randomUUID:()=> 'new-request'})
+  const view=mount(OrderEntry,{global:{plugins:[router]}});await flushPromises()
+  await view.get('#input-mode').setValue('shares')
+  await view.get('#price').setValue('0.5')
+  await view.get('#size').setValue('5')
+  await view.get('form').trigger('submit.prevent');await flushPromises()
+  expect(view.text()).not.toContain('有一笔结果待核对')
+  expect(view.text()).toContain('请求来源或 CSRF 校验失败（本次未发送下单请求）')
+  expect(localStorage.getItem('polysports_pending_order')).toBeNull()
   view.unmount()
 })
 

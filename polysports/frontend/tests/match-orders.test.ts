@@ -208,17 +208,20 @@ it('按北京时间把当天和第二天赛事分隔显示',async()=>{
 
 it('赛果绑定后卡片显示比赛结果首次检测时间',async()=>{
   const bound={...game,id:'bound-game',result_binding_state:'bound',result_detected_at:'2026-11-15T04:05:06Z'}
+  const boundWaiting={...game,id:'waiting-game',result_binding_state:'bound',result_detected_at:null}
   const pending={...game,id:'pending-game',result_binding_state:'pending',result_detected_at:'2026-11-15T04:05:06Z'}
   vi.stubGlobal('fetch',vi.fn((url:string)=>{
-    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[bound,pending],next_cursor:null}))
+    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[bound,boundWaiting,pending],next_cursor:null}))
     if(url.includes('/sync-runs'))return Promise.resolve(json({items:[]}))
     return Promise.resolve(json(null))
   }))
   const view=mount(SportsCenter,{global:{plugins:[router]}});await flushPromises()
   const cards=view.findAll('.game-card')
-  expect(cards).toHaveLength(2)
+  expect(cards).toHaveLength(3)
   expect(cards[0].text()).toContain('赛果首次检测')
   expect(cards[0].text()).toContain('12:05:06')
-  expect(cards[1].text()).not.toContain('赛果首次检测')
+  // 已绑定但尚未检测到结果：仍显示该行，标注尚未检测。
+  expect(cards[1].text()).toContain('赛果首次检测：尚未检测')
+  expect(cards[2].text()).not.toContain('赛果首次检测')
   view.unmount()
 })

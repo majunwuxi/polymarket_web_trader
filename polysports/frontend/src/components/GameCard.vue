@@ -37,7 +37,7 @@ const googleSearchUrl = (game: Game) => {
         <strong :class="game.away_score > game.home_score ? 'score-winner' : game.away_score < game.home_score ? 'score-loser' : ''">{{ game.away_score }}</strong>
       </div>
     </div>
-    <p v-if="game.result_binding_state === 'bound' && game.result_detected_at" class="game-detected">赛果首次检测：{{ formatDateTimeSeconds(game.result_detected_at) }} UTC+8</p>
+    <p v-if="game.result_binding_state === 'bound'" class="game-detected">赛果首次检测：{{ game.result_detected_at ? formatDateTimeSeconds(game.result_detected_at) + ' UTC+8' : '尚未检测' }}</p>
     <p v-if="game.has_matched_order" class="game-filled">● 已成交</p>
     <div class="game-actions">
       <button class="text-button" @click="emit('detail', game)">查看详情</button>

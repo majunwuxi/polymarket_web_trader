@@ -176,8 +176,10 @@ def test_sports_sync_idempotency_history_concurrency_and_api(pg):
         second=client.get('/api/v1/games',params={'sport':'football','from':'2026-01-01T00:00:00Z','to':'2026-01-03T00:00:00Z','limit':1,'cursor':page['next_cursor']}).json()['data']
         assert len(second['items'])==1 and second['items'][0]['id']!=game['id'] and second['next_cursor'] is None
         assert game['home_team']['name_zh'] is None
-        assert len(client.get('/api/v1/games/'+game['id']).json()['data']['recent_revisions'])==2
-        team_id=game['home_team']['id']
+        # 历史范围按开赛时间倒序：第一页是最新开赛的新比赛，第二页才是经历两次状态变更的比赛。
+        revised=second['items'][0]
+        assert len(client.get('/api/v1/games/'+revised['id']).json()['data']['recent_revisions'])==2
+        team_id=revised['home_team']['id']
         assert client.patch('/api/v1/teams/'+team_id,json={'name_zh':'模拟球队','translation_status':'verified'},headers=headers).status_code==200
         alias={'alias':'模拟别名','language':'zh-CN','verified':True}
         assert client.post('/api/v1/teams/'+team_id+'/aliases',json=alias,headers=headers).status_code==201

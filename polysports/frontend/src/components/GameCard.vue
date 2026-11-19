@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { formatDateTime } from '../utils/format'
+import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
 import { gameBindingName, gameStatusName } from '../utils/labels'
 
 type Team = { id: string; source_name: string; name_zh: string | null; translation_status: string; name_zh_source?: string | null; logo_url: string | null }
-type Game = { id: string; provider: string; starts_at: string; status: string; home_team: Team; away_team: Team; home_score: number | null; away_score: number | null; league: { name: string } | null; last_synced_at: string | null; result_binding_state: string | null; has_matched_order: boolean }
+type Game = { id: string; provider: string; starts_at: string; status: string; home_team: Team; away_team: Team; home_score: number | null; away_score: number | null; league: { name: string } | null; last_synced_at: string | null; result_binding_state: string | null; result_detected_at: string | null; has_matched_order: boolean }
 
 defineProps<{ game: Game; sport: string; polyLoading?: boolean }>()
 const emit = defineEmits<{ detail: [game: Game]; follow: [game: Game]; poly: [game: Game] }>()
@@ -37,6 +37,7 @@ const googleSearchUrl = (game: Game) => {
         <strong :class="game.away_score > game.home_score ? 'score-winner' : game.away_score < game.home_score ? 'score-loser' : ''">{{ game.away_score }}</strong>
       </div>
     </div>
+    <p v-if="game.result_binding_state === 'bound' && game.result_detected_at" class="game-detected">赛果首次检测：{{ formatDateTimeSeconds(game.result_detected_at) }} UTC+8</p>
     <p v-if="game.has_matched_order" class="game-filled">● 已成交</p>
     <div class="game-actions">
       <button class="text-button" @click="emit('detail', game)">查看详情</button>

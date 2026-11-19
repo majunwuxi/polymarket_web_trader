@@ -45,6 +45,16 @@ def game_data(db, game):
     return {'id':str(game.id),'provider':game.provider,'external_id':game.external_id,'sport':game.sport,'starts_at':game.starts_at.isoformat(),'status':game.status,'provider_status':game.provider_status,'home_team':team_data(db.get(Team,game.home_team_id)),'away_team':team_data(db.get(Team,game.away_team_id)),'home_score':game.home_score,'away_score':game.away_score,'league':{'name':league.name_zh or league.name,'logo_url':league.logo_url} if league else None,'last_synced_at':game.last_synced_at.isoformat() if game.last_synced_at else None}
 
 
+def result_detected_at(db,ids):
+    """各赛事首次观测到带比分的完赛结果的时间（最早一条 finished 变更记录）。"""
+    if not ids: return {}
+    rows=db.execute(select(GameRevision.game_id,func.min(GameRevision.observed_at)).where(
+        GameRevision.game_id.in_(ids),GameRevision.new_status=='finished',
+        GameRevision.home_score.is_not(None),GameRevision.away_score.is_not(None),
+    ).group_by(GameRevision.game_id))
+    return dict(rows.all())
+
+
 @router.get('/games')
 def games(request: Request, sport: Literal['football','nba'], start: datetime | None = Query(None,alias='from'), end: datetime | None = Query(None,alias='to'), status: str | None = None, watched: bool | None = None, limit: int = Query(30,ge=1,le=100), cursor: str | None = None):
     now = datetime.now(timezone.utc)
@@ -77,8 +87,9 @@ def games(request: Request, sport: Literal['football','nba'], start: datetime | 
         if ids:
             filled.update(db.scalars(select(ComboLeg.game_id).join(ComboRFQ,ComboRFQ.id==ComboLeg.rfq_id).where(ComboLeg.game_id.in_(ids),ComboRFQ.state=='confirmed').distinct()))
         result=[]
+        detected=result_detected_at(db,ids)
         for item in items:
-            data=game_data(db,item);data['result_binding_state']=bindings.get(item.id);data['has_matched_order']=item.id in filled;result.append(data)
+            data=game_data(db,item);data['result_binding_state']=bindings.get(item.id);data['has_matched_order']=item.id in filled;data['result_detected_at']=detected[item.id].isoformat() if item.id in detected else None;result.append(data)
         return envelope(request,{'items':result,'next_cursor':cursor_encode([items[-1].starts_at.isoformat(),str(items[-1].id)]) if more else None})
 
 
@@ -88,6 +99,8 @@ def game_detail(request: Request,game_id: uuid.UUID):
         game = db.get(Game,game_id)
         if not game: return auth.error(request,404,'NOT_FOUND','赛事不存在')
         result = game_data(db,game)
+        detected=result_detected_at(db,[game.id]).get(game.id)
+        result['result_detected_at']=detected.isoformat() if detected else None
         watch=db.scalar(select(WatchedGame).where(WatchedGame.game_id==game.id))
         job=db.scalar(select(Job).where(Job.watched_game_id==watch.id)) if watch else None
         from .scheduler_api import watch_data

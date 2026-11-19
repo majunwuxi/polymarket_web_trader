@@ -6,11 +6,11 @@ import AppSidebar from '../components/AppSidebar.vue'
 import AppTopbar from '../components/AppTopbar.vue'
 import ResultBindingSummary from '../components/ResultBindingSummary.vue'
 import GameCard from '../components/GameCard.vue'
-import { formatDateTime } from '../utils/format'
+import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
 import { gameStatusName, orderStateName, resultBadge } from '../utils/labels'
 
 type Team = { id: string; source_name: string; name_zh: string | null; translation_status: string; name_zh_source?: string | null; logo_url: string | null }
-type Game = { id: string; provider: string; starts_at: string; status: string; home_team: Team; away_team: Team; home_score: number | null; away_score: number | null; league: {name:string} | null; last_synced_at:string | null; result_binding_state:string | null; has_matched_order:boolean }
+type Game = { id: string; provider: string; starts_at: string; status: string; home_team: Team; away_team: Team; home_score: number | null; away_score: number | null; league: {name:string} | null; last_synced_at:string | null; result_binding_state:string | null; result_detected_at:string | null; has_matched_order:boolean }
 const route=useRoute(), router=useRouter()
 const games=ref<Game[]>([]), next=ref<string|null>(null), message=ref(''), loading=ref(false), menuOpen=ref(false)
 const lastSync=ref<{status:string;error_code:string|null;started_at:string|null;scheduled_for:string}|null>(null)
@@ -205,7 +205,7 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
         <section class="match-summary" aria-label="比赛信息">
           <div class="summary-meta"><span>{{detail.league?.name || (sport()==='nba'?'NBA':'足球')}}</span><span>·</span><span>{{detail.starts_at ? formatDateTime(detail.starts_at)+' UTC+8' : '开赛时间未知'}}</span><span class="summary-status">{{gameStatusName(detail.status)}}</span></div>
           <div v-if="detail.home_team && detail.away_team" class="summary-teams"><div class="summary-team"><img v-if="detail.home_team.logo_url" :src="detail.home_team.logo_url" alt=""><span v-else class="summary-logo">主</span><div><small>主队</small><strong>{{name(detail.home_team)}}</strong><small v-if="detail.home_team.name_zh" class="summary-source-name">{{detail.home_team.source_name}}</small><button class="text-button team-maintain" @click="editFromDetail(detail.home_team)">维护名称</button></div></div><div v-if="detail.home_score!==null && detail.away_score!==null" class="game-scoreboard summary-scoreboard" :aria-label="`${scoreLabel(detail)}：${name(detail.home_team)} ${detail.home_score} 比 ${detail.away_score} ${name(detail.away_team)}`"><span class="game-score-label">{{scoreLabel(detail)}}</span><div class="game-score-line"><strong :class="detail.home_score>detail.away_score?'score-winner':detail.home_score<detail.away_score?'score-loser':''">{{detail.home_score}}</strong><span class="game-score-sep">:</span><strong :class="detail.away_score>detail.home_score?'score-winner':detail.away_score<detail.home_score?'score-loser':''">{{detail.away_score}}</strong></div></div><span v-else class="summary-versus">VS</span><div class="summary-team away"><div><small>客队</small><strong>{{name(detail.away_team)}}</strong><small v-if="detail.away_team.name_zh" class="summary-source-name">{{detail.away_team.source_name}}</small><button class="text-button team-maintain" @click="editFromDetail(detail.away_team)">维护名称</button></div><img v-if="detail.away_team.logo_url" :src="detail.away_team.logo_url" alt=""><span v-else class="summary-logo">客</span></div></div>
-          <div class="summary-foot"><span>来源：{{detail.provider}} · 来源 ID：{{detail.external_id}}</span><span>最近同步：{{detail.last_synced_at ? formatDateTime(detail.last_synced_at)+' UTC+8' : '未知'}}</span></div>
+          <div class="summary-foot"><span>来源：{{detail.provider}} · 来源 ID：{{detail.external_id}}</span><span v-if="detail.result_binding_state==='bound' && detail.result_detected_at">赛果首次检测：{{formatDateTimeSeconds(detail.result_detected_at)}} UTC+8</span><span>最近同步：{{detail.last_synced_at ? formatDateTime(detail.last_synced_at)+' UTC+8' : '未知'}}</span></div>
         </section>
         </div>
         <section class="welcome-card detail match-orders" aria-label="本场订单明细">

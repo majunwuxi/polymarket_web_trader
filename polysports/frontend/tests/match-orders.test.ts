@@ -207,21 +207,24 @@ it('按北京时间把当天和第二天赛事分隔显示',async()=>{
 })
 
 it('赛果绑定后卡片显示比赛结果首次检测时间',async()=>{
-  const bound={...game,id:'bound-game',result_binding_state:'bound',result_detected_at:'2026-11-15T04:05:06Z'}
-  const boundWaiting={...game,id:'waiting-game',result_binding_state:'bound',result_detected_at:null}
-  const pending={...game,id:'pending-game',result_binding_state:'pending',result_detected_at:'2026-11-15T04:05:06Z'}
+  const bound={...game,id:'bound-game',result_binding_state:'bound',result_detected_at:'2026-11-15T04:05:06Z',result_check_at:null}
+  const scheduled={...game,id:'scheduled-game',result_binding_state:'bound',result_detected_at:null,result_check_at:'2026-11-15T10:30:00Z'}
+  const noSchedule={...game,id:'no-schedule-game',result_binding_state:'bound',result_detected_at:null,result_check_at:null}
+  const pending={...game,id:'pending-game',result_binding_state:'pending',result_detected_at:'2026-11-15T04:05:06Z',result_check_at:null}
   vi.stubGlobal('fetch',vi.fn((url:string)=>{
-    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[bound,boundWaiting,pending],next_cursor:null}))
+    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[bound,scheduled,noSchedule,pending],next_cursor:null}))
     if(url.includes('/sync-runs'))return Promise.resolve(json({items:[]}))
     return Promise.resolve(json(null))
   }))
   const view=mount(SportsCenter,{global:{plugins:[router]}});await flushPromises()
   const cards=view.findAll('.game-card')
-  expect(cards).toHaveLength(3)
+  expect(cards).toHaveLength(4)
   expect(cards[0].text()).toContain('赛果首次检测')
   expect(cards[0].text()).toContain('12:05:06')
-  // 已绑定但尚未检测到结果：仍显示该行，标注尚未检测。
-  expect(cards[1].text()).toContain('赛果首次检测：尚未检测')
-  expect(cards[2].text()).not.toContain('赛果首次检测')
+  // 已绑定但尚未检测到结果：显示下一次排期查询的时间。
+  expect(cards[1].text()).toContain('赛果首次检测：排期')
+  expect(cards[1].text()).toContain('18:30')
+  expect(cards[2].text()).toContain('赛果首次检测：尚未检测')
+  expect(cards[3].text()).not.toContain('赛果首次检测')
   view.unmount()
 })

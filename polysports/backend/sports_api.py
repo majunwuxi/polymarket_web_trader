@@ -55,6 +55,15 @@ def result_detected_at(db,ids):
     return dict(rows.all())
 
 
+def result_check_at(db,ids):
+    """各赛事下一次排期查询赛果的时间（未完成的 result_poll 任务）。"""
+    if not ids: return {}
+    rows=db.execute(select(WatchedGame.game_id,Job.due_at).join(
+        Job,Job.watched_game_id==WatchedGame.id).where(
+        WatchedGame.game_id.in_(ids),Job.kind=='result_poll',Job.status.in_(('pending','leased'))))
+    return dict(rows.all())
+
+
 @router.get('/games')
 def games(request: Request, sport: Literal['football','nba'], start: datetime | None = Query(None,alias='from'), end: datetime | None = Query(None,alias='to'), status: str | None = None, watched: bool | None = None, limit: int = Query(30,ge=1,le=100), cursor: str | None = None):
     now = datetime.now(timezone.utc)
@@ -87,9 +96,12 @@ def games(request: Request, sport: Literal['football','nba'], start: datetime | 
         if ids:
             filled.update(db.scalars(select(ComboLeg.game_id).join(ComboRFQ,ComboRFQ.id==ComboLeg.rfq_id).where(ComboLeg.game_id.in_(ids),ComboRFQ.state=='confirmed').distinct()))
         result=[]
-        detected=result_detected_at(db,ids)
+        detected=result_detected_at(db,ids);scheduled=result_check_at(db,ids)
         for item in items:
-            data=game_data(db,item);data['result_binding_state']=bindings.get(item.id);data['has_matched_order']=item.id in filled;data['result_detected_at']=detected[item.id].isoformat() if item.id in detected else None;result.append(data)
+            data=game_data(db,item);data['result_binding_state']=bindings.get(item.id);data['has_matched_order']=item.id in filled
+            data['result_detected_at']=detected[item.id].isoformat() if item.id in detected else None
+            data['result_check_at']=scheduled[item.id].isoformat() if item.id in scheduled else None
+            result.append(data)
         return envelope(request,{'items':result,'next_cursor':cursor_encode([items[-1].starts_at.isoformat(),str(items[-1].id)]) if more else None})
 
 

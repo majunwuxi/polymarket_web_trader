@@ -180,11 +180,28 @@ it('按运动类型显示默认回溯范围',async()=>{
   })
   vi.stubGlobal('fetch',fetchMock)
   const view=mount(SportsCenter,{global:{plugins:[router]}});await flushPromises()
-  expect(view.get('#range').text()).toContain('过去 3 小时至未来 36 小时')
+  expect(view.get('#range').text()).toContain('过去 3 小时至未来 12 小时')
   await router.push('/sports/football');await flushPromises()
-  expect(view.get('#range').text()).toContain('过去 2 小时 30 分至未来 36 小时')
+  expect(view.get('#range').text()).toContain('过去 2 小时 30 分至未来 12 小时')
   const requests=fetchMock.mock.calls.map(([url])=>url).filter(url=>url.startsWith('/api/v1/games?'))
   expect(requests).toHaveLength(2)
   expect(requests.every(url=>!url.includes('from=')&&!url.includes('to='))).toBe(true)
+  view.unmount()
+})
+
+it('按北京时间把当天和第二天赛事分隔显示',async()=>{
+  const key=(offset:number)=>{const date=new Date(Date.now()+offset*86400e3+8*3600e3);return date.toISOString().slice(0,10)}
+  const todayGame={...game,id:'today-game',starts_at:key(0)+'T12:00:00+08:00'}
+  const tomorrowGame={...game,id:'tomorrow-game',starts_at:key(1)+'T12:00:00+08:00'}
+  vi.stubGlobal('fetch',vi.fn((url:string)=>{
+    if(url.startsWith('/api/v1/games?'))return Promise.resolve(json({items:[todayGame,tomorrowGame],next_cursor:null}))
+    if(url.includes('/sync-runs'))return Promise.resolve(json({items:[]}))
+    return Promise.resolve(json(null))
+  }))
+  const view=mount(SportsCenter,{global:{plugins:[router]}});await flushPromises()
+  const dividers=view.findAll('.day-divider')
+  expect(dividers).toHaveLength(2)
+  expect(dividers[0].text()).toContain('今天')
+  expect(dividers[1].text()).toContain('明天')
   view.unmount()
 })

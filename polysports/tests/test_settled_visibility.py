@@ -109,4 +109,7 @@ def test_combo_filter_accepts_explicit_cutoff():
 def test_combo_list_without_hide_settled_stays_unfiltered(monkeypatch):
     seen = capture(monkeypatch, combo_api)
     combo_api.list_combos(mock_request(), limit=1, cursor=None, state=None)
-    assert 'WHERE' not in str(seen[0])
+    sql = str(compiled(seen[0]))
+    # 默认只隐藏已在外部平仓的组合；未请求 hide_settled 时不加结算/时间过滤。
+    assert 'combo_rfqs.position_closed_at IS NULL' in sql
+    assert 'EXISTS' not in sql

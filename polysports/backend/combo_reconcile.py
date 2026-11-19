@@ -1,17 +1,19 @@
 from datetime import timedelta
 import uuid
 from polymarket import RequestRejectedError
-from sqlalchemy import exists, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
+from .close_policy import score_verified_clause
 from .close_positions import combo_position_balance
 from .combo_gateway import ComboGateway
 from .combo_service import record, rfq_failure_code
-from .models import ComboRFQ, ComboLeg, ComboEvent, ComboFill, Job
+from .models import ComboRFQ, ComboLeg, ComboEvent, ComboFill, Game, Job, MarketLink, PolyMarket
 from .scheduler import MAX_CONSECUTIVE_FAILURES, db_now, finish_attempt, retry_or_fail
 from .trading import wallet_for
 from .trading_gateway import TradingError
 
 MAX_COMBO_PENDING_CHECKS = 120
+POSITION_CLOSED_SCAN_HOURS = 24 * 7
 
 
 def fetch_combo(engine,ident,settings,gateway_cls=ComboGateway):
@@ -53,6 +55,40 @@ def _confirm_from_chain(db,row,job,settings,now):
     return True
 
 
+def _combo_unsettled():
+    """任一腿赛果已确认或市场已停单时不再视为未结算，避免把结算清仓误判为手动平仓。"""
+    return ~exists(select(ComboLeg.id).join(Game,Game.id==ComboLeg.game_id).join(
+        MarketLink,MarketLink.id==ComboLeg.market_link_id).join(
+        PolyMarket,PolyMarket.id==MarketLink.market_id).where(
+        ComboLeg.rfq_id==ComboRFQ.id,
+        or_(score_verified_clause(Game),PolyMarket.accepting_orders.is_(False))))
+
+
+def mark_closed_positions(db,settings,now,limit=5):
+    """核对已确认组合的链上持仓：余额为 0 且尚未结算即视为已在 Polymarket 手动平仓。
+
+    每轮最多检查 limit 条并按 updated_at 轮转，避免重复调用 RPC；RPC 不可用时不做推断。
+    """
+    rows=list(db.scalars(select(ComboRFQ).where(
+        ComboRFQ.state=='confirmed',
+        ComboRFQ.direction=='BUY',
+        ComboRFQ.combo_position_id.is_not(None),
+        ComboRFQ.position_closed_at.is_(None),
+        ComboRFQ.created_at>=now-timedelta(hours=POSITION_CLOSED_SCAN_HOURS),
+        _combo_unsettled(),
+    ).order_by(ComboRFQ.updated_at,ComboRFQ.id).limit(limit).with_for_update(skip_locked=True)))
+    closed=0
+    for row in rows:
+        row.updated_at=now
+        try: balance=combo_position_balance(settings,row.wallet_address,row.combo_position_id)
+        except TradingError: continue
+        if balance>0: continue
+        row.position_closed_at=now
+        db.add(ComboEvent(id=uuid.uuid4(),rfq_id=row.id,state='closed',code='position_closed'))
+        closed+=1
+    return closed
+
+
 def run_combo_watchdog(db,settings,now,limit=20):
     """Recheck on-chain balances for unresolved combos for up to 24 hours."""
     pending=exists(select(ComboFill.id).where(ComboFill.rfq_id==ComboRFQ.id,ComboFill.state=='pending'))
@@ -72,7 +108,8 @@ def run_combo_watchdog(db,settings,now,limit=20):
             job.status='done';job.failure_count=0
             job.last_error_code=job.last_error_summary=None
             job.lease_owner=job.lease_until=job.lease_token=None
-    return {'scanned':len(rows),'confirmed':confirmed}
+    closed=mark_closed_positions(db,settings,now)
+    return {'scanned':len(rows),'confirmed':confirmed,'closed':closed}
 
 
 def apply_combo(db,job,payload,error=None,settings=None):

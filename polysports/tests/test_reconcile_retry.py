@@ -62,9 +62,13 @@ def test_combo_watchdog_confirms_pending_rows_and_closes_job(monkeypatch):
         def __init__(self, rows, job_row):
             self.rows = rows
             self.job_row = job_row
+            self.first = True
 
         def scalars(self, query):
-            return self.rows
+            if self.first:
+                self.first = False
+                return self.rows
+            return []
 
         def scalar(self, query):
             return self.job_row
@@ -75,7 +79,7 @@ def test_combo_watchdog_confirms_pending_rows_and_closes_job(monkeypatch):
     db = Db(rows, job_row)
     monkeypatch.setattr(combo_reconcile, '_confirm_from_chain', lambda db, row, job, settings, now: row is rows[0])
     counts = combo_reconcile.run_combo_watchdog(db, S(polygon_rpc_url=object()), now)
-    assert counts == {'scanned': 2, 'confirmed': 1}
+    assert counts == {'scanned': 2, 'confirmed': 1, 'closed': 0}
     assert job_row.status == 'done' and job_row.failure_count == 0
 
 

@@ -38,7 +38,7 @@ def test_default_game_windows_and_explicit_history_range(monkeypatch):
         monkeypatch.setattr(sports_api,'Session',lambda engine:session)
         result=sports_api.games(request,sport=sport,start=None,end=None,limit=20)
         bounds=[value for value in session.statement.compile().params.values() if isinstance(value,datetime)]
-        assert bounds==[fixed-lookback,fixed+timedelta(hours=36)]
+        assert bounds==[fixed-lookback,fixed+timedelta(hours=12)]
         assert result['data']['items']==[]
 
     session=FakeSession()

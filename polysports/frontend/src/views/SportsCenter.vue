@@ -29,6 +29,22 @@ const sport=()=>String(route.params.sport)
 const title=()=>sport()==='football'?'足球赛事中心':'NBA 赛事中心'
 const name=(team:Team)=>team.name_zh || team.source_name
 const scoreLabel=(game:any)=>game.status==='finished'?'全场比分':game.status==='live'?'当前比分':'比分'
+const beijingDate=(value:string|Date)=>{const date=value instanceof Date?value:new Date(value);return new Date(date.getTime()+8*3600e3).toISOString().slice(0,10)}
+const beijingLabel=(key:string)=>{
+  const now=Date.now(),today=beijingDate(new Date(now)),tomorrow=beijingDate(new Date(now+24*3600e3)),yesterday=beijingDate(new Date(now-24*3600e3))
+  const [year,month,day]=key.split('-').map(Number)
+  const text=`${month}月${day}日 · 周${'日一二三四五六'[new Date(Date.UTC(year,month-1,day)).getUTCDay()]}`
+  return key===today?`今天 · ${text}`:key===tomorrow?`明天 · ${text}`:key===yesterday?`昨天 · ${text}`:text
+}
+const dayGroups=computed(()=>{
+  const groups:{key:string;label:string;games:Game[]}[]=[]
+  for(const game of games.value){
+    const key=beijingDate(game.starts_at),last=groups[groups.length-1]
+    if(last&&last.key===key)last.games.push(game)
+    else groups.push({key,label:beijingLabel(key),games:[game]})
+  }
+  return groups
+})
 async function api(path:string, options:RequestInit={}) {
   const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options})
   const payload=await response.json()
@@ -172,10 +188,13 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
   <main class="workspace"><AppTopbar :breadcrumb="'工作台 / '+title()" :username="session.username" @sign-out="signOut" />
     <div class="page-heading"><div><p class="eyebrow">MATCH CENTER · UTC+8</p><h1>{{title()}}</h1><p class="muted">时间显示为北京时间；赛事由配置的数据源提供。</p></div></div>
     <ResultBindingSummary v-if="sport()==='football'" :summary="bindingSummary" :loading="bindingSummaryLoading" :error="bindingSummaryError" :action-error="bindingActionError" :busy="bindingBusy" :expanded="expandedBinding" @refresh="loadBindingSummary" @open="openSummaryBinding" @confirm="confirmSummaryBinding" />
-<div class="game-tools"><label for="range">赛事范围</label><select id="range" v-model="selectedRange" @change="load()"><option value="upcoming">{{sport()==='football'?'过去 2 小时 30 分至未来 36 小时':'过去 3 小时至未来 36 小时'}}</option><option value="history">历史赛事</option></select><button class="text-button" @click="load()">刷新</button></div>
+<div class="game-tools"><label for="range">赛事范围</label><select id="range" v-model="selectedRange" @change="load()"><option value="upcoming">{{sport()==='football'?'过去 2 小时 30 分至未来 12 小时':'过去 3 小时至未来 12 小时'}}</option><option value="history">历史赛事</option></select><button class="text-button" @click="load()">刷新</button></div>
     <p class="muted" v-if="lastSync">{{lastSync.started_at ? '最近同步' : '计划同步'}}：{{formatDateTime(lastSync.started_at || lastSync.scheduled_for)}} UTC+8 · {{lastSync.status === 'succeeded' ? '成功' : lastSync.status === 'failed' ? '失败' : lastSync.status === 'queued' ? '排队中' : lastSync.status === 'running' ? '进行中' : '未知'}}<span v-if="lastSync.error_code">（{{lastSync.error_code}}）</span></p><p class="muted" v-else>尚无同步记录。</p><p v-if="!detail" role="status" class="form-message">{{message}}</p><p v-if="loading && !games.length">正在加载…</p><p v-else-if="!games.length && !message" class="muted">暂无已保存赛事。若尚未同步，请先配置数据源并运行同步命令。</p>
     <div class="games-list">
-      <GameCard v-for="game in games" :key="game.id" :game="game" :sport="sport()" :poly-loading="polyBusy===game.id" @detail="showDetail" @follow="followGame" @poly="openPolymarket" />
+      <template v-for="group in dayGroups" :key="group.key">
+        <div class="day-divider" role="separator"><span>{{group.label}}</span></div>
+        <GameCard v-for="game in group.games" :key="game.id" :game="game" :sport="sport()" :poly-loading="polyBusy===game.id" @detail="showDetail" @follow="followGame" @poly="openPolymarket" />
+      </template>
     </div>
     <button v-if="next" class="primary more" :disabled="loading" @click="load(true)">加载更多</button>
     <dialog ref="detailDialog" class="game-dialog" aria-labelledby="game-dialog-title" @close="closeDetail">

@@ -159,3 +159,4 @@
 .combo-rfq{font-size:11px;color:#94a49a;overflow-wrap:anywhere;font-family:monospace}
 .combo-record-actions{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
 @media(prefers-reduced-motion:reduce){.combo-record{transition:none}}
+.day-divider{grid-column:1/-1;display:flex;align-items:center;gap:12px;margin:4px 0;color:#53675c;font-size:13px;font-weight:700}.day-divider::after{content:"";flex:1;border-top:1px solid #d9e5de}

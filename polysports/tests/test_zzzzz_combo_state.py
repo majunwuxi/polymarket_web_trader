@@ -370,3 +370,56 @@ def test_unresolved_or_confirmed_combo_cannot_be_deleted(sample,monkeypatch):
     assert response.json()['error']['code']=='COMBO_NOT_DELETABLE'
     with Session(engine) as db:
         assert db.get(ComboRFQ,ident) is not None
+
+
+def test_watchdog_marks_manually_closed_combo_and_hides_it_from_records(env,monkeypatch):
+    from backend import combo_reconcile
+    engine,client,headers,body=env
+    link_id=uuid.UUID(body['market_link_id']);outcome_id=uuid.UUID(body['outcome_id']);wallet_id=uuid.UUID(body['wallet_id'])
+    rfq_id=uuid.uuid4()
+    with Session(engine) as db,db.begin():
+        link=db.get(MarketLink,link_id);market=db.get(PolyMarket,link.market_id);market.accepting_orders=True
+        db.add(ComboRFQ(id=rfq_id,wallet_id=wallet_id,wallet_address='0x'+'1'*40,client_request_id=uuid.uuid4(),
+                        fingerprint=uuid.uuid4().hex,direction='BUY',quantity=Decimal('10'),state='confirmed',
+                        external_rfq_id='mock-rfq-'+uuid.uuid4().hex,combo_position_id='123456'))
+        db.flush()
+        db.add(ComboLeg(id=uuid.uuid4(),rfq_id=rfq_id,game_id=link.game_id,market_link_id=link_id,
+                        outcome_id=outcome_id,position_id='1001'))
+    listed=[item['id'] for item in client.get('/api/v1/combo-rfqs',params={'state':'confirmed'}).json()['data']['items']]
+    assert str(rfq_id) in listed
+    # 链上余额为 0 且赛事未结算：视为已在 Polymarket 手动平仓。
+    monkeypatch.setattr(combo_reconcile,'combo_position_balance',lambda *args:Decimal('0'))
+    with Session(engine) as db:
+        counts=combo_reconcile.run_combo_watchdog(db,client.app.state.settings,datetime.now(timezone.utc))
+        db.commit()
+    assert counts['closed']==1
+    with engine.connect() as conn:
+        assert conn.execute(text('SELECT position_closed_at FROM combo_rfqs WHERE id=:id'),{'id':rfq_id}).scalar_one() is not None
+    listed=[item['id'] for item in client.get('/api/v1/combo-rfqs',params={'state':'confirmed'}).json()['data']['items']]
+    assert str(rfq_id) not in listed
+    history=client.get('/api/v1/history/trades',params={'kind':'combo'}).json()['data']['items']
+    assert all(row['id']!=str(rfq_id) for row in history)
+
+
+def test_watchdog_keeps_combo_while_position_balance_positive(env,monkeypatch):
+    from backend import combo_reconcile
+    engine,client,headers,body=env
+    link_id=uuid.UUID(body['market_link_id']);outcome_id=uuid.UUID(body['outcome_id']);wallet_id=uuid.UUID(body['wallet_id'])
+    rfq_id=uuid.uuid4()
+    with Session(engine) as db,db.begin():
+        link=db.get(MarketLink,link_id);market=db.get(PolyMarket,link.market_id);market.accepting_orders=True
+        db.add(ComboRFQ(id=rfq_id,wallet_id=wallet_id,wallet_address='0x'+'1'*40,client_request_id=uuid.uuid4(),
+                        fingerprint=uuid.uuid4().hex,direction='BUY',quantity=Decimal('10'),state='confirmed',
+                        external_rfq_id='mock-rfq-'+uuid.uuid4().hex,combo_position_id='123456'))
+        db.flush()
+        db.add(ComboLeg(id=uuid.uuid4(),rfq_id=rfq_id,game_id=link.game_id,market_link_id=link_id,
+                        outcome_id=outcome_id,position_id='1001'))
+    monkeypatch.setattr(combo_reconcile,'combo_position_balance',lambda *args:Decimal('5'))
+    with Session(engine) as db:
+        counts=combo_reconcile.run_combo_watchdog(db,client.app.state.settings,datetime.now(timezone.utc))
+        db.commit()
+    assert counts['closed']==0
+    with engine.connect() as conn:
+        assert conn.execute(text('SELECT position_closed_at FROM combo_rfqs WHERE id=:id'),{'id':rfq_id}).scalar_one() is None
+    listed=[item['id'] for item in client.get('/api/v1/combo-rfqs',params={'state':'confirmed'}).json()['data']['items']]
+    assert str(rfq_id) in listed

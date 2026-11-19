@@ -120,7 +120,7 @@ def apply_work(engine,job_id,token,payload=None,error: str | None=None,retry_aft
                     from .combo_reconcile import run_combo_watchdog
                     counts=run_combo_watchdog(db,settings,now)
                     finish_attempt(db,job,now,'succeeded');job.status='done'
-                    log.info('combo_watchdog scanned=%s confirmed=%s',counts['scanned'],counts['confirmed'])
+                    log.info('combo_watchdog scanned=%s confirmed=%s closed=%s',counts['scanned'],counts['confirmed'],counts['closed'])
             else:
                 watch=db.scalar(select(WatchedGame).where(WatchedGame.id==job.watched_game_id).with_for_update())
                 game=db.scalar(select(Game).where(Game.id==watch.game_id).with_for_update())

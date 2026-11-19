@@ -74,7 +74,7 @@ def game_query(sport,start,end,status=None):
 
 def trade_query(sport,start,end,wallet_id=None,kind=None,state=None):
     single=select(TradeIntent.id.label('id'),TradeIntent.created_at.label('created_at'),literal('single').label('kind')).join(Game,Game.id==TradeIntent.game_id)
-    combo=select(ComboRFQ.id.label('id'),ComboRFQ.created_at.label('created_at'),literal('combo').label('kind'))
+    combo=select(ComboRFQ.id.label('id'),ComboRFQ.created_at.label('created_at'),literal('combo').label('kind')).where(ComboRFQ.position_closed_at.is_(None))
     if sport:
         single=single.where(Game.sport==sport)
         combo=combo.where(exists(select(ComboLeg.id).join(Game,Game.id==ComboLeg.game_id).where(ComboLeg.rfq_id==ComboRFQ.id,Game.sport==sport)))

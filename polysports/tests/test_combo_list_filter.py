@@ -34,7 +34,10 @@ def test_unfiltered_combo_inquiry_list_remains_available(monkeypatch):
     monkeypatch.setattr(combo_api,'Session',SessionMock)
     request=SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(engine=object())),state=SimpleNamespace(request_id='mock'))
     combo_api.list_combos(request,limit=1,cursor=None,state=None)
-    assert 'WHERE' not in str(seen[0])
+    sql=str(seen[0].compile(dialect=postgresql.dialect()))
+    # 默认只隐藏已在外部平仓的组合；未请求 hide_settled 时不加结算/时间过滤。
+    assert 'combo_rfqs.position_closed_at IS NULL' in sql
+    assert 'EXISTS' not in sql
 
 
 def test_game_filter_uses_exists_and_preserves_confirmed_before_pagination(monkeypatch):

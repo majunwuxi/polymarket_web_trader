@@ -39,6 +39,8 @@ def test_default_game_windows_and_explicit_history_range(monkeypatch):
         result=sports_api.games(request,sport=sport,start=None,end=None,limit=20)
         bounds=[value for value in session.statement.compile().params.values() if isinstance(value,datetime)]
         assert bounds==[fixed-lookback,fixed+timedelta(hours=12)]
+        # 即将到来的视图按开赛时间正序。
+        assert 'DESC' not in str(session.statement)
         assert result['data']['items']==[]
 
     session=FakeSession()
@@ -46,6 +48,8 @@ def test_default_game_windows_and_explicit_history_range(monkeypatch):
     sports_api.games(request,sport='nba',start=fixed-timedelta(days=1),end=fixed,limit=20)
     bounds=[value for value in session.statement.compile().params.values() if isinstance(value,datetime)]
     assert bounds==[fixed-timedelta(days=1),fixed]
+    # 历史范围按时间倒序。
+    assert 'DESC' in str(session.statement)
 
 
 def test_mock_repeated_sync_and_failed_sync_preserve_history(pg):

@@ -83,11 +83,14 @@ def games(request: Request, sport: Literal['football','nba'], start: datetime | 
             date, ident = cursor_decode(cursor)
             date = datetime.fromisoformat(date)
             if date.tzinfo is None: raise ValueError()
-            query = query.where(tuple_(Game.starts_at,Game.id)>tuple_(date,uuid.UUID(ident)))
+            # 历史范围按时间倒序分页：游标方向与默认的即将到来视图相反。
+            if upcoming: query = query.where(tuple_(Game.starts_at,Game.id)>tuple_(date,uuid.UUID(ident)))
+            else: query = query.where(tuple_(Game.starts_at,Game.id)<tuple_(date,uuid.UUID(ident)))
     except (ValueError,TypeError):
         return auth.error(request,422,'VALIDATION_ERROR','分页参数无效')
     with Session(request.app.state.engine) as db:
-        rows = list(db.scalars(query.order_by(Game.starts_at,Game.id).limit(limit+1)))
+        order=(Game.starts_at.desc(),Game.id.desc()) if not upcoming else (Game.starts_at,Game.id)
+        rows = list(db.scalars(query.order_by(*order).limit(limit+1)))
         more = len(rows)>limit
         items = rows[:limit]
         ids=[item.id for item in items]

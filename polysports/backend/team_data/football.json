@@ -225,7 +225,7 @@
   },
   "55": {
     "name_en": "Brentford",
-    "name_zh": "布伦特",
+    "name_zh": "布伦特福德",
     "country": "England",
     "logo": "https://thumb.wikimedia.org/wikipedia/zh/thumb/2/2a/Brentford_FC_crest.svg/1920px-Brentford_FC_crest.svg.png?utm_source=zh.wikipedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
     "leagues": "EPL"
@@ -239,7 +239,7 @@
   },
   "57": {
     "name_en": "Ipswich",
-    "name_zh": "伊普斯",
+    "name_zh": "伊普斯维奇",
     "country": "England",
     "logo": "https://thumb.wikimedia.org/wikipedia/zh/thumb/4/43/Ipswich_Town.svg/1920px-Ipswich_Town.svg.png?utm_source=zh.wikipedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
     "leagues": "EPL"
@@ -288,7 +288,7 @@
   },
   "65": {
     "name_en": "Nottingham Forest",
-    "name_zh": "诺丁汉",
+    "name_zh": "诺丁汉森林",
     "country": "England",
     "logo": "https://thumb.wikimedia.org/wikipedia/en/thumb/e/e5/Nottingham_Forest_F.C._logo.svg/960px-Nottingham_Forest_F.C._logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
     "leagues": "EPL"
@@ -878,7 +878,7 @@
   },
   "154": {
     "name_en": "Fortaleza EC",
-    "name_zh": "福塔莱萨",
+    "name_zh": "福塔雷萨",
     "country": "Brazil",
     "logo": "https://media.api-sports.io/football/teams/154.png",
     "leagues": "BRA_SERIEA",
@@ -1206,7 +1206,7 @@
   },
   "207": {
     "name_en": "Utrecht",
-    "name_zh": "乌得勒支",
+    "name_zh": "乌德勒支",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/207.png",
     "leagues": "ERED"
@@ -1248,7 +1248,7 @@
   },
   "215": {
     "name_en": "Moreirense",
-    "name_zh": "莫雷伦塞",
+    "name_zh": "莫雷伦斯",
     "country": "Portugal",
     "logo": "https://media.api-sports.io/football/teams/215.png",
     "leagues": "PRIMEIRA"
@@ -1521,7 +1521,7 @@
   },
   "324": {
     "name_en": "Stromsgodset",
-    "name_zh": "斯特罗姆加斯特",
+    "name_zh": "斯托姆加斯特",
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/324.png",
     "leagues": "ELITES"
@@ -1570,14 +1570,14 @@
   },
   "332": {
     "name_en": "Sandefjord",
-    "name_zh": "桑讷菲尤尔",
+    "name_zh": "桑德菲杰",
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/332.png",
     "leagues": "ELITES"
   },
   "333": {
     "name_en": "Sarpsborg 08 FF",
-    "name_zh": "萨普斯堡08",
+    "name_zh": "萨普斯堡",
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/333.png",
     "leagues": "ELITES"
@@ -1661,7 +1661,7 @@
   },
   "377": {
     "name_en": "AIK Stockholm",
-    "name_zh": "AIK索尔纳",
+    "name_zh": "索尔纳",
     "country": "Sweden",
     "logo": "https://media.api-sports.io/football/teams/377.png",
     "leagues": "ALLSV"
@@ -1773,7 +1773,7 @@
   },
   "421": {
     "name_en": "Den Bosch",
-    "name_zh": "邓博施",
+    "name_zh": "登博思",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/421.png",
     "leagues": "ERED,EERSTE"
@@ -2417,7 +2417,7 @@
   },
   "650": {
     "name_en": "VPS",
-    "name_zh": "瓦萨PS",
+    "name_zh": "VPS瓦萨",
     "country": "Finland",
     "logo": "https://media.api-sports.io/football/teams/650.png",
     "leagues": "VEIK"
@@ -2579,7 +2579,7 @@
   },
   "762": {
     "name_en": "GIL Vicente",
-    "name_zh": "吉尔维森特",
+    "name_zh": "吉维森特",
     "country": "Portugal",
     "logo": "https://media.api-sports.io/football/teams/762.png",
     "leagues": "PRIMEIRA"
@@ -2695,7 +2695,7 @@
   },
   "794": {
     "name_en": "RB Bragantino",
-    "name_zh": "红牛布拉甘蒂诺",
+    "name_zh": "布拉干蒂诺RB",
     "country": "Brazil",
     "logo": "https://media.api-sports.io/football/teams/794.png",
     "leagues": "BRA_SERIEA",
@@ -3011,7 +3011,7 @@
   },
   "1164": {
     "name_en": "Inter Turku",
-    "name_zh": "图尔库国际",
+    "name_zh": "国际图尔库",
     "country": "Finland",
     "logo": "https://media.api-sports.io/football/teams/1164.png",
     "leagues": "VEIK"
@@ -3180,14 +3180,14 @@
   },
   "1660": {
     "name_en": "SV Elversberg",
-    "name_zh": "艾禾斯堡",
+    "name_zh": "埃沃斯堡",
     "country": "Germany",
     "logo": "https://media.api-sports.io/football/teams/1660.png",
     "leagues": "BUND,BUND2"
   },
   "2075": {
     "name_en": "FF Jaro",
-    "name_zh": "雅罗",
+    "name_zh": "查路",
     "country": "Finland",
     "logo": "https://media.api-sports.io/football/teams/2075.png",
     "leagues": "VEIK"
@@ -3201,7 +3201,7 @@
   },
   "2078": {
     "name_en": "EIF",
-    "name_zh": "埃克纳斯IF",
+    "name_zh": "埃克纳斯",
     "country": "Finland",
     "logo": "https://media.api-sports.io/football/teams/2078.png",
     "leagues": "VEIK"
@@ -3222,7 +3222,7 @@
   },
   "2143": {
     "name_en": "KFUM Oslo",
-    "name_zh": "奥斯陆KFUM",
+    "name_zh": "KFUM奥斯陆",
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/2143.png",
     "leagues": "ELITES"
@@ -3257,7 +3257,7 @@
   },
   "2176": {
     "name_en": "Landskrona BoIS",
-    "name_zh": "兰斯科罗纳",
+    "name_zh": "兰斯克鲁纳",
     "country": "Sweden",
     "logo": "https://media.api-sports.io/football/teams/2176.png",
     "leagues": "ALLSV"
@@ -3281,7 +3281,7 @@
   },
   "2241": {
     "name_en": "Vasteras SK FK",
-    "name_zh": "韦斯特罗斯",
+    "name_zh": "瓦斯特拉斯",
     "country": "Sweden",
     "logo": "https://media.api-sports.io/football/teams/2241.png",
     "leagues": "ALLSV"
@@ -3533,7 +3533,7 @@
   },
   "7012": {
     "name_en": "Moss",
-    "name_zh": "摩斯",
+    "name_zh": "莫斯",
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/7012.png",
     "leagues": "ELITES"
@@ -3594,7 +3594,7 @@
   },
   "21595": {
     "name_en": "AVS",
-    "name_zh": "阿维什",
+    "name_zh": "阿维什镇",
     "country": "Portugal",
     "logo": "https://media.api-sports.io/football/teams/21595.png",
     "leagues": "PRIMEIRA"

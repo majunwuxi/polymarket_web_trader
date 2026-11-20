@@ -1834,6 +1834,181 @@
     "logo": "https://media.api-sports.io/football/teams/433.png",
     "leagues": "LIGUE2"
   },
+  "434": {
+    "name_en": "Gimnasia L.P.",
+    "name_zh": "拉普拉塔体操",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/434.png",
+    "leagues": "ARG_A"
+  },
+  "435": {
+    "name_en": "River Plate",
+    "name_zh": "河床",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/435.png",
+    "leagues": "ARG_A"
+  },
+  "436": {
+    "name_en": "Racing Club",
+    "name_zh": "竞技俱乐部",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/436.png",
+    "leagues": "ARG_A"
+  },
+  "437": {
+    "name_en": "Rosario Central",
+    "name_zh": "罗萨里奥中央",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/437.png",
+    "leagues": "ARG_A"
+  },
+  "438": {
+    "name_en": "Velez Sarsfield",
+    "name_zh": "萨斯菲尔德",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/438.png",
+    "leagues": "ARG_A"
+  },
+  "439": {
+    "name_en": "Godoy Cruz",
+    "name_zh": "戈多伊克鲁斯",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/439.png",
+    "leagues": "ARG_A"
+  },
+  "440": {
+    "name_en": "Belgrano Cordoba",
+    "name_zh": "贝尔格拉诺",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/440.png",
+    "leagues": "ARG_A"
+  },
+  "441": {
+    "name_en": "Union Santa Fe",
+    "name_zh": "圣菲联合",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/441.png",
+    "leagues": "ARG_A"
+  },
+  "442": {
+    "name_en": "Defensa Y Justicia",
+    "name_zh": "国防与司法",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/442.png",
+    "leagues": "ARG_A"
+  },
+  "445": {
+    "name_en": "Huracan",
+    "name_zh": "飓风",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/445.png",
+    "leagues": "ARG_A"
+  },
+  "446": {
+    "name_en": "Lanus",
+    "name_zh": "拉努斯",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/446.png",
+    "leagues": "ARG_A"
+  },
+  "449": {
+    "name_en": "Banfield",
+    "name_zh": "班菲尔德",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/449.png",
+    "leagues": "ARG_A"
+  },
+  "450": {
+    "name_en": "Estudiantes L.P.",
+    "name_zh": "拉普拉塔大学生",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/450.png",
+    "leagues": "ARG_A"
+  },
+  "451": {
+    "name_en": "Boca Juniors",
+    "name_zh": "博卡青年",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/451.png",
+    "leagues": "ARG_A"
+  },
+  "452": {
+    "name_en": "Tigre",
+    "name_zh": "泰格雷",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/452.png",
+    "leagues": "ARG_A"
+  },
+  "453": {
+    "name_en": "Independiente",
+    "name_zh": "阿根廷独立",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/453.png",
+    "leagues": "ARG_A"
+  },
+  "455": {
+    "name_en": "Atletico Tucuman",
+    "name_zh": "图库曼竞技",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/455.png",
+    "leagues": "ARG_A"
+  },
+  "456": {
+    "name_en": "Talleres Cordoba",
+    "name_zh": "塔勒瑞斯",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/456.png",
+    "leagues": "ARG_A"
+  },
+  "457": {
+    "name_en": "Newells Old Boys",
+    "name_zh": "纽维尔老男孩",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/457.png",
+    "leagues": "ARG_A"
+  },
+  "458": {
+    "name_en": "Argentinos JRS",
+    "name_zh": "阿根廷青年人",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/458.png",
+    "leagues": "ARG_A"
+  },
+  "460": {
+    "name_en": "San Lorenzo",
+    "name_zh": "圣洛伦索",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/460.png",
+    "leagues": "ARG_A"
+  },
+  "473": {
+    "name_en": "Independ. Rivadavia",
+    "name_zh": "门多萨独立",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/473.png",
+    "leagues": "ARG_A"
+  },
+  "474": {
+    "name_en": "Sarmiento Junin",
+    "name_zh": "萨米恩托",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/474.png",
+    "leagues": "ARG_A"
+  },
+  "476": {
+    "name_en": "Deportivo Riestra",
+    "name_zh": "利斯特雷",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/476.png",
+    "leagues": "ARG_A"
+  },
+  "478": {
+    "name_en": "Instituto Cordoba",
+    "name_zh": "科尔多瓦学院",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/478.png",
+    "leagues": "ARG_A"
+  },
   "487": {
     "name_en": "Lazio",
     "name_zh": "拉齐奥",
@@ -2599,6 +2774,20 @@
     "logo": "https://media.api-sports.io/football/teams/1063.png",
     "leagues": "LIGUE1"
   },
+  "1064": {
+    "name_en": "Platense",
+    "name_zh": "普拉滕斯",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/1064.png",
+    "leagues": "ARG_A"
+  },
+  "1065": {
+    "name_en": "Central Cordoba de Santiago",
+    "name_zh": "科尔多瓦中央",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/1065.png",
+    "leagues": "ARG_A"
+  },
   "1090": {
     "name_en": "Norway",
     "name_zh": "挪威",
@@ -3110,6 +3299,13 @@
     "country": "Moldova",
     "logo": "https://media.api-sports.io/football/teams/2271.png",
     "leagues": "UCL"
+  },
+  "2432": {
+    "name_en": "Barracas Central",
+    "name_zh": "巴拉卡斯中央",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/2432.png",
+    "leagues": "ARG_A"
   },
   "2618": {
     "name_en": "Botafogo SP",

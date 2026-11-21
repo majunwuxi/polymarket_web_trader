@@ -2317,14 +2317,20 @@
     "name_zh": "拉齐奥",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/487.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "SS Lazio"
+    ]
   },
   "488": {
     "name_en": "Sassuolo",
     "name_zh": "萨索洛",
     "country": "Italy",
     "logo": "https://thumb.wikimedia.org/wikipedia/zh/thumb/1/1c/US_Sassuolo_Calcio_logo.svg/1280px-US_Sassuolo_Calcio_logo.svg.png?utm_source=zh.wikipedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "US Sassuolo Calcio"
+    ]
   },
   "489": {
     "name_en": "AC Milan",
@@ -2338,35 +2344,50 @@
     "name_zh": "卡利亚里",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/490.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Cagliari Calcio"
+    ]
   },
   "492": {
     "name_en": "Napoli",
     "name_zh": "那不勒斯",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/492.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "SSC Napoli"
+    ]
   },
   "494": {
     "name_en": "Udinese",
     "name_zh": "乌迪内斯",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/494.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Udinese Calcio"
+    ]
   },
   "495": {
     "name_en": "Genoa",
     "name_zh": "热那亚",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/495.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Genoa CFC"
+    ]
   },
   "496": {
     "name_en": "Juventus",
     "name_zh": "尤文图斯",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/496.png",
-    "leagues": "UCL,SERIEA"
+    "leagues": "UCL,SERIEA",
+    "aliases": [
+      "Juventus FC"
+    ]
   },
   "497": {
     "name_en": "AS Roma",
@@ -2380,28 +2401,40 @@
     "name_zh": "亚特兰大",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/499.png",
-    "leagues": "UCL,SERIEA"
+    "leagues": "UCL,SERIEA",
+    "aliases": [
+      "Atalanta BC"
+    ]
   },
   "500": {
     "name_en": "Bologna",
     "name_zh": "博洛尼亚",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/500.png",
-    "leagues": "UCL,SERIEA"
+    "leagues": "UCL,SERIEA",
+    "aliases": [
+      "Bologna FC 1909"
+    ]
   },
   "502": {
     "name_en": "Fiorentina",
     "name_zh": "佛罗伦萨",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/502.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "ACF Fiorentina"
+    ]
   },
   "503": {
     "name_en": "Torino",
     "name_zh": "都灵",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/503.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Torino FC"
+    ]
   },
   "504": {
     "name_en": "Hellas Verona",
@@ -2415,7 +2448,10 @@
     "name_zh": "国际米兰",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/505.png",
-    "leagues": "UCL,SERIEA"
+    "leagues": "UCL,SERIEA",
+    "aliases": [
+      "FC Internazionale Milano"
+    ]
   },
   "511": {
     "name_en": "Empoli",
@@ -2429,21 +2465,30 @@
     "name_zh": "弗洛西诺",
     "country": "Italy",
     "logo": "https://thumb.wikimedia.org/wikipedia/en/thumb/0/0b/Frosinone_Calcio_logo.svg/1280px-Frosinone_Calcio_logo.svg.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Frosinone Calcio"
+    ]
   },
   "517": {
     "name_en": "Venezia",
     "name_zh": "威尼斯",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/517.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Venezia FC"
+    ]
   },
   "523": {
     "name_en": "Parma",
     "name_zh": "帕尔马",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/523.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Parma Calcio 1913"
+    ]
   },
   "529": {
     "name_en": "Barcelona",
@@ -3106,14 +3151,20 @@
     "name_zh": "莱切",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/867.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "US Lecce"
+    ]
   },
   "895": {
     "name_en": "Como",
     "name_zh": "科莫",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/895.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Como 1907"
+    ]
   },
   "998": {
     "name_en": "Trabzonspor",
@@ -3552,7 +3603,10 @@
     "name_zh": "蒙扎",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/1579.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "AC Monza"
+    ]
   },
   "1639": {
     "name_en": "FC Saarbrücken",

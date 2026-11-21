@@ -51,6 +51,21 @@ def test_football_directory_aliases_display_source_full_names():
     assert display_team(team('São Paulo FC'))['name_zh']=='圣保罗'
 
 
+def test_football_directory_serie_a_polymarket_names_show_chinese():
+    expected={
+        'AC Milan':'AC米兰', 'AC Monza':'蒙扎', 'ACF Fiorentina':'佛罗伦萨',
+        'AS Roma':'罗马', 'Atalanta BC':'亚特兰大', 'Bologna FC 1909':'博洛尼亚',
+        'Cagliari Calcio':'卡利亚里', 'Como 1907':'科莫', 'FC Internazionale Milano':'国际米兰',
+        'Frosinone Calcio':'弗洛西诺', 'Genoa CFC':'热那亚', 'Juventus FC':'尤文图斯',
+        'Parma Calcio 1913':'帕尔马', 'SS Lazio':'拉齐奥', 'SSC Napoli':'那不勒斯',
+        'Torino FC':'都灵', 'US Lecce':'莱切', 'US Sassuolo Calcio':'萨索洛',
+        'Udinese Calcio':'乌迪内斯', 'Venezia FC':'威尼斯',
+    }
+    for source,name_zh in expected.items():
+        result=display_team(team(source))
+        assert result['name_zh']==name_zh and result['name_zh_source']=='sportsmatch', source
+
+
 def test_football_alias_collisions_stay_conservative():
     # 别名与另一支球队的键冲突时，冲突键回退为不匹配，不猜测归属。
     alpha={'name_en':'Alpha FC','name_zh':'甲队','aliases':['Shared Name']}

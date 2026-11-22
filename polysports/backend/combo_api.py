@@ -87,7 +87,7 @@ from typing import Literal
 from fastapi import Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StrictStr
-from sqlalchemy import and_, delete, or_, select, tuple_
+from sqlalchemy import and_, delete, func, or_, select, tuple_
 
 from .combo_service import accept_quote, discard_unaccepted_quote, request_quote
 from .models import (
@@ -130,6 +130,12 @@ class AcceptBody(BaseModel):
 _MISSING = object()
 
 
+def combo_confirmation_query():
+    return select(ComboEvent.rfq_id, func.min(ComboEvent.created_at)).where(
+        ComboEvent.state == 'confirmed'
+    ).group_by(ComboEvent.rfq_id)
+
+
 def combo_prefetch(db, rows):
     """一次性加载组合列表所需的关联对象，供 combo_data 复用。"""
     rows = list(rows)
@@ -145,6 +151,7 @@ def combo_prefetch(db, rows):
             'bindings': {},
             'jobs': {},
             'fills': {},
+            'confirmations': {},
         }
     rfq_ids = [row.id for row in rows]
     legs_by_rfq = rows_by_attr(db, ComboLeg, 'rfq_id', rfq_ids)
@@ -196,6 +203,7 @@ def combo_prefetch(db, rows):
         'bindings': bindings,
         'jobs': jobs,
         'fills': fills,
+        'confirmations': dict(db.execute(combo_confirmation_query().where(ComboEvent.rfq_id.in_(rfq_ids))).all()),
     }
 
 
@@ -267,6 +275,7 @@ def combo_data(db, row, fill=_MISSING, prefetch=None):
                 'home': home.name_zh or home.source_name,
                 'away': away.name_zh or away.source_name,
                 'starts_at': game.starts_at.isoformat(),
+                'first_poll_at': watch.first_due_at.isoformat() if watch else None,
                 'market_question': market.question,
                 'outcome_label': outcome.label,
                 'watch_state': watch.state if watch else None,
@@ -310,6 +319,15 @@ def combo_data(db, row, fill=_MISSING, prefetch=None):
             else db.scalar(select(ComboFill).where(ComboFill.rfq_id == row.id, ComboFill.state == 'confirmed'))
         )
     fill_data = fill_payload(fill)
+    confirmed_at = None
+    if row.state == 'confirmed':
+        if prefetch is not None:
+            confirmed_at = prefetch['confirmations'].get(row.id)
+        else:
+            event = db.execute(combo_confirmation_query().where(ComboEvent.rfq_id == row.id)).first()
+            confirmed_at = event[1] if event else None
+        if confirmed_at is None and fill is not None and fill.source == 'signed_order':
+            confirmed_at = fill.confirmed_at
     pnl = combo_pnl(
         direction=row.direction, by_score=score_summary['by_score'], quantity=row.quantity, quote=quote, fill=fill_data
     )
@@ -329,6 +347,7 @@ def combo_data(db, row, fill=_MISSING, prefetch=None):
         'combo_position_id': row.combo_position_id,
         'created_at': row.created_at.isoformat(),
         'updated_at': row.updated_at.isoformat(),
+        'fill_confirmed_at': confirmed_at.isoformat() if confirmed_at else None,
         'legs': details,
         'by_score': score_summary['by_score'],
         'judged_legs': score_summary['judged_legs'],

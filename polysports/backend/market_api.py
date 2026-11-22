@@ -34,8 +34,6 @@ def ok(request, data):
 
 @router.get('/games/{game_id}/live-markets')
 def live_markets(request: Request, game_id: uuid.UUID):
-    import httpx
-
     from .live_markets import fetch_live_markets
     from .sports_sources import SourceError
 
@@ -49,15 +47,15 @@ def live_markets(request: Request, game_id: uuid.UUID):
         source_id = game.external_id if game.provider == 'polymarket' else None
         snapshot = (source_id, game.sport, game.starts_at, home.source_name, away.source_name)
     try:
-        with httpx.Client() as client:
-            data = fetch_live_markets(
-                client,
-                source_id=snapshot[0],
-                sport=snapshot[1],
-                starts_at=snapshot[2],
-                home=snapshot[3],
-                away=snapshot[4],
-            )
+        source_id, sport, starts_at, home_name, away_name = snapshot
+        data = fetch_live_markets(
+            request.app.state.market_client,
+            source_id=source_id,
+            sport=sport,
+            starts_at=starts_at,
+            home=home_name,
+            away=away_name,
+        )
         return ok(request, data)
     except SourceError as exc:
         if exc.code == 'ambiguous_game':

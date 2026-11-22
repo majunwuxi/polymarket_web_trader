@@ -177,7 +177,7 @@ def _fetch_intents_data(db: Session, query: select, limit: int) -> dict:
     if items:
         for fill in db.scalars(select(TradeFill).where(TradeFill.intent_id.in_([x.id for x in items]))):
             fill_map.setdefault(fill.intent_id, []).append(
-                {'size': fill.size, 'price': fill.price, 'status': fill.status}
+                {'size': fill.size, 'price': fill.price, 'status': fill.status, 'matched_at': fill.matched_at}
             )
 
     related = prefetch_intents(db, items)
@@ -730,6 +730,13 @@ def fills(request: Request, intent_id: uuid.UUID):
                 or existing.matched_at != item['matched_at']
             ):
                 return auth.error(request, 409, 'FILL_CONFLICT', '成交记录不一致，请核实来源')
+        returned_ids = {item['trade_id'] for item in records}
+        confirmed_times = [
+            fill.matched_at for trade_id, fill in known.items()
+            if trade_id not in returned_ids and str(fill.status).upper() == 'CONFIRMED'
+        ]
+        confirmed_times.extend(item['matched_at'] for item in records if str(item['status']).upper() == 'CONFIRMED')
+        last_matched_at = max(confirmed_times, default=None)
         for item in records:
             existing = known.get(item['trade_id'])
             if existing:
@@ -763,6 +770,7 @@ def fills(request: Request, intent_id: uuid.UUID):
                     for x in records
                 ],
                 'truncated': truncated,
+                'last_matched_at': last_matched_at.isoformat() if last_matched_at else None,
                 'notice': '成交状态由交易所提供，未确认状态不得视为结算完成。',
             },
         )

@@ -28,6 +28,7 @@ from .models import (
     TradeIntent,
     WatchedGame,
 )
+from .prefetch import objects_by_id
 
 router = APIRouter(prefix='/api/v1')
 
@@ -56,8 +57,21 @@ def team_data(team):
     return display_team(team)
 
 
-def game_data(db, game):
-    league = db.get(League, game.league_id) if game.league_id else None
+def game_prefetch(db, games):
+    teams = objects_by_id(db, Team, (ident for game in games for ident in (game.home_team_id, game.away_team_id)))
+    leagues = objects_by_id(db, League, (game.league_id for game in games))
+    return teams, leagues
+
+
+def game_data(db, game, related=None):
+    if related is None:
+        home = db.get(Team, game.home_team_id)
+        away = db.get(Team, game.away_team_id)
+        league = db.get(League, game.league_id) if game.league_id else None
+    else:
+        teams, leagues = related
+        home, away = teams.get(game.home_team_id), teams.get(game.away_team_id)
+        league = leagues.get(game.league_id)
     return {
         'id': str(game.id),
         'provider': game.provider,
@@ -66,8 +80,8 @@ def game_data(db, game):
         'starts_at': game.starts_at.isoformat(),
         'status': game.status,
         'provider_status': game.provider_status,
-        'home_team': team_data(db.get(Team, game.home_team_id)),
-        'away_team': team_data(db.get(Team, game.away_team_id)),
+        'home_team': team_data(home),
+        'away_team': team_data(away),
         'home_score': game.home_score,
         'away_score': game.away_score,
         'league': {'name': league.name_zh or league.name, 'logo_url': league.logo_url} if league else None,
@@ -182,8 +196,9 @@ def games(
         result = []
         detected = result_detected_at(db, ids)
         scheduled = result_check_at(db, ids)
+        related = game_prefetch(db, items)
         for item in items:
-            data = game_data(db, item)
+            data = game_data(db, item, related)
             data['result_binding_state'] = bindings.get(item.id)
             data['has_matched_order'] = item.id in filled
             data['result_detected_at'] = detected[item.id].isoformat() if item.id in detected else None

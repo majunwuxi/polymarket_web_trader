@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {onActivated,onMounted,ref} from 'vue'
 import {useRouter} from 'vue-router'
+import {formatDateTimeSeconds} from '../utils/format'
 import {session,logout,clearSession,ApiError} from '../auth'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppTopbar from '../components/AppTopbar.vue'
@@ -17,6 +18,9 @@ async function api(path:string,options:RequestInit={}){const r=await fetch('/api
 
 // 列表摘要只保留结论；题目里重复的对阵前缀、完整订单编号等证据放入明细。
 const shortQuestion=(q:any)=>{const s=String(q??'');return /^[^:]*\bvs\.?\b[^:]*:\s*/i.test(s)?s.replace(/^[^:]*\bvs\.?\b[^:]*:\s*/i,''):s}
+const orderTime = (value?: string | null, empty = '暂无记录') =>
+  value ? `${formatDateTimeSeconds(value)} UTC+8` : empty
+
 const shortId=(v:any)=>{const s=String(v??'');return s.length>18?s.slice(0,10)+'…'+s.slice(-6):s}
 const sharesLine=(o:any)=>{
   const parts=[`限价 ${o.limit_price}`,`${o.matched_size??o.size} 份`]
@@ -34,24 +38,118 @@ const pnlBadge=(o:any)=>{
   return {cls:'pnl-pending',text:p?.label||'盈亏待确认',hint:p?.detail||'赛果或成交数据未齐，暂不标注金额'}
 }
 
-async function loadCombos(append=false){if(comboBusy.value)return;comboBusy.value=true;comboError.value='';try{const q=new URLSearchParams({limit:'20',state:'confirmed',hide_settled:'true'});if(append&&comboCursor.value)q.set('cursor',comboCursor.value);const data=await api('/combo-rfqs?'+q);combos.value=append?[...combos.value,...data.items]:data.items;comboCursor.value=data.next_cursor||null;comboLoaded.value=true}catch{comboError.value='组合记录加载失败，请重试。'}finally{comboBusy.value=false}}
-async function load(append=false){try{const q=new URLSearchParams({limit:'20',hide_settled:'true'});if(append && nextCursor.value)q.set('cursor',nextCursor.value);const data=await api('/trade-intents?'+q);orders.value=append?[...orders.value,...data.items]:data.items;nextCursor.value=data.next_cursor;loaded.value=true}catch{message.value='订单状态加载失败。'}}
+const ordersBusy = ref(false)
+
+async function loadCombos(append = false): Promise<string[] | undefined> {
+  if (comboBusy.value) return
+  comboBusy.value = true
+  comboError.value = ''
+  try {
+    const query = new URLSearchParams({limit: '20', state: 'confirmed', hide_settled: 'true'})
+    if (append && comboCursor.value) query.set('cursor', comboCursor.value)
+    const data = await api('/combo-rfqs?' + query)
+    combos.value = append ? [...combos.value, ...data.items] : data.items
+    comboCursor.value = data.next_cursor || null
+    comboLoaded.value = true
+    return data.items.map((row: {id: string}) => row.id)
+  } catch {
+    comboError.value = '组合记录加载失败，请重试。'
+  } finally {
+    comboBusy.value = false
+  }
+}
+
+async function load(append = false): Promise<string[] | undefined> {
+  if (ordersBusy.value) return
+  ordersBusy.value = true
+  try {
+    const query = new URLSearchParams({limit: '20', hide_settled: 'true'})
+    if (append && nextCursor.value) query.set('cursor', nextCursor.value)
+    const data = await api('/trade-intents?' + query)
+    orders.value = append ? [...orders.value, ...data.items] : data.items
+    nextCursor.value = data.next_cursor
+    loaded.value = true
+    return data.items.map((row: {id: string}) => row.id)
+  } catch {
+    message.value = '订单状态加载失败。'
+  } finally {
+    ordersBusy.value = false
+  }
+}
 async function action(id:string,kind:'cancel'|'reconcile'){try{await api(kind==='cancel'?'/single-orders/'+id+'/cancel':'/trade-intents/'+id+'/reconcile',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:'{}'});pendingCancel.value=null;message.value=kind==='cancel'?'撤单请求已处理，请查看状态。':'已安排只读对账。';await load()}catch{message.value='请求结果未确认，请刷新或安排只读对账。'}}
-async function loadFills(id:string){try{const data=await api('/trade-intents/'+id+'/fills');fillOrder.value=id;fills.value=data.items;fillsTruncated.value=data.truncated;message.value='已查询交易所成交记录。'}catch(e){message.value=e instanceof Error?e.message:'成交记录查询失败。'}}
+async function loadFills(id: string) {
+  try {
+    const data = await api('/trade-intents/' + id + '/fills')
+    fillOrder.value = id
+    fills.value = data.items
+    fillsTruncated.value = data.truncated
+    const order = orders.value.find(row => row.id === id)
+    if (order) order.last_matched_at = data.last_matched_at ?? null
+    message.value = '已查询交易所成交记录。'
+  } catch (e) {
+    message.value = e instanceof Error ? e.message : '成交记录查询失败。'
+  }
+}
 const redeemKey=(kind:'single'|'combo',id:string)=>kind+':'+id
 const redeemInfo=(kind:'single'|'combo',id:string)=>redeemMap.value[redeemKey(kind,id)]
 const canRedeem=(kind:'single'|'combo',id:string)=>redeemEnabled.value&&redeemInfo(kind,id)?.eligible===true
-async function loadRedeemEligibility(){
-  const intentIds=orders.value.map((row:any)=>row.id),comboIds=combos.value.map((row:any)=>row.id)
-  if(!intentIds.length&&!comboIds.length){redeemMap.value={};redeemEnabled.value=false;return}
-  try{
-    const data=await api('/redemptions/eligibility',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({intent_ids:intentIds,combo_ids:comboIds})})
-    const next:Record<string,any>={}
-    for(const item of data.items||[])next[redeemKey(item.kind,item.id)]=item
-    redeemMap.value=next;redeemEnabled.value=data.execution_enabled===true
-  }catch{redeemMap.value={};redeemEnabled.value=false}
+const eligibilityBatchSize = 100
+let eligibilityGeneration = 0
+
+async function loadRedeemEligibility(intentIds: string[], comboIds: string[], replace = false) {
+  const generation = replace ? ++eligibilityGeneration : eligibilityGeneration
+  if (replace) {
+    redeemMap.value = {}
+    redeemEnabled.value = false
+  }
+  const count = Math.max(intentIds.length, comboIds.length)
+  for (let offset = 0; offset < count && generation === eligibilityGeneration; offset += eligibilityBatchSize) {
+    const batch = {
+      intent_ids: intentIds.slice(offset, offset + eligibilityBatchSize),
+      combo_ids: comboIds.slice(offset, offset + eligibilityBatchSize),
+    }
+    try {
+      const data = await api('/redemptions/eligibility', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': session.csrf},
+        body: JSON.stringify(batch),
+      })
+      if (generation !== eligibilityGeneration) return
+      const next = {...redeemMap.value}
+      for (const item of data.items || []) next[redeemKey(item.kind, item.id)] = item
+      redeemMap.value = next
+      redeemEnabled.value = data.execution_enabled === true
+    } catch {
+      if (generation !== eligibilityGeneration) return
+      const next = {...redeemMap.value}
+      for (const id of batch.intent_ids) delete next[redeemKey('single', id)]
+      for (const id of batch.combo_ids) delete next[redeemKey('combo', id)]
+      redeemMap.value = next
+    }
+  }
 }
-async function refreshAll(){await Promise.all([load(),loadCombos()]);await loadRedeemEligibility()}
+
+async function refreshAll() {
+  await Promise.all([load(), loadCombos()])
+  await loadRedeemEligibility(
+    orders.value.map((row: {id: string}) => row.id),
+    combos.value.map((row: {id: string}) => row.id),
+    true,
+  )
+}
+
+async function loadMoreOrders() {
+  const ids = await load(true)
+  if (ids) await loadRedeemEligibility(ids, [])
+}
+
+async function refreshCombos(append = false) {
+  const previousIds = append ? [] : combos.value.map((row: {id: string}) => row.id)
+  const ids = await loadCombos(append)
+  if (!ids) return
+  for (const id of previousIds) delete redeemMap.value[redeemKey('combo', id)]
+  await loadRedeemEligibility([], ids)
+}
 async function redeem(kind:'single'|'combo',id:string){
   if(!canRedeem(kind,id)||redeemBusy.value)return
   const busyKey=redeemKey(kind,id);redeemBusy.value=busyKey;delete redeemErrors.value[busyKey]
@@ -110,6 +208,12 @@ onActivated(()=>{if(!activated){activated=true;return}void refreshAll()})
       <article v-for="order in orders" :key="order.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('single',order.id)}]">
         <h2 class="card-title"><span>{{order.side==='BUY'?'买入':'卖出'}} · {{orderStateName(order.state)}}<span v-if="resultBadge(order.result_won)" class="result-badge" :class="resultBadge(order.result_won)?.cls">{{resultBadge(order.result_won)?.text}}</span></span><span class="pnl-badge" :class="pnlBadge(order).cls" :title="pnlBadge(order).hint">{{pnlBadge(order).text}}</span></h2>
         <p>{{order.home}} 对 {{order.away}} · {{shortQuestion(order.market_question)}} · {{order.outcome_label}}</p>
+        <div class="order-times">
+          <span>成交时间（最近一笔） {{orderTime(order.last_matched_at)}}</span>
+          <span v-if="!order.last_matched_at && order.first_fill_observed_at">首次记录成交 {{orderTime(order.first_fill_observed_at)}}</span>
+          <span>比赛开始 {{orderTime(order.starts_at)}}</span>
+          <span>赛果首轮轮询（计划） {{orderTime(order.first_poll_at, '未排期')}}</span>
+        </div>
         <p class="summary-line"><span>{{sharesLine(order)}}<template v-if="confirmedAmount(order)!=null"> · 结算 {{confirmedAmount(order)}} pUSD</template></span><span v-if="order.external_order_id" class="id-text id-compact">ID <template v-if="fullId===order.id">{{order.external_order_id}}</template><template v-else>{{shortId(order.external_order_id)}}</template><button class="text-button id-toggle" @click="fullId=fullId===order.id?null:order.id">{{fullId===order.id?'收起':'全文'}}</button></span></p>
         <p v-if="order.error_code">状态说明：{{order.error_code}}<span v-if="order.retry_after_seconds!==null"> · 建议等待 {{order.retry_after_seconds}} 秒</span></p>
         <p v-if="order.cancel_state">撤单状态：{{cancelStateName(order.cancel_state)}}</p>
@@ -132,7 +236,7 @@ onActivated(()=>{if(!activated){activated=true;return}void refreshAll()})
           <p>成交状态由交易所提供，未确认状态不等于结算完成。</p>
           <p v-if="!fills.length">当前查询未返回成交记录。</p>
           <p v-if="fillsTruncated">结果可能不完整，请到交易所核查。</p>
-          <p v-for="fill in fills" :key="fill.trade_id" class="id-text">{{fill.trade_id}} · {{fill.size}} 份 · 价格 {{fill.price}} · {{fill.status}}</p>
+          <p v-for="fill in fills" :key="fill.trade_id" class="id-text">{{fill.trade_id}} · {{fill.size}} 份 · 价格 {{fill.price}} · {{fill.status}} · 成交时间 {{orderTime(fill.matched_at)}}</p>
         </div>
         <div v-if="recoveryId===order.id" class="mapping-confirm">
           <p>候选仅按参数筛选，不证明属于本次提交。请到 Polymarket 独立核对订单编号；未出现不代表订单不存在。</p>
@@ -150,13 +254,13 @@ onActivated(()=>{if(!activated){activated=true;return}void refreshAll()})
 
         <SingleResolution v-if="resolutionOrder===order.id" :resolution="resolution" />
       </article>
-      <button v-if="nextCursor" class="text-button" @click="load(true).then(loadRedeemEligibility)">加载更多</button>
+      <button v-if="nextCursor" class="text-button" :disabled="ordersBusy" @click="loadMoreOrders()">加载更多</button>
     </section>
 
     <section class="welcome-card" aria-label="组合交易记录">
       <h2>组合交易</h2>
       <p class="scope-note">仅显示已确认组合；全部腿命中才算组合获胜；粉色卡片可整仓赎回。</p>
-      <button class="text-button" :disabled="comboBusy" @click="loadCombos().then(loadRedeemEligibility)">刷新组合记录</button>
+      <button class="text-button" :disabled="comboBusy" @click="refreshCombos()">刷新组合记录</button>
       <p v-if="comboError" role="alert">{{comboError}}</p>
       <p v-else-if="comboLoaded && !combos.length">暂无已确认组合交易。</p>
       <article v-for="combo in combos" :key="combo.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('combo',combo.id)}]">
@@ -164,8 +268,14 @@ onActivated(()=>{if(!activated){activated=true;return}void refreshAll()})
         <div v-if="combo.direction==='BUY'" class="buy-metrics" aria-label="组合买入摘要">
           <div v-for="m in buyMetrics(combo)" :key="m.label" class="buy-metric"><span class="buy-metric-label">{{m.label}}</span><strong class="buy-metric-value">{{m.value}}</strong></div>
         </div>
+        <p class="order-times">成交确认时间 {{orderTime(combo.fill_confirmed_at)}}</p>
         <p v-if="buyNote(combo)" class="buy-note">{{buyNote(combo)}}</p>
-        <p v-for="leg in combo.legs" :key="leg.outcome_id" class="leg-chip" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span><span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span><span v-else> · 无法判断</span></p>
+        <div v-for="leg in combo.legs" :key="leg.outcome_id" class="leg-chip" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span><span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span><span v-else> · 无法判断</span>
+          <div class="order-times">
+            <span>比赛开始 {{orderTime(leg.starts_at)}}</span>
+            <span>赛果首轮轮询（计划） {{orderTime(leg.first_poll_at, '未排期')}}</span>
+          </div>
+        </div>
         <p class="summary-line" :title="combo.score_reason || ''"><span>组合结果：{{comboResult(combo.by_score)}} · {{combo.judged_legs ?? 0}}/{{combo.leg_count ?? combo.legs.length}} 腿</span><span class="id-compact">{{shortId(combo.external_rfq_id)}}</span></p>
         <div class="order-actions">
           <button v-if="canRedeem('combo',combo.id)" class="text-button redeem-button" :disabled="redeemBusy===redeemKey('combo',combo.id)" title="整仓赎回该组合的全部可赎回份额" @click="redeem('combo',combo.id)">赎回</button>
@@ -185,7 +295,7 @@ onActivated(()=>{if(!activated){activated=true;return}void refreshAll()})
 
         <ComboResolution v-if="comboResolutionId===combo.id" :resolution="comboResolution" />
       </article>
-      <button v-if="comboCursor" class="text-button" :disabled="comboBusy" @click="loadCombos(true).then(loadRedeemEligibility)">加载更多组合</button>
+      <button v-if="comboCursor" class="text-button" :disabled="comboBusy" @click="refreshCombos(true)">加载更多组合</button>
     </section>
     </div>
   </main>

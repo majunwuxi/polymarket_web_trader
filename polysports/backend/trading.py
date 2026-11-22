@@ -31,6 +31,7 @@ from .models import (
     TradeIntent,
     TradeStateEvent,
     TradeSubmission,
+    WatchedGame,
 )
 from .order_resolution import judge_score_detail
 from .pnl import single_pnl
@@ -234,6 +235,12 @@ def get_existing(db, wallet, request_id, fp):
     return intent
 
 
+def fill_observation_query():
+    return select(TradeStateEvent.intent_id, func.min(TradeStateEvent.created_at)).where(
+        TradeStateEvent.state.in_(('partially_filled', 'filled'))
+    ).group_by(TradeStateEvent.intent_id)
+
+
 def prefetch_intents(db, intents):
     intents = list(intents)
     if not intents:
@@ -256,6 +263,13 @@ def prefetch_intents(db, intents):
         if game_ids
         else {}
     )
+    watches = {
+        watch.game_id: watch
+        for watch in db.scalars(select(WatchedGame).where(WatchedGame.game_id.in_(game_ids)))
+    }
+    observations = dict(db.execute(fill_observation_query().where(
+        TradeStateEvent.intent_id.in_([intent.id for intent in intents])
+    )).all())
     result = {}
     for intent in intents:
         link = links.get(intent.market_link_id)
@@ -268,6 +282,8 @@ def prefetch_intents(db, intents):
             'home': teams.get(game.home_team_id) if game else None,
             'away': teams.get(game.away_team_id) if game else None,
             'binding': bindings.get(intent.game_id),
+            'watch': watches.get(intent.game_id),
+            'first_fill_observed_at': observations.get(intent.id),
         }
     return result
 
@@ -302,6 +318,8 @@ def as_data(intent, db=None, fills=None, related=None):
             home = related.get('home')
             away = related.get('away')
             binding = related.get('binding')
+            watch = related.get('watch')
+            observed = related.get('first_fill_observed_at')
             finished = game.status == 'finished'
             verified = bool(
                 binding
@@ -318,6 +336,9 @@ def as_data(intent, db=None, fills=None, related=None):
             home = db.get(Team, game.home_team_id)
             away = db.get(Team, game.away_team_id)
             finished, verified = game_result_state(db, game)
+            watch = db.scalar(select(WatchedGame).where(WatchedGame.game_id == game.id))
+            observation = db.execute(fill_observation_query().where(TradeStateEvent.intent_id == intent.id)).first()
+            observed = observation[1] if observation else None
         blocked, reason = close_decision(score_verified=verified, accepting_orders=market.accepting_orders)
         won, basis = (
             judge_score_detail(
@@ -338,6 +359,8 @@ def as_data(intent, db=None, fills=None, related=None):
                 'home': home.name_zh or home.source_name,
                 'away': away.name_zh or away.source_name,
                 'starts_at': game.starts_at.isoformat(),
+                'first_poll_at': watch.first_due_at.isoformat() if watch else None,
+                'first_fill_observed_at': observed.isoformat() if observed else None,
                 'market_question': market.question,
                 'outcome_label': outcome.label,
                 'game_finished': finished,
@@ -350,9 +373,14 @@ def as_data(intent, db=None, fills=None, related=None):
         )
         if fills is None:
             fills = [
-                {'size': x.size, 'price': x.price, 'status': x.status}
+                {'size': x.size, 'price': x.price, 'status': x.status, 'matched_at': x.matched_at}
                 for x in db.scalars(select(TradeFill).where(TradeFill.intent_id == intent.id))
             ]
+        matched_at = max(
+            (fill['matched_at'] for fill in fills if fill.get('matched_at') and str(fill['status']).upper() == 'CONFIRMED'),
+            default=None,
+        )
+        value['last_matched_at'] = matched_at.isoformat() if matched_at else None
         value['pnl'] = single_pnl(
             side=intent.side,
             matched_size=intent.matched_size,

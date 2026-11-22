@@ -12,7 +12,6 @@ from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
 from pydantic import BaseModel
 from sqlalchemy import exists, func, literal, select, tuple_, union_all
 from sqlalchemy.orm import Session
@@ -25,20 +24,15 @@ from .models import (
     ComboRFQ,
     Game,
     Job,
-    MarketLink,
-    MarketOutcome,
-    PolyMarket,
-    ResultBindingRequest,
     SyncRun,
-    Team,
     TradeFill,
     TradeIntent,
     WorkerHeartbeat,
 )
 from .prefetch import objects_by_id, rows_by_attr
 from .scheduler import db_now
-from .sports_api import cursor_decode, cursor_encode, game_data
-from .trading import as_data
+from .sports_api import cursor_decode, cursor_encode, game_data, game_prefetch
+from .trading import as_data, prefetch_intents
 
 router = APIRouter(prefix='/api/v1')
 TZ8 = timezone(timedelta(hours=8))
@@ -141,56 +135,20 @@ def trade_prefetch(db, rows):
     intents = objects_by_id(db, TradeIntent, single_ids)
     combos = objects_by_id(db, ComboRFQ, combo_ids)
     combo_maps = combo_prefetch(db, combos.values())
-    game_ids = {intent.game_id for intent in intents.values()}
-    link_ids = {intent.market_link_id for intent in intents.values()}
-    outcome_ids = {intent.outcome_id for intent in intents.values()}
-    games = objects_by_id(db, Game, game_ids)
-    games.update(combo_maps['games'])
-    links = objects_by_id(db, MarketLink, link_ids)
-    links.update(combo_maps['links'])
-    markets = objects_by_id(db, PolyMarket, {link.market_id for link in links.values()})
-    markets.update(combo_maps['markets'])
-    outcomes = objects_by_id(db, MarketOutcome, outcome_ids)
-    outcomes.update(combo_maps['outcomes'])
-    teams = objects_by_id(
-        db, Team, {game.home_team_id for game in games.values()} | {game.away_team_id for game in games.values()}
-    )
-    teams.update(combo_maps['teams'])
-    bindings = (
-        {
-            binding.game_id: binding
-            for binding in db.scalars(select(ResultBindingRequest).where(ResultBindingRequest.game_id.in_(game_ids)))
-        }
-        if game_ids
-        else {}
-    )
-    bindings.update(combo_maps['bindings'])
     fill_rows = rows_by_attr(db, TradeFill, 'intent_id', single_ids)
     fills = {
-        intent_id: [{'size': fill.size, 'price': fill.price, 'status': fill.status} for fill in values]
+        intent_id: [{'size': fill.size, 'price': fill.price, 'status': fill.status, 'matched_at': fill.matched_at} for fill in values]
         for intent_id, values in fill_rows.items()
     }
     confirmed_counts = {
         intent_id: sum(1 for fill in values if str(fill.status).upper() == 'CONFIRMED')
         for intent_id, values in fill_rows.items()
     }
-    singles = {}
-    for intent_id, intent in intents.items():
-        link = links.get(intent.market_link_id)
-        singles[intent_id] = {
-            'game': games.get(intent.game_id),
-            'link': link,
-            'market': markets.get(link.market_id) if link else None,
-            'outcome': outcomes.get(intent.outcome_id),
-            'home': teams.get(games[intent.game_id].home_team_id) if intent.game_id in games else None,
-            'away': teams.get(games[intent.game_id].away_team_id) if intent.game_id in games else None,
-            'binding': bindings.get(intent.game_id),
-        }
     return {
         'intents': intents,
         'combos': combos,
         'combo': combo_maps,
-        'singles': singles,
+        'singles': prefetch_intents(db, intents.values()),
         'fills': fills,
         'confirmed_counts': confirmed_counts,
     }
@@ -249,10 +207,11 @@ def history_games(
     with Session(request.app.state.engine) as db:
         rows = list(db.scalars(query.order_by(Game.starts_at.desc(), Game.id.desc()).limit(limit + 1)))
         items = rows[:limit]
+        related = game_prefetch(db, items)
         return envelope(
             request,
             {
-                'items': [game_data(db, x) for x in items],
+                'items': [game_data(db, x, related) for x in items],
                 'next_cursor': cursor_encode([items[-1].starts_at.isoformat(), str(items[-1].id)])
                 if len(rows) > limit
                 else None,
@@ -325,20 +284,22 @@ def statistics(
     games = game_query(sport, start, end, status).subquery()
     trades = trade_query(sport, start, end, wallet_id, kind, state)
     with Session(request.app.state.engine) as db:
-        game_count = db.scalar(select(func.count()).select_from(games))
-        finished = db.scalar(select(func.count()).select_from(games).where(games.c.status == 'finished'))
-        trade_count = db.scalar(select(func.count()).select_from(trades))
+        game_count, finished = db.execute(
+            select(func.count(), func.count().filter(games.c.status == 'finished')).select_from(games)
+        ).one()
+        trade_count, combo_confirmed = db.execute(
+            select(func.count(), func.count(ComboRFQ.id))
+            .select_from(trades)
+            .outerjoin(
+                ComboRFQ,
+                (trades.c.kind == 'combo') & (ComboRFQ.id == trades.c.id) & (ComboRFQ.state == 'confirmed'),
+            )
+        ).one()
         fill_count = db.scalar(
             select(func.count(TradeFill.id)).where(
                 func.upper(TradeFill.status) == 'CONFIRMED',
                 TradeFill.intent_id.in_(select(trades.c.id).where(trades.c.kind == 'single')),
             )
-        )
-        combo_confirmed = db.scalar(
-            select(func.count())
-            .select_from(trades)
-            .join(ComboRFQ, ComboRFQ.id == trades.c.id)
-            .where(trades.c.kind == 'combo', ComboRFQ.state == 'confirmed')
         )
         return envelope(
             request,
@@ -463,8 +424,10 @@ def output_rows(engine, kind, sport, start, end, status, wallet_id, trade_kind):
                 .order_by(Game.starts_at.desc(), Game.id.desc())
                 .execution_options(yield_per=200)
             )
-            for row in rows:
-                yield safe_row(export_game_row(game_data(db, row)))
+            for batch in batched(rows):
+                related = game_prefetch(db, batch)
+                for row in batch:
+                    yield safe_row(export_game_row(game_data(db, row, related)))
         else:
             source = trade_query(sport, start, end, wallet_id, trade_kind, status)
             rows = db.execute(
@@ -481,20 +444,23 @@ def output_rows(engine, kind, sport, start, end, status, wallet_id, trade_kind):
 def csv_bytes(headers, rows):
     buffer = io.StringIO(newline='')
     writer = csv.writer(buffer, lineterminator='\r\n')
-    yield b'\xef\xbb\xbf'
-    for row in [headers]:
-        writer.writerow(row)
-        yield buffer.getvalue().encode('utf-8')
-        buffer.seek(0)
-        buffer.truncate(0)
+    writer.writerow(headers)
+    yield b'\xef\xbb\xbf' + buffer.getvalue().encode('utf-8')
+    buffer.seek(0)
+    buffer.truncate(0)
     for row in rows:
         writer.writerow(row)
+        if buffer.tell() >= 65536:
+            yield buffer.getvalue().encode('utf-8')
+            buffer.seek(0)
+            buffer.truncate(0)
+    if buffer.tell():
         yield buffer.getvalue().encode('utf-8')
-        buffer.seek(0)
-        buffer.truncate(0)
 
 
 def excel_bytes(headers, rows):
+    from openpyxl import Workbook
+
     spool = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode='w+b')
     try:
         workbook = Workbook(write_only=True)

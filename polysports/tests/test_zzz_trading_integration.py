@@ -419,7 +419,20 @@ def test_fill_query_persists_verified_records_and_detects_conflict(env,monkeypat
     monkeypatch.setattr(MockGateway,'fills',lambda self,*args:([sample],False),raising=False)
     first=client.get('/api/v1/trade-intents/'+ident+'/fills');assert first.status_code==200
     assert first.json()['data']['items'][0]['size']=='2' and first.json()['data']['items'][0]['status']=='MATCHED'
-    assert client.get('/api/v1/trade-intents/'+ident+'/fills').status_code==200
+    assert first.json()['data']['last_matched_at'] is None
+    sample['status'] = 'CONFIRMED'
+    confirmed = client.get('/api/v1/trade-intents/' + ident + '/fills')
+    assert confirmed.status_code == 200
+    assert datetime.fromisoformat(confirmed.json()['data']['last_matched_at']) == now
+    listed = next(row for row in client.get('/api/v1/trade-intents').json()['data']['items'] if row['id'] == ident)
+    assert datetime.fromisoformat(listed['last_matched_at']) == now
+    with pg.connect() as conn:
+        starts_at, first_poll_at = conn.execute(text(
+            'SELECT g.starts_at, w.first_due_at FROM trade_intents t JOIN games g ON g.id = t.game_id '
+            'JOIN watched_games w ON w.game_id = g.id WHERE t.id = :id'
+        ), {'id': uuid.UUID(ident)}).one()
+    assert datetime.fromisoformat(listed['starts_at']) == starts_at
+    assert datetime.fromisoformat(listed['first_poll_at']) == first_poll_at
     with pg.connect() as conn:assert conn.execute(text('SELECT count(*) FROM trade_fills')).scalar_one()==1
     sample['size']=Decimal('3')
     assert client.get('/api/v1/trade-intents/'+ident+'/fills').status_code==409

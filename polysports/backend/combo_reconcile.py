@@ -6,7 +6,7 @@ from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from .close_policy import score_verified_clause
-from .close_positions import combo_position_balance
+from .close_positions import combo_balance_reader, combo_position_balance
 from .combo_gateway import ComboGateway
 from .combo_service import record, rfq_failure_code
 from .models import ComboEvent, ComboFill, ComboLeg, ComboRFQ, Game, Job, MarketLink, PolyMarket
@@ -57,6 +57,16 @@ def _confirm_from_chain(db, row, job, settings, now):
         return False
     if balance < fill.size:
         return False
+    _confirm_position(db, row, now)
+    if job is not None:
+        finish_attempt(db, job, now, 'succeeded')
+        job.status = 'done'
+        job.failure_count = 0
+        job.last_error_code = job.last_error_summary = None
+    return True
+
+
+def _confirm_position(db, row, now):
     row.state = 'confirmed'
     row.error_code = None
     row.updated_at = now
@@ -69,12 +79,6 @@ def _confirm_from_chain(db, row, job, settings, now):
     game_ids = set(db.scalars(select(ComboLeg.game_id).where(ComboLeg.rfq_id == row.id)))
     for game_id in sorted(game_ids, key=str):
         request_binding_for_accepted_order(db, game_id)
-    if job is not None:
-        finish_attempt(db, job, now, 'succeeded')
-        job.status = 'done'
-        job.failure_count = 0
-        job.last_error_code = job.last_error_summary = None
-    return True
 
 
 def _combo_unsettled():
@@ -88,73 +92,95 @@ def _combo_unsettled():
     )
 
 
-def mark_closed_positions(db, settings, now, limit=5):
-    """核对已确认组合的链上持仓：余额为 0 且尚未结算即视为已在 Polymarket 手动平仓。
-
-    每轮最多检查 limit 条并按 updated_at 轮转，避免重复调用 RPC；RPC 不可用时不做推断。
-    """
-    rows = list(
-        db.scalars(
-            select(ComboRFQ)
-            .where(
-                ComboRFQ.state == 'confirmed',
-                ComboRFQ.direction == 'BUY',
-                ComboRFQ.combo_position_id.is_not(None),
-                ComboRFQ.position_closed_at.is_(None),
-                ComboRFQ.created_at >= now - timedelta(hours=POSITION_CLOSED_SCAN_HOURS),
-                _combo_unsettled(),
-            )
-            .order_by(ComboRFQ.updated_at, ComboRFQ.id)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        )
+def _watchdog_candidates(now, *, confirmed):
+    query = select(ComboRFQ).where(
+        ComboRFQ.direction == 'BUY',
+        ComboRFQ.combo_position_id.is_not(None),
     )
-    closed = 0
-    for row in rows:
-        row.updated_at = now
-        try:
-            balance = combo_position_balance(settings, row.wallet_address, row.combo_position_id)
-        except TradingError:
-            continue
-        if balance > 0:
-            continue
-        row.position_closed_at = now
-        db.add(ComboEvent(id=uuid.uuid4(), rfq_id=row.id, state='closed', code='position_closed'))
-        closed += 1
-    return closed
-
-
-def run_combo_watchdog(db, settings, now, limit=20):
-    """Recheck on-chain balances for unresolved combos for up to 24 hours."""
+    if confirmed:
+        return query.where(
+            ComboRFQ.state == 'confirmed',
+            ComboRFQ.position_closed_at.is_(None),
+            ComboRFQ.created_at >= now - timedelta(hours=POSITION_CLOSED_SCAN_HOURS),
+            _combo_unsettled(),
+        )
     pending = exists(select(ComboFill.id).where(ComboFill.rfq_id == ComboRFQ.id, ComboFill.state == 'pending'))
-    rows = list(
-        db.scalars(
-            select(ComboRFQ)
-            .where(
-                ComboRFQ.state.in_(('executing', 'unknown')),
-                ComboRFQ.direction == 'BUY',
-                ComboRFQ.combo_position_id.is_not(None),
-                ComboRFQ.created_at >= now - timedelta(hours=24),
-                pending,
-            )
-            .order_by(ComboRFQ.updated_at, ComboRFQ.id)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        )
+    return query.where(
+        ComboRFQ.state.in_(('executing', 'unknown')),
+        ComboRFQ.created_at >= now - timedelta(hours=24),
+        pending,
     )
-    confirmed = 0
-    for row in rows:
-        if not _confirm_from_chain(db, row, None, settings, now):
+
+
+def _position_snapshot(row):
+    return row.updated_at, row.wallet_address, row.combo_position_id
+
+
+def fetch_combo_watchdog(engine, settings, limit=20):
+    """Read chain balances without holding a database connection or row locks."""
+    if not settings or not getattr(settings, 'polygon_rpc_url', None):
+        return {}
+
+    with Session(engine) as db:
+        now = db_now(db)
+        candidates = {}
+        for confirmed, batch_size in ((False, limit), (True, 5)):
+            query = _watchdog_candidates(now, confirmed=confirmed)
+            rows = db.scalars(query.order_by(ComboRFQ.updated_at, ComboRFQ.id).limit(batch_size))
+            candidates[confirmed] = {row.id: _position_snapshot(row) for row in rows}
+
+    read_balance = combo_balance_reader(settings)
+    balances = {}
+    for snapshots in candidates.values():
+        for _, wallet, position in snapshots.values():
+            key = wallet, position
+            if key not in balances:
+                try:
+                    balances[key] = read_balance(wallet, position)
+                except TradingError:
+                    balances[key] = None
+    return {
+        confirmed: {
+            ident: (snapshot, balances[snapshot[1:]])
+            for ident, snapshot in snapshots.items()
+        }
+        for confirmed, snapshots in candidates.items()
+    }
+
+
+def apply_combo_watchdog(db, now, evidence):
+    """Apply only observations whose local position and eligibility still match."""
+    counts = {'scanned': len(evidence.get(False, {})), 'confirmed': 0, 'closed': 0}
+    for confirmed, observations in evidence.items():
+        if not observations:
             continue
-        confirmed += 1
-        job = db.scalar(select(Job).where(Job.combo_rfq_id == row.id).with_for_update())
-        if job and job.status != 'leased':
-            job.status = 'done'
-            job.failure_count = 0
-            job.last_error_code = job.last_error_summary = None
-            job.lease_owner = job.lease_until = job.lease_token = None
-    closed = mark_closed_positions(db, settings, now)
-    return {'scanned': len(rows), 'confirmed': confirmed, 'closed': closed}
+        query = _watchdog_candidates(now, confirmed=confirmed).where(ComboRFQ.id.in_(observations))
+        rows = db.scalars(query.order_by(ComboRFQ.id).with_for_update(skip_locked=True))
+        for row in rows:
+            snapshot, balance = observations[row.id]
+            if _position_snapshot(row) != snapshot:
+                continue
+            if confirmed:
+                row.updated_at = now
+                if balance == 0:
+                    row.position_closed_at = now
+                    db.add(ComboEvent(id=uuid.uuid4(), rfq_id=row.id, state='closed', code='position_closed'))
+                    counts['closed'] += 1
+                continue
+            if balance is None:
+                continue
+            fill = db.scalar(select(ComboFill).where(ComboFill.rfq_id == row.id).with_for_update())
+            if not fill or fill.state != 'pending' or fill.size <= 0 or balance < fill.size:
+                continue
+            _confirm_position(db, row, now)
+            counts['confirmed'] += 1
+            job = db.scalar(select(Job).where(Job.combo_rfq_id == row.id).with_for_update(skip_locked=True))
+            if job and job.status != 'leased':
+                job.status = 'done'
+                job.failure_count = 0
+                job.last_error_code = job.last_error_summary = None
+                job.lease_owner = job.lease_until = job.lease_token = None
+    return counts
 
 
 def apply_combo(db, job, payload, error=None, settings=None):

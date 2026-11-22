@@ -149,13 +149,16 @@ def test_polymarket_combo_binds_only_after_confirmed(sample,monkeypatch):
         assert watch and watch.state=='active'
         poll=db.scalar(select(Job).where(Job.watched_game_id==watch.id,Job.kind=='result_poll'))
         assert poll and poll.due_at==watch.first_due_at
+        first_poll_at = watch.first_due_at
     response=client.get('/api/v1/combo-rfqs?state=confirmed',headers=headers)
     assert response.status_code==200
     rows=response.json()['data']['items']
     selected=next(row for row in rows if row['id']==str(ident))
     leg=next(leg for leg in selected['legs'] if leg['game_id']==str(game_id))
     assert leg['watch_state']=='active' and leg['binding_state']=='pending'
+    assert datetime.fromisoformat(leg['first_poll_at']) == first_poll_at
     assert leg['next_poll_at'] is not None
+    assert selected['fill_confirmed_at'] is not None
 
 
 def test_combo_close_uses_original_legs_and_blocks_second_unresolved_request(sample,monkeypatch):
@@ -388,11 +391,23 @@ def test_watchdog_marks_manually_closed_combo_and_hides_it_from_records(env,monk
     listed=[item['id'] for item in client.get('/api/v1/combo-rfqs',params={'state':'confirmed'}).json()['data']['items']]
     assert str(rfq_id) in listed
     # 链上余额为 0 且赛事未结算：视为已在 Polymarket 手动平仓。
-    monkeypatch.setattr(combo_reconcile,'combo_position_balance',lambda *args:Decimal('0'))
-    with Session(engine) as db:
-        counts=combo_reconcile.run_combo_watchdog(db,client.app.state.settings,datetime.now(timezone.utc))
-        db.commit()
-    assert counts['closed']==1
+    from backend.scheduler import claim_next
+    from backend.worker import apply_work, fetch_work
+
+    def read_balance(wallet, position):
+        assert engine.pool.checkedout() == 0
+        return Decimal('0')
+
+    monkeypatch.setattr(combo_reconcile, 'combo_balance_reader', lambda settings: read_balance)
+    settings = S(polygon_rpc_url=object())
+    watchdog_id = uuid.uuid4()
+    with Session(engine) as db, db.begin():
+        db.add(Job(id=watchdog_id, kind='combo_watchdog', dedupe_key='mock-watchdog',
+                   due_at=datetime.now(timezone.utc) - timedelta(days=1), status='pending'))
+    job_id, token = claim_next(engine, 'mock-worker')
+    assert job_id == watchdog_id
+    evidence = fetch_work(engine, job_id, token, settings, None)
+    assert apply_work(engine, job_id, token, evidence, settings=settings)
     with engine.connect() as conn:
         assert conn.execute(text('SELECT position_closed_at FROM combo_rfqs WHERE id=:id'),{'id':rfq_id}).scalar_one() is not None
     listed=[item['id'] for item in client.get('/api/v1/combo-rfqs',params={'state':'confirmed'}).json()['data']['items']]
@@ -414,10 +429,11 @@ def test_watchdog_keeps_combo_while_position_balance_positive(env,monkeypatch):
         db.flush()
         db.add(ComboLeg(id=uuid.uuid4(),rfq_id=rfq_id,game_id=link.game_id,market_link_id=link_id,
                         outcome_id=outcome_id,position_id='1001'))
-    monkeypatch.setattr(combo_reconcile,'combo_position_balance',lambda *args:Decimal('5'))
-    with Session(engine) as db:
-        counts=combo_reconcile.run_combo_watchdog(db,client.app.state.settings,datetime.now(timezone.utc))
-        db.commit()
+    monkeypatch.setattr(combo_reconcile, 'combo_balance_reader', lambda settings: lambda *args: Decimal('5'))
+    settings = S(polygon_rpc_url=object())
+    evidence = combo_reconcile.fetch_combo_watchdog(engine, settings)
+    with Session(engine) as db, db.begin():
+        counts = combo_reconcile.apply_combo_watchdog(db, datetime.now(timezone.utc), evidence)
     assert counts['closed']==0
     with engine.connect() as conn:
         assert conn.execute(text('SELECT position_closed_at FROM combo_rfqs WHERE id=:id'),{'id':rfq_id}).scalar_one() is None

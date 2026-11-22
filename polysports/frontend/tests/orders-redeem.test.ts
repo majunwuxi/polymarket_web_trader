@@ -81,3 +81,67 @@ it('功能关闭时不显示赎回按钮或粉色卡片',async()=>{
   expect(view.findAll('button').some(button=>button.text()==='赎回')).toBe(false)
   view.unmount()
 })
+
+it('加载超过 100 条订单时只查询新增页，并保留前面页面的赎回资格', async () => {
+  const requests: string[][] = []
+  vi.stubGlobal('fetch', vi.fn((url: string, options?: RequestInit) => {
+    if (url.endsWith('/redemptions/eligibility')) {
+      const {intent_ids} = JSON.parse(String(options?.body))
+      requests.push(intent_ids)
+      return Promise.resolve(json({
+        execution_enabled: true,
+        items: intent_ids.map((id: string) => ({kind: 'single', id, eligible: true})),
+      }))
+    }
+    if (url.startsWith('/api/v1/trade-intents?')) {
+      const page = Number(new URL(url, 'http://localhost').searchParams.get('cursor') ?? '0')
+      const items = Array.from({length: 20}, (_, i) => ({...order, id: `order-page-${page}-${i}`}))
+      return Promise.resolve(json({items, next_cursor: page < 5 ? String(page + 1) : null}))
+    }
+    return Promise.resolve(json({items: [], next_cursor: null}))
+  }))
+  const view = mount(Orders, {global: {plugins: [router]}})
+  await flushPromises()
+  for (let page = 1; page <= 5; page++) {
+    await view.findAll('button').find(button => button.text() === '加载更多')!.trigger('click')
+    await flushPromises()
+  }
+  expect(requests).toHaveLength(6)
+  expect(requests.every(ids => ids.length === 20)).toBe(true)
+  expect(new Set(requests.flat()).size).toBe(120)
+  expect(view.findAll('article.is-redeemable')).toHaveLength(120)
+  view.unmount()
+})
+
+it('在交易记录卡片显示单场及各组合腿的时间', async () => {
+  const starts_at = '2026-11-22T12:00:00Z'
+  const first_poll_at = '2026-11-22T14:30:00Z'
+  const matchedAt = '2026-11-22T10:15:24Z'
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    if (url.includes('/trade-intents?')) {
+      return Promise.resolve(json({items: [{...order, starts_at, first_poll_at, last_matched_at: matchedAt}]}))
+    }
+    if (url.includes('/combo-rfqs?')) {
+      return Promise.resolve(json({items: [{
+        ...combo, fill_confirmed_at: matchedAt, legs: [
+          {...combo.legs[0], starts_at, first_poll_at},
+          {...combo.legs[0], outcome_id: 'second-outcome', starts_at: '2026-11-23T11:00:00Z'},
+        ],
+      }]}))
+    }
+    return Promise.resolve(json({execution_enabled: false, items: []}))
+  }))
+  const view = mount(Orders, {global: {plugins: [router]}})
+  await flushPromises()
+  const [single, combined] = view.findAll('article.order-card')
+  expect(single.text()).toMatch(/成交时间（最近一笔）.*18:15:24/)
+  expect(single.text()).toMatch(/比赛开始.*20:00:00/)
+  expect(single.text()).toMatch(/赛果首轮轮询（计划）.*22:30:00/)
+  expect(combined.text()).toMatch(/成交确认时间.*18:15:24/)
+  const [firstLeg, secondLeg] = combined.findAll('.leg-chip')
+  expect(firstLeg.text()).toMatch(/比赛开始.*20:00:00/)
+  expect(firstLeg.text()).toMatch(/赛果首轮轮询（计划）.*22:30:00/)
+  expect(secondLeg.text()).toMatch(/比赛开始.*19:00:00/)
+  expect(secondLeg.text()).toContain('未排期')
+  view.unmount()
+})

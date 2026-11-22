@@ -5,6 +5,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
@@ -48,7 +49,9 @@ def create_app() -> FastAPI:
                 raise
         logger.info(json.dumps({"event": "application_started", "environment": settings.environment}))
         try:
-            yield
+            with httpx.Client() as market_client:
+                app.state.market_client = market_client
+                yield
         finally:
             if combo_lock is not None:
                 combo_lock.close()

@@ -108,6 +108,8 @@
 .buy-note{margin:-6px 0 10px;color:#8a9a91;font-size:11px;line-height:1.5}
 @media(max-width:600px){.buy-metrics{grid-template-columns:1fr;gap:8px}.buy-metric{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.buy-metric-label{flex:0 0 auto}}
 /* 详情分层：小节标题 + 一组等宽小卡片 + 卡片内标签/值对齐 */
+.order-history .order-times{display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0;color:#52685d;font-size:12px;line-height:1.5}
+.order-history .leg-chip .order-times{margin:4px 0 0}
 .order-history .leg-chip{margin:5px 0;padding:6px 10px;background:#f5f8f6;border:1px solid #e9f0eb;border-radius:8px;font-size:12px;line-height:1.5}
 .detail-box .detail-section-title{margin:14px 0 8px;font-size:12px;font-weight:700;color:#397b62;letter-spacing:.02em}
 .detail-section-title:first-of-type{margin-top:4px}

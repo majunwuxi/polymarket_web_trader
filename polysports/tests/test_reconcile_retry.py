@@ -57,29 +57,36 @@ def test_nonterminal_success_can_preserve_pending_streak():
     assert row.failure_count == 4
 
 
-def test_combo_watchdog_confirms_pending_rows_and_closes_job(monkeypatch):
+def test_combo_watchdog_confirms_pending_rows_and_rejects_stale_evidence(monkeypatch):
+    now = datetime.now(timezone.utc)
+    rows = [
+        S(id=uuid.uuid4(), updated_at=now, wallet_address='wallet', combo_position_id='1'),
+        S(id=uuid.uuid4(), updated_at=now, wallet_address='wallet', combo_position_id='2'),
+    ]
+    job_row = job()
+    job_row.status = 'pending'
+
     class Db:
-        def __init__(self, rows, job_row):
-            self.rows = rows
-            self.job_row = job_row
-            self.first = True
+        def __init__(self):
+            self.values = iter([S(state='pending', size=Decimal('1')), job_row])
 
         def scalars(self, query):
-            if self.first:
-                self.first = False
-                return self.rows
-            return []
+            return rows
 
         def scalar(self, query):
-            return self.job_row
+            return next(self.values)
 
-    now = datetime.now(timezone.utc)
-    rows = [S(id=uuid.uuid4(), updated_at=now), S(id=uuid.uuid4(), updated_at=now)]
-    job_row = job();job_row.status='pending'
-    db = Db(rows, job_row)
-    monkeypatch.setattr(combo_reconcile, '_confirm_from_chain', lambda db, row, job, settings, now: row is rows[0])
-    counts = combo_reconcile.run_combo_watchdog(db, S(polygon_rpc_url=object()), now)
+    confirmed = []
+    monkeypatch.setattr(combo_reconcile, '_confirm_position', lambda db, row, now: confirmed.append(row))
+    evidence = {
+        False: {
+            rows[0].id: ((now, 'wallet', '1'), Decimal('2')),
+            rows[1].id: ((now - timedelta(seconds=1), 'wallet', '2'), Decimal('2')),
+        }
+    }
+    counts = combo_reconcile.apply_combo_watchdog(Db(), now, evidence)
     assert counts == {'scanned': 2, 'confirmed': 1, 'closed': 0}
+    assert confirmed == [rows[0]]
     assert job_row.status == 'done' and job_row.failure_count == 0
 
 

@@ -45,7 +45,7 @@ def fetch_work(engine, job_id, token, settings, client):
         job = db.get(Job, job_id)
         if not job or job.status != 'leased' or job.lease_token != token:
             raise LeaseLost()
-        if job.kind in ('cleanup', 'combo_watchdog'):
+        if job.kind == 'cleanup':
             return None
         if job.kind == 'sync':
             run = db.get(SyncRun, job.sync_run_id)
@@ -58,7 +58,7 @@ def fetch_work(engine, job_id, token, settings, client):
             from .trade_reconcile import fetch_order
 
             trade_id = job.trade_intent_id
-        else:
+        elif job.kind != 'combo_watchdog':
             watched = db.get(WatchedGame, job.watched_game_id)
             if watched.state != 'active':
                 return None
@@ -77,6 +77,10 @@ def fetch_work(engine, job_id, token, settings, client):
                     raise SourceError('binding_required')
                 provider = binding.provider
                 external_id = binding.fixture_id
+    if job.kind == 'combo_watchdog':
+        from .combo_reconcile import fetch_combo_watchdog
+
+        return fetch_combo_watchdog(engine, settings)
     if job.kind == 'combo_reconcile':
         from .combo_reconcile import fetch_combo
 
@@ -174,9 +178,9 @@ def apply_work(
                 if error:
                     retry_or_fail(db, job, now, error, timedelta(minutes=5))
                 else:
-                    from .combo_reconcile import run_combo_watchdog
+                    from .combo_reconcile import apply_combo_watchdog
 
-                    counts = run_combo_watchdog(db, settings, now)
+                    counts = apply_combo_watchdog(db, now, payload or {})
                     finish_attempt(db, job, now, 'succeeded')
                     job.status = 'done'
                     log.info(

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import base64,hashlib,hmac,json,re,uuid
+import base64,hashlib,hmac,json,logging,re,uuid
 from datetime import timedelta
 from decimal import Decimal, localcontext
 from sqlalchemy import select, func
@@ -17,6 +17,7 @@ from .scheduler import db_now,watch_game
 from .trading_gateway import Gateway,TradingError,finite_decimal,restriction
 
 PREVIEW_SECONDS=30
+log=logging.getLogger('polysports.trading')
 
 
 def canonical(number: Decimal) -> str:
@@ -257,6 +258,7 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
             except TradingError as exc:
                 save_result(engine,intent_id,'rejected',exc.code,retry_after=exc.retry_after);return intent_id,True
             except Exception:
+                log.exception('order_sign_failed intent_id=%s',intent_id)
                 save_result(engine,intent_id,'rejected','sign_failed');return intent_id,True
             try:
                 response=gateway.post(signed)
@@ -264,6 +266,7 @@ def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
                 elif getattr(response,'ok',None) is False: save_result(engine,intent_id,'rejected',code=str(getattr(response,'code','rejected'))[:80])
                 else: save_result(engine,intent_id,'unknown','response_unknown')
             except Exception as exc:
+                log.exception('order_post_failed intent_id=%s',intent_id)
                 problem=restriction(exc)
                 if problem: save_result(engine,intent_id,'rejected',problem.code,retry_after=problem.retry_after)
                 else: save_result(engine,intent_id,'unknown','submission_unknown')

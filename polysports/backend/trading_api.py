@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import uuid
 from datetime import datetime,timedelta
 from typing import Literal
@@ -14,6 +15,8 @@ from .scheduler import db_now
 from .sports_api import cursor_decode,cursor_encode
 from .trading import as_data,execute,prepare,prefetch_intents,wallet_for
 from .trading_gateway import Gateway,TradingError,restriction
+
+log=logging.getLogger('polysports.trading_api')
 
 router=APIRouter(prefix='/api/v1')
 
@@ -287,7 +290,9 @@ def public_book(request:Request,outcome_id:uuid.UUID):
                     result.append({'price':str(p),'size':str(s)})
                 return result
             return ok(request,{'outcome_id':str(outcome_id),'bids':levels('bids'),'asks':levels('asks'),'tick_size':str(tick),'min_order_size':str(minimum),'observed_at':db_now(db).isoformat()})
-        except Exception:return auth.error(request,503,'BOOK_UNAVAILABLE','订单簿暂不可用')
+        except Exception:
+            log.exception('book_unavailable outcome_id=%s',outcome_id)
+            return auth.error(request,503,'BOOK_UNAVAILABLE','订单簿暂不可用')
 
 
 class AttachOrder(BaseModel):
@@ -314,6 +319,7 @@ def reconcile_candidates(request:Request,intent_id:uuid.UUID):
                 if valid:candidates.append({'order_id':str(order.id),'created_at':order.created_at.isoformat(),'status':str(order.status)})
             return ok(request,{'items':candidates,'truncated':truncated,'scope':'open_orders_only','notice':'候选仅表示参数相似，不证明是本次订单；请到 Polymarket 独立核实。'})
         except Exception:
+            log.exception('reconcile_candidates_failed intent_id=%s',intent_id)
             return auth.error(request,503,'RECONCILE_UNAVAILABLE','无法查询候选订单')
 
 
@@ -334,7 +340,9 @@ def attach_order(request:Request,intent_id:uuid.UUID,body:AttachOrder):
             with Gateway(request.app.state.settings,wallet) as gateway: order=gateway.get_order(order_id)
             valid,_=order_matches(intent,market,outcome,order,order_id=order_id,require_time=True)
             if not valid:return auth.error(request,409,'ORDER_EVIDENCE_MISMATCH','订单信息不匹配，不能关联')
-        except Exception:return auth.error(request,503,'RECONCILE_UNAVAILABLE','无法核对交易所订单')
+        except Exception:
+            log.exception('attach_order_check_failed intent_id=%s',intent_id)
+            return auth.error(request,503,'RECONCILE_UNAVAILABLE','无法核对交易所订单')
     try:
         with Session(engine) as db,db.begin():
             job=db.scalar(select(Job).where(Job.trade_intent_id==intent_id).with_for_update())
@@ -365,6 +373,7 @@ def fills(request:Request,intent_id:uuid.UUID):
             with Gateway(request.app.state.settings,wallet) as gateway:
                 records,truncated=gateway.fills(outcome.asset_id,market.condition_id,intent.external_order_id,intent.side,intent.wallet_address,intent.requested_size)
         except Exception:
+            log.exception('fills_unavailable intent_id=%s',intent_id)
             return auth.error(request,503,'FILLS_UNAVAILABLE','成交记录暂不可用')
     with Session(engine) as db,db.begin():
         db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:key))'),{'key':'trade-fills:'+str(intent_id)})

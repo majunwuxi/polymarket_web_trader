@@ -6,6 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from sqlalchemy import text
@@ -57,7 +58,7 @@ def create_app() -> FastAPI:
         public = {"/api/v1/health/live", "/api/v1/auth/csrf", "/api/v1/auth/login"}
         try:
             if path.startswith("/api/v1/"):
-                session = None if path in public else auth.get_session(request)
+                session = None if path in public else await run_in_threadpool(auth.get_session, request)
                 request.state.admin_session = session
                 if path not in public and session is None:
                     response = auth.error(request, 401, "UNAUTHENTICATED", "请先登录")
@@ -70,7 +71,7 @@ def create_app() -> FastAPI:
         except Exception as exc:
             # 未捕获异常必须记录完整堆栈，否则下单 503 只剩类型名，无法定位真实原因。
             logger.exception("request_failed request_id=%s method=%s path=%s", request_id, request.method, path)
-            response = auth.error(request, 503, "SERVICE_UNAVAILABLE", "服务暂不可用（"+type(exc).__name__+"）")
+            response = auth.error(request, 503, "SERVICE_UNAVAILABLE", "服务暂不可用，请提供请求编号 "+request_id+" 以便排查")
         if path.startswith("/api/v1/auth/"):
             response.headers["Cache-Control"] = "no-store"
         response.headers["X-Request-ID"] = request_id

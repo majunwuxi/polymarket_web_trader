@@ -161,3 +161,20 @@ def test_worker_football_passes_verified_aliases(monkeypatch):
     assert request.state=='needs_review' and request.last_error_code is None
     assert captured['home_aliases']=={'North Macedonia'}
     assert captured['away_aliases']=={'Slovenia'}
+
+
+@pytest.mark.parametrize(('home', 'away', 'api_home', 'api_away'), [
+    ('Real Racing Club', 'Real Sociedad de Fútbol', 'Racing Santander', 'Real Sociedad'),
+    ('Olympique de Marseille', 'Le Mans FC', 'Marseille', 'Le Mans'),
+    ('CA Rosario Central', 'CA Gimnasia y Esgrima de Mendoza', 'Rosario Central', 'Gimnasia M.'),
+])
+def test_football_catalog_matches_reported_team_aliases(home, away, api_home, api_away):
+    rows = [fixture('1', api_home, api_away)]
+    assert match_fixture_candidates('football', START, home, away, rows) == rows
+
+
+def test_mendoza_alias_never_matches_gimnasia_la_plata():
+    rows = [fixture('1', 'Rosario Central', 'Gimnasia L.P.')]
+    assert match_fixture_candidates(
+        'football', START, 'CA Rosario Central', 'CA Gimnasia y Esgrima de Mendoza', rows
+    ) == []

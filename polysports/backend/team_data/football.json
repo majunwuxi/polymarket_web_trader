@@ -3214,6 +3214,18 @@
       "CA Central Córdoba"
     ]
   },
+  "1066": {
+    "name_en": "Gimnasia M.",
+    "name_zh": "门多萨体操",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/1066.png",
+    "leagues": "ARG_A",
+    "aliases": [
+      "CA Gimnasia y Esgrima de Mendoza",
+      "Gimnasia Mendoza",
+      "Gimnasia de Mendoza"
+    ]
+  },
   "1090": {
     "name_en": "Norway",
     "name_zh": "挪威",
@@ -3517,6 +3529,16 @@
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/1297.png",
     "leagues": "LIGUE2"
+  },
+  "1298": {
+    "name_en": "Le Mans",
+    "name_zh": "勒芒",
+    "country": "France",
+    "logo": "https://media.api-sports.io/football/teams/1298.png",
+    "leagues": "LIGUE1",
+    "aliases": [
+      "Le Mans FC"
+    ]
   },
   "1299": {
     "name_en": "Boulogne",
@@ -3962,6 +3984,17 @@
     "country": "Malta",
     "logo": "https://media.api-sports.io/football/teams/4626.png",
     "leagues": "UCL"
+  },
+  "4665": {
+    "name_en": "Racing Santander",
+    "name_zh": "桑坦德竞技",
+    "country": "Spain",
+    "logo": "https://media.api-sports.io/football/teams/4665.png",
+    "leagues": "LALIGA",
+    "aliases": [
+      "Real Racing Club",
+      "Real Racing Club de Santander"
+    ]
   },
   "4716": {
     "name_en": "Casa Pia",

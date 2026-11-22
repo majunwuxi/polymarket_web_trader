@@ -1,273 +1,534 @@
 from __future__ import annotations
-import base64,hashlib,hmac,json,logging,re,uuid
+
+import base64
+import hashlib
+import hmac
+import json
+import logging
+import re
+import uuid
 from datetime import timedelta
 from decimal import Decimal, localcontext
-from sqlalchemy import select, func
+
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
 from .close_policy import assert_close_allowed, close_decision, game_result_state
 from .config import Settings
 from .market_api import wallet_id
 from .markets import valid_link
-from .models import Game,Job,MarketLink,MarketOutcome,PolyEvent,PolyMarket,ResultBindingRequest,Team,TradeFill,TradeIntent,TradeStateEvent,TradeSubmission
+from .models import (
+    Game,
+    Job,
+    MarketLink,
+    MarketOutcome,
+    PolyEvent,
+    PolyMarket,
+    ResultBindingRequest,
+    Team,
+    TradeFill,
+    TradeIntent,
+    TradeStateEvent,
+    TradeSubmission,
+)
 from .order_resolution import judge_score_detail
 from .pnl import single_pnl
 from .prefetch import objects_by_id
-from .scheduler import db_now,watch_game
-from .trading_gateway import Gateway,TradingError,finite_decimal,restriction
+from .scheduler import db_now, watch_game
+from .trading_gateway import Gateway, TradingError, finite_decimal, restriction
 
-PREVIEW_SECONDS=30
-log=logging.getLogger('polysports.trading')
+PREVIEW_SECONDS = 30
+log = logging.getLogger('polysports.trading')
 
 
 def canonical(number: Decimal) -> str:
-    text=format(number,'f')
+    text = format(number, 'f')
     return text.rstrip('0').rstrip('.') if '.' in text else text
 
 
-def exact_notional(price,size):
+def exact_notional(price, size):
     with localcontext() as ctx:
-        ctx.prec=80
-        return price*size
+        ctx.prec = 80
+        return price * size
 
 
-def wallet_for(settings:Settings,ident:uuid.UUID):
-    value=next((w for w in settings.wallets if wallet_id(w.wallet_address)==ident),None)
-    if value is None: raise TradingError('wallet_not_found','未找到已配置的钱包')
+def wallet_for(settings: Settings, ident: uuid.UUID):
+    value = next((w for w in settings.wallets if wallet_id(w.wallet_address) == ident), None)
+    if value is None:
+        raise TradingError('wallet_not_found', '未找到已配置的钱包')
     return value
 
 
 def normalize(body):
-    price=finite_decimal(body.limit_price,'价格');size=finite_decimal(body.size,'份额')
-    data={'wallet_id':str(body.wallet_id),'market_link_id':str(body.market_link_id),'outcome_id':str(body.outcome_id),'side':body.side,'limit_price':canonical(price),'size':canonical(size)}
-    order_type=getattr(body,'order_type','GTC');parent=getattr(body,'parent_trade_id',None)
-    if order_type=='FOK':
-        if body.side!='SELL' or parent is None:raise TradingError('invalid_amount','立即平仓需要原买入订单和卖出方向')
-        data.update({'order_type':'FOK','parent_trade_id':str(parent)})
-    elif order_type!='GTC' or parent is not None:raise TradingError('invalid_amount','订单类型与来源不一致')
-    return data,price,size
+    price = finite_decimal(body.limit_price, '价格')
+    size = finite_decimal(body.size, '份额')
+    data = {
+        'wallet_id': str(body.wallet_id),
+        'market_link_id': str(body.market_link_id),
+        'outcome_id': str(body.outcome_id),
+        'side': body.side,
+        'limit_price': canonical(price),
+        'size': canonical(size),
+    }
+    order_type = getattr(body, 'order_type', 'GTC')
+    parent = getattr(body, 'parent_trade_id', None)
+    if order_type == 'FOK':
+        if body.side != 'SELL' or parent is None:
+            raise TradingError('invalid_amount', '立即平仓需要原买入订单和卖出方向')
+        data.update({'order_type': 'FOK', 'parent_trade_id': str(parent)})
+    elif order_type != 'GTC' or parent is not None:
+        raise TradingError('invalid_amount', '订单类型与来源不一致')
+    return data, price, size
 
 
-def verify_close_origin(db,body,size):
-    if getattr(body,'order_type','GTC')!='FOK':return
-    original=db.get(TradeIntent,body.parent_trade_id)
-    if not original or original.side!='BUY' or original.matched_size is None or original.matched_size<=0:
-        raise TradingError('position_unavailable','原订单没有可核实的买入成交')
-    if (original.wallet_id!=body.wallet_id or original.market_link_id!=body.market_link_id or original.outcome_id!=body.outcome_id):
-        raise TradingError('position_mismatch','平仓钱包或资产与原订单不一致')
-    active=db.scalar(select(TradeIntent.id).where(TradeIntent.parent_trade_id==original.id,TradeIntent.state.in_(['submitting','pending','partially_filled','unknown'])).limit(1))
-    if active:raise TradingError('duplicate_unresolved','原订单已有未解决的平仓请求')
-    sold=db.scalar(select(func.coalesce(func.sum(TradeIntent.matched_size),0)).where(TradeIntent.parent_trade_id==original.id,TradeIntent.state.in_(['filled','cancelled'])))
+def verify_close_origin(db, body, size):
+    if getattr(body, 'order_type', 'GTC') != 'FOK':
+        return
+    original = db.get(TradeIntent, body.parent_trade_id)
+    if not original or original.side != 'BUY' or original.matched_size is None or original.matched_size <= 0:
+        raise TradingError('position_unavailable', '原订单没有可核实的买入成交')
+    if (
+        original.wallet_id != body.wallet_id
+        or original.market_link_id != body.market_link_id
+        or original.outcome_id != body.outcome_id
+    ):
+        raise TradingError('position_mismatch', '平仓钱包或资产与原订单不一致')
+    active = db.scalar(
+        select(TradeIntent.id)
+        .where(
+            TradeIntent.parent_trade_id == original.id,
+            TradeIntent.state.in_(['submitting', 'pending', 'partially_filled', 'unknown']),
+        )
+        .limit(1)
+    )
+    if active:
+        raise TradingError('duplicate_unresolved', '原订单已有未解决的平仓请求')
+    sold = db.scalar(
+        select(func.coalesce(func.sum(TradeIntent.matched_size), 0)).where(
+            TradeIntent.parent_trade_id == original.id, TradeIntent.state.in_(['filled', 'cancelled'])
+        )
+    )
     with localcontext() as context:
-        context.prec=90
-        remaining=original.matched_size-sold
-    if size>remaining:raise TradingError('position_unavailable','平仓份额超过原订单未平仓的已成交数量')
+        context.prec = 90
+        remaining = original.matched_size - sold
+    if size > remaining:
+        raise TradingError('position_unavailable', '平仓份额超过原订单未平仓的已成交数量')
 
 
-def fingerprint(data): return hashlib.sha256(json.dumps(data,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+def fingerprint(data):
+    return hashlib.sha256(json.dumps(data, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def encode_token(settings,payload):
-    value=base64.urlsafe_b64encode(json.dumps(payload,sort_keys=True,separators=(',',':')).encode()).decode().rstrip('=')
-    signature=hmac.new(settings.auth_secret.get_secret_value().encode(),('single-preview:'+value).encode(),hashlib.sha256).hexdigest()
-    return value+'.'+signature
+def encode_token(settings, payload):
+    value = (
+        base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode())
+        .decode()
+        .rstrip('=')
+    )
+    signature = hmac.new(
+        settings.auth_secret.get_secret_value().encode(), ('single-preview:' + value).encode(), hashlib.sha256
+    ).hexdigest()
+    return value + '.' + signature
 
 
-def decode_token(settings,token):
+def decode_token(settings, token):
     try:
-        encoded,signature=token.split('.',1)
-        expected=hmac.new(settings.auth_secret.get_secret_value().encode(),('single-preview:'+encoded).encode(),hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature,expected): raise ValueError()
-        value=json.loads(base64.urlsafe_b64decode(encoded+'='*(-len(encoded)%4)))
-        if not isinstance(value,dict): raise ValueError()
+        encoded, signature = token.split('.', 1)
+        expected = hmac.new(
+            settings.auth_secret.get_secret_value().encode(), ('single-preview:' + encoded).encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError()
+        value = json.loads(base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4)))
+        if not isinstance(value, dict):
+            raise ValueError()  # noqa: TRY004 — 由下方 except 统一转为 preview_stale
         return value
-    except Exception as exc: raise TradingError('preview_stale','预览无效或已过期，请重新预览') from exc
+    except Exception as exc:
+        raise TradingError('preview_stale', '预览无效或已过期，请重新预览') from exc
 
 
-def resolve(db,body,closing=False):
+def resolve(db, body, closing=False):
     """开仓要求赛事映射在 15 分钟内确认；平仓只核对持仓的市场与资产身份。"""
-    link=db.get(MarketLink,body.market_link_id)
-    outcome=db.get(MarketOutcome,body.outcome_id)
-    if not link or not outcome or link.market_id!=outcome.market_id: raise TradingError('mapping_invalid','市场映射不存在')
-    market=db.get(PolyMarket,link.market_id)
-    if not market or market.accepting_orders is not True or market.protocol_version not in ('v1','v2') or outcome.asset_kind!=('position' if market.protocol_version=='v2' else 'ctf_token'):
-        raise TradingError('market_unavailable','市场不可接单或协议未核实')
+    link = db.get(MarketLink, body.market_link_id)
+    outcome = db.get(MarketOutcome, body.outcome_id)
+    if not link or not outcome or link.market_id != outcome.market_id:
+        raise TradingError('mapping_invalid', '市场映射不存在')
+    market = db.get(PolyMarket, link.market_id)
+    if (
+        not market
+        or market.accepting_orders is not True
+        or market.protocol_version not in ('v1', 'v2')
+        or outcome.asset_kind != ('position' if market.protocol_version == 'v2' else 'ctf_token')
+    ):
+        raise TradingError('market_unavailable', '市场不可接单或协议未核实')
     if closing:
         # 已结算或赛果已确认的持仓不能平仓；界面按钮之外再做一次硬校验。
-        assert_close_allowed(db,db.get(Game,link.game_id),market)
-    elif not valid_link(db,link):
-        raise TradingError('mapping_invalid','赛事映射未确认或已过期')
-    return link,market,outcome
+        assert_close_allowed(db, db.get(Game, link.game_id), market)
+    elif not valid_link(db, link):
+        raise TradingError('mapping_invalid', '赛事映射未确认或已过期')
+    return link, market, outcome
 
 
-def event_for_inspection(db,link,market):
-    event=db.get(PolyEvent,market.poly_event_id)
+def event_for_inspection(db, link, market):
+    event = db.get(PolyEvent, market.poly_event_id)
     if event is not None:
-        event._expected_source_game_id=link.evidence.get('source_game_id')
+        event._expected_source_game_id = link.evidence.get('source_game_id')
     return event
 
 
-def inspection_event(db,link,market,closing):
+def inspection_event(db, link, market, closing):
     """平仓跳过 Gamma 赛事核对：持仓身份由真实盘口、余额与原订单核验，不依赖赛事映射。"""
-    if closing: return None
-    event=event_for_inspection(db,link,market)
-    if event is None: raise TradingError('market_unavailable','市场来源不可用')
+    if closing:
+        return None
+    event = event_for_inspection(db, link, market)
+    if event is None:
+        raise TradingError('market_unavailable', '市场来源不可用')
     return event
 
 
-def prepare(engine,settings,body,gateway_cls=Gateway):
-    data,price,size=normalize(body);wallet=wallet_for(settings,body.wallet_id)
-    closing=getattr(body,'order_type',None)=='FOK'
+def prepare(engine, settings, body, gateway_cls=Gateway):
+    data, price, size = normalize(body)
+    wallet = wallet_for(settings, body.wallet_id)
+    closing = getattr(body, 'order_type', None) == 'FOK'
     with Session(engine) as db:
-        verify_close_origin(db,body,size)
-        link,market,outcome=resolve(db,body,closing)
-        game_id=link.game_id
-        event=inspection_event(db,link,market,closing)
-        with gateway_cls(settings,wallet) as gateway: context=gateway.inspect(market,outcome,body.side,price,size,event)
-        if not context.get('hash'): raise TradingError('book_unavailable','订单簿缺少有效版本标识')
-        now=db_now(db)
-    token=encode_token(settings,{'fingerprint':fingerprint(data),'book_hash':context['hash'],'expires_at':int((now+timedelta(seconds=PREVIEW_SECONDS)).timestamp())})
-    return {'preview_token':token,'expires_at':(now+timedelta(seconds=PREVIEW_SECONDS)).isoformat(),'game_id':str(game_id),**data,'estimated_notional':canonical(exact_notional(price,size)),'fee_estimate':None,'book_observed_at':now.isoformat(),'tick_size':context['tick'],'min_order_size':context['minimum'],'balance':context['balance'],'allowance_status':context['allowance_status'],'warnings':['真实资金订单；接受不代表成交']}
+        verify_close_origin(db, body, size)
+        link, market, outcome = resolve(db, body, closing)
+        game_id = link.game_id
+        event = inspection_event(db, link, market, closing)
+        with gateway_cls(settings, wallet) as gateway:
+            context = gateway.inspect(market, outcome, body.side, price, size, event)
+        if not context.get('hash'):
+            raise TradingError('book_unavailable', '订单簿缺少有效版本标识')
+        now = db_now(db)
+    token = encode_token(
+        settings,
+        {
+            'fingerprint': fingerprint(data),
+            'book_hash': context['hash'],
+            'expires_at': int((now + timedelta(seconds=PREVIEW_SECONDS)).timestamp()),
+        },
+    )
+    return {
+        'preview_token': token,
+        'expires_at': (now + timedelta(seconds=PREVIEW_SECONDS)).isoformat(),
+        'game_id': str(game_id),
+        **data,
+        'estimated_notional': canonical(exact_notional(price, size)),
+        'fee_estimate': None,
+        'book_observed_at': now.isoformat(),
+        'tick_size': context['tick'],
+        'min_order_size': context['minimum'],
+        'balance': context['balance'],
+        'allowance_status': context['allowance_status'],
+        'warnings': ['真实资金订单；接受不代表成交'],
+    }
 
 
-def get_existing(db,wallet,request_id,fp):
-    intent=db.scalar(select(TradeIntent).where(TradeIntent.wallet_id==wallet,TradeIntent.client_request_id==request_id))
-    if intent and intent.request_fingerprint!=fp: raise TradingError('idempotency_conflict','同一幂等键对应不同订单参数')
+def get_existing(db, wallet, request_id, fp):
+    intent = db.scalar(
+        select(TradeIntent).where(TradeIntent.wallet_id == wallet, TradeIntent.client_request_id == request_id)
+    )
+    if intent and intent.request_fingerprint != fp:
+        raise TradingError('idempotency_conflict', '同一幂等键对应不同订单参数')
     return intent
 
 
-def prefetch_intents(db,intents):
-    intents=list(intents)
-    if not intents: return {}
-    game_ids={intent.game_id for intent in intents}
-    link_ids={intent.market_link_id for intent in intents}
-    outcome_ids={intent.outcome_id for intent in intents}
-    games=objects_by_id(db,Game,game_ids)
-    links=objects_by_id(db,MarketLink,link_ids)
-    markets=objects_by_id(db,PolyMarket,{link.market_id for link in links.values()})
-    outcomes=objects_by_id(db,MarketOutcome,outcome_ids)
-    teams=objects_by_id(db,Team,
-                        {game.home_team_id for game in games.values()} |
-                        {game.away_team_id for game in games.values()})
-    bindings={binding.game_id:binding for binding in db.scalars(select(ResultBindingRequest).where(ResultBindingRequest.game_id.in_(game_ids)))} if game_ids else {}
-    result={}
+def prefetch_intents(db, intents):
+    intents = list(intents)
+    if not intents:
+        return {}
+    game_ids = {intent.game_id for intent in intents}
+    link_ids = {intent.market_link_id for intent in intents}
+    outcome_ids = {intent.outcome_id for intent in intents}
+    games = objects_by_id(db, Game, game_ids)
+    links = objects_by_id(db, MarketLink, link_ids)
+    markets = objects_by_id(db, PolyMarket, {link.market_id for link in links.values()})
+    outcomes = objects_by_id(db, MarketOutcome, outcome_ids)
+    teams = objects_by_id(
+        db, Team, {game.home_team_id for game in games.values()} | {game.away_team_id for game in games.values()}
+    )
+    bindings = (
+        {
+            binding.game_id: binding
+            for binding in db.scalars(select(ResultBindingRequest).where(ResultBindingRequest.game_id.in_(game_ids)))
+        }
+        if game_ids
+        else {}
+    )
+    result = {}
     for intent in intents:
-        link=links.get(intent.market_link_id);game=games.get(intent.game_id)
-        result[intent.id]={'game':game,'link':link,'market':markets.get(link.market_id) if link else None,
-                           'outcome':outcomes.get(intent.outcome_id),
-                           'home':teams.get(game.home_team_id) if game else None,
-                           'away':teams.get(game.away_team_id) if game else None,
-                           'binding':bindings.get(intent.game_id)}
+        link = links.get(intent.market_link_id)
+        game = games.get(intent.game_id)
+        result[intent.id] = {
+            'game': game,
+            'link': link,
+            'market': markets.get(link.market_id) if link else None,
+            'outcome': outcomes.get(intent.outcome_id),
+            'home': teams.get(game.home_team_id) if game else None,
+            'away': teams.get(game.away_team_id) if game else None,
+            'binding': bindings.get(intent.game_id),
+        }
     return result
 
 
-def as_data(intent,db=None,fills=None,related=None):
-    value={'id':str(intent.id),'wallet_id':str(intent.wallet_id),'game_id':str(intent.game_id),'market_link_id':str(intent.market_link_id),'outcome_id':str(intent.outcome_id),'side':intent.side,'order_type':intent.order_type,'parent_trade_id':str(intent.parent_trade_id) if intent.parent_trade_id else None,'limit_price':canonical(intent.limit_price),'size':canonical(intent.requested_size),'state':intent.state,'external_order_id':intent.external_order_id,'matched_size':canonical(intent.matched_size) if intent.matched_size is not None else None,'cancel_state':intent.cancel_state,'error_code':intent.error_code,'retry_after_seconds':intent.retry_after_seconds,'created_at':intent.created_at.isoformat(),'updated_at':intent.updated_at.isoformat()}
+def as_data(intent, db=None, fills=None, related=None):
+    value = {
+        'id': str(intent.id),
+        'wallet_id': str(intent.wallet_id),
+        'game_id': str(intent.game_id),
+        'market_link_id': str(intent.market_link_id),
+        'outcome_id': str(intent.outcome_id),
+        'side': intent.side,
+        'order_type': intent.order_type,
+        'parent_trade_id': str(intent.parent_trade_id) if intent.parent_trade_id else None,
+        'limit_price': canonical(intent.limit_price),
+        'size': canonical(intent.requested_size),
+        'state': intent.state,
+        'external_order_id': intent.external_order_id,
+        'matched_size': canonical(intent.matched_size) if intent.matched_size is not None else None,
+        'cancel_state': intent.cancel_state,
+        'error_code': intent.error_code,
+        'retry_after_seconds': intent.retry_after_seconds,
+        'created_at': intent.created_at.isoformat(),
+        'updated_at': intent.updated_at.isoformat(),
+    }
     if db:
         if related is not None:
-            game=related.get('game');link=related.get('link');market=related.get('market');outcome=related.get('outcome')
-            home=related.get('home');away=related.get('away');binding=related.get('binding')
-            finished=game.status=='finished'
-            verified=bool(binding and binding.state=='bound' and finished
-                          and game.home_score is not None and game.away_score is not None)
+            game = related.get('game')
+            link = related.get('link')
+            market = related.get('market')
+            outcome = related.get('outcome')
+            home = related.get('home')
+            away = related.get('away')
+            binding = related.get('binding')
+            finished = game.status == 'finished'
+            verified = bool(
+                binding
+                and binding.state == 'bound'
+                and finished
+                and game.home_score is not None
+                and game.away_score is not None
+            )
         else:
-            game=db.get(Game,intent.game_id);link=db.get(MarketLink,intent.market_link_id);market=db.get(PolyMarket,link.market_id);outcome=db.get(MarketOutcome,intent.outcome_id)
-            home=db.get(Team,game.home_team_id);away=db.get(Team,game.away_team_id)
-            finished,verified=game_result_state(db,game)
-        blocked,reason=close_decision(score_verified=verified,accepting_orders=market.accepting_orders)
-        won,basis=judge_score_detail(sport=game.sport,question=market.question,outcome_label=outcome.label,
-            home=getattr(home,'source_name',None),away=getattr(away,'source_name',None),
-            home_score=game.home_score if verified else None,away_score=game.away_score if verified else None,
-            provider_status=game.provider_status) if verified else (None,'外部赛果尚未绑定核实或比分未确认')
-        value.update({'home':home.name_zh or home.source_name,'away':away.name_zh or away.source_name,'starts_at':game.starts_at.isoformat(),'market_question':market.question,'outcome_label':outcome.label,
-                      'game_finished':finished,'score_verified':verified,'result_won':won,'result_basis':basis,
-                      'close_blocked':blocked,'close_block_reason':reason})
+            game = db.get(Game, intent.game_id)
+            link = db.get(MarketLink, intent.market_link_id)
+            market = db.get(PolyMarket, link.market_id)
+            outcome = db.get(MarketOutcome, intent.outcome_id)
+            home = db.get(Team, game.home_team_id)
+            away = db.get(Team, game.away_team_id)
+            finished, verified = game_result_state(db, game)
+        blocked, reason = close_decision(score_verified=verified, accepting_orders=market.accepting_orders)
+        won, basis = (
+            judge_score_detail(
+                sport=game.sport,
+                question=market.question,
+                outcome_label=outcome.label,
+                home=getattr(home, 'source_name', None),
+                away=getattr(away, 'source_name', None),
+                home_score=game.home_score if verified else None,
+                away_score=game.away_score if verified else None,
+                provider_status=game.provider_status,
+            )
+            if verified
+            else (None, '外部赛果尚未绑定核实或比分未确认')
+        )
+        value.update(
+            {
+                'home': home.name_zh or home.source_name,
+                'away': away.name_zh or away.source_name,
+                'starts_at': game.starts_at.isoformat(),
+                'market_question': market.question,
+                'outcome_label': outcome.label,
+                'game_finished': finished,
+                'score_verified': verified,
+                'result_won': won,
+                'result_basis': basis,
+                'close_blocked': blocked,
+                'close_block_reason': reason,
+            }
+        )
         if fills is None:
-            fills=[{'size':x.size,'price':x.price,'status':x.status} for x in db.scalars(select(TradeFill).where(TradeFill.intent_id==intent.id))]
-        value['pnl']=single_pnl(side=intent.side,matched_size=intent.matched_size,
-            limit_price=intent.limit_price,result_won=won,fills=fills,score_verified=verified)
+            fills = [
+                {'size': x.size, 'price': x.price, 'status': x.status}
+                for x in db.scalars(select(TradeFill).where(TradeFill.intent_id == intent.id))
+            ]
+        value['pnl'] = single_pnl(
+            side=intent.side,
+            matched_size=intent.matched_size,
+            limit_price=intent.limit_price,
+            result_won=won,
+            fills=fills,
+            score_verified=verified,
+        )
     return value
 
 
-def save_result(engine,intent_id,state,code=None,order_id=None,retry_after=None):
+def save_result(engine, intent_id, state, code=None, order_id=None, retry_after=None):
     with Session(engine) as db, db.begin():
-        job=db.scalar(select(Job).where(Job.trade_intent_id==intent_id).with_for_update())
-        intent=db.scalar(select(TradeIntent).where(TradeIntent.id==intent_id).with_for_update())
-        if not intent or intent.state not in ('submitting','unknown'): return
-        now=db_now(db); intent.state=state;intent.external_order_id=order_id;intent.error_code=code;intent.retry_after_seconds=retry_after;intent.updated_at=now
-        submission=db.scalar(select(TradeSubmission).where(TradeSubmission.intent_id==intent_id).with_for_update())
-        submission.state=state;submission.error_code=code;submission.finished_at=now
-        db.add(TradeStateEvent(id=uuid.uuid4(),intent_id=intent.id,state=state,code=code))
-        if state=='pending' and order_id:
+        job = db.scalar(select(Job).where(Job.trade_intent_id == intent_id).with_for_update())
+        intent = db.scalar(select(TradeIntent).where(TradeIntent.id == intent_id).with_for_update())
+        if not intent or intent.state not in ('submitting', 'unknown'):
+            return
+        now = db_now(db)
+        intent.state = state
+        intent.external_order_id = order_id
+        intent.error_code = code
+        intent.retry_after_seconds = retry_after
+        intent.updated_at = now
+        submission = db.scalar(select(TradeSubmission).where(TradeSubmission.intent_id == intent_id).with_for_update())
+        submission.state = state
+        submission.error_code = code
+        submission.finished_at = now
+        db.add(TradeStateEvent(id=uuid.uuid4(), intent_id=intent.id, state=state, code=code))
+        if state == 'pending' and order_id:
             from .result_binding import request_binding_for_accepted_order
-            request_binding_for_accepted_order(db,intent.game_id)
-        if job and job.status=='pending':
-            if state=='rejected': job.status='done'
-            else: job.due_at=now+timedelta(seconds=30)
+
+            request_binding_for_accepted_order(db, intent.game_id)
+        if job and job.status == 'pending':
+            if state == 'rejected':
+                job.status = 'done'
+            else:
+                job.due_at = now + timedelta(seconds=30)
 
 
-def execute(engine,settings,body,request_id:uuid.UUID,gateway_cls=Gateway):
-    data,price,size=normalize(body);fp=fingerprint(data);wallet=wallet_for(settings,body.wallet_id)
-    closing=getattr(body,'order_type',None)=='FOK'
+def _record_intent(engine, body, wallet, request_id, fp, link, token, price, size, closing):
+    """在单个事务内锁定相关记录、复核映射与平仓来源，并写入 submitting 状态的订单意图。
+
+    返回 (intent_id, created)。命中同一幂等键的已有订单时 created=False。
+    """
+    try:
+        with Session(engine) as tx, tx.begin():
+            existing = get_existing(tx, body.wallet_id, request_id, fp)
+            if existing:
+                return existing.id, False
+            tx.scalar(select(Game).where(Game.id == link.game_id).with_for_update())
+            tx.scalar(select(PolyMarket).where(PolyMarket.id == link.market_id).with_for_update())
+            tx.scalar(select(MarketLink).where(MarketLink.id == body.market_link_id).with_for_update())
+            if getattr(body, 'parent_trade_id', None):
+                tx.scalar(select(TradeIntent).where(TradeIntent.id == body.parent_trade_id).with_for_update())
+            verified, _, _ = resolve(tx, body, closing)
+            verify_close_origin(tx, body, size)
+            now = db_now(tx)
+            # 一步式下单没有预览令牌（token=None），过期复检只适用于带令牌的旧两步流程。
+            if token and token['expires_at'] <= int(now.timestamp()):
+                raise TradingError('preview_stale', '预览已过期，请重新预览')
+            intent = TradeIntent(
+                id=uuid.uuid4(),
+                wallet_id=body.wallet_id,
+                wallet_address=wallet.wallet_address,
+                client_request_id=request_id,
+                request_fingerprint=fp,
+                game_id=verified.game_id,
+                market_link_id=verified.id,
+                outcome_id=body.outcome_id,
+                side=body.side,
+                limit_price=price,
+                requested_size=size,
+                state='submitting',
+                order_type=getattr(body, 'order_type', 'GTC'),
+                parent_trade_id=getattr(body, 'parent_trade_id', None),
+            )
+            tx.add(intent)
+            tx.flush()
+            game = tx.get(Game, intent.game_id)
+            if game and game.provider != 'polymarket':
+                watch_game(tx, intent.game_id)
+            tx.add(TradeSubmission(id=uuid.uuid4(), intent_id=intent.id, state='submitting'))
+            tx.add(TradeStateEvent(id=uuid.uuid4(), intent_id=intent.id, state='submitting'))
+            tx.add(
+                Job(
+                    id=uuid.uuid4(),
+                    kind='trade_reconcile',
+                    dedupe_key='trade:' + str(intent.id),
+                    trade_intent_id=intent.id,
+                    due_at=now + timedelta(seconds=60),
+                    status='pending',
+                )
+            )
+            return intent.id, True
+    except IntegrityError as exc:
+        with Session(engine) as lookup:
+            existing = get_existing(lookup, body.wallet_id, request_id, fp)
+            if existing:
+                return existing.id, False
+            active = lookup.scalar(
+                select(TradeIntent).where(
+                    TradeIntent.wallet_id == body.wallet_id,
+                    TradeIntent.request_fingerprint == fp,
+                    TradeIntent.state.in_(['submitting', 'pending', 'partially_filled', 'unknown']),
+                )
+            )
+            if active:
+                raise TradingError('duplicate_unresolved', '已有相同参数的未解决订单：' + str(active.id)) from exc
+        raise
+
+
+def _sign_and_submit(engine, gateway, intent_id, outcome, body, price, size):
+    """签名并提交订单，把结果写回订单意图。结果不确定时记为 unknown，交给对账任务处理。"""
+    try:
+        signed = (
+            gateway.sign_fok(outcome, body.side, price, size)
+            if getattr(body, 'order_type', 'GTC') == 'FOK'
+            else gateway.sign(outcome, body.side, price, size)
+        )
+    except TradingError as exc:
+        save_result(engine, intent_id, 'rejected', exc.code, retry_after=exc.retry_after)
+        return
+    except Exception:
+        log.exception('order_sign_failed intent_id=%s', intent_id)
+        save_result(engine, intent_id, 'rejected', 'sign_failed')
+        return
+    try:
+        response = gateway.post(signed)
+        if getattr(response, 'ok', None) is True and re.fullmatch(
+            r'0x[0-9a-fA-F]{64}', str(getattr(response, 'order_id', ''))
+        ):
+            save_result(engine, intent_id, 'pending', order_id=str(response.order_id).lower())
+        elif getattr(response, 'ok', None) is False:
+            save_result(engine, intent_id, 'rejected', code=str(getattr(response, 'code', 'rejected'))[:80])
+        else:
+            save_result(engine, intent_id, 'unknown', 'response_unknown')
+    except Exception as exc:
+        log.exception('order_post_failed intent_id=%s', intent_id)
+        problem = restriction(exc)
+        if problem:
+            save_result(engine, intent_id, 'rejected', problem.code, retry_after=problem.retry_after)
+        else:
+            save_result(engine, intent_id, 'unknown', 'submission_unknown')
+
+
+def execute(engine, settings, body, request_id: uuid.UUID, gateway_cls=Gateway):
+    data, price, size = normalize(body)
+    fp = fingerprint(data)
+    wallet = wallet_for(settings, body.wallet_id)
+    closing = getattr(body, 'order_type', None) == 'FOK'
     with Session(engine) as db:
-        existing=get_existing(db,body.wallet_id,request_id,fp)
-        if existing: return existing.id,False
+        existing = get_existing(db, body.wallet_id, request_id, fp)
+        if existing:
+            return existing.id, False
     # 一步式提交不带令牌时，服务端在本次请求内直接核对实时盘口；带令牌时仍按旧流程校验，
     # 保持与「预览 → 提交」旧客户端及既有测试的兼容。
-    token=decode_token(settings,body.preview_token) if getattr(body,'preview_token',None) else None
+    token = decode_token(settings, body.preview_token) if getattr(body, 'preview_token', None) else None
     with Session(engine) as db:
-        now=db_now(db)
-        if token and (token.get('fingerprint')!=fp or type(token.get('expires_at')) is not int or token['expires_at']<=int(now.timestamp())): raise TradingError('preview_stale','预览已过期或订单参数改变')
-        verify_close_origin(db,body,size)
-        link,market,outcome=resolve(db,body,closing)
-        event=inspection_event(db,link,market,closing)
-        with gateway_cls(settings,wallet) as gateway:
-            context=gateway.inspect(market,outcome,body.side,price,size,event)
-            if not context.get('hash'): raise TradingError('book_unavailable','订单簿缺少有效版本标识')
-            if token and context['hash']!=token.get('book_hash'): raise TradingError('preview_stale','盘口变化，请重新预览')
-            try:
-                with Session(engine) as tx, tx.begin():
-                    existing=get_existing(tx,body.wallet_id,request_id,fp)
-                    if existing: return existing.id,False
-                    tx.scalar(select(Game).where(Game.id==link.game_id).with_for_update())
-                    tx.scalar(select(PolyMarket).where(PolyMarket.id==link.market_id).with_for_update())
-                    tx.scalar(select(MarketLink).where(MarketLink.id==body.market_link_id).with_for_update())
-                    if getattr(body,'parent_trade_id',None):
-                        tx.scalar(select(TradeIntent).where(TradeIntent.id==body.parent_trade_id).with_for_update())
-                    verified,_,_=resolve(tx,body,closing)
-                    verify_close_origin(tx,body,size)
-                    now=db_now(tx)
-                    # 一步式下单没有预览令牌（token=None），过期复检只适用于带令牌的旧两步流程。
-                    if token and token['expires_at']<=int(now.timestamp()): raise TradingError('preview_stale','预览已过期，请重新预览')
-                    intent=TradeIntent(id=uuid.uuid4(),wallet_id=body.wallet_id,wallet_address=wallet.wallet_address,client_request_id=request_id,request_fingerprint=fp,game_id=verified.game_id,market_link_id=verified.id,outcome_id=body.outcome_id,side=body.side,limit_price=price,requested_size=size,state='submitting',order_type=getattr(body,'order_type','GTC'),parent_trade_id=getattr(body,'parent_trade_id',None))
-                    tx.add(intent);tx.flush()
-                    game=tx.get(Game,intent.game_id)
-                    if game and game.provider!='polymarket': watch_game(tx,intent.game_id)
-                    tx.add(TradeSubmission(id=uuid.uuid4(),intent_id=intent.id,state='submitting'))
-                    tx.add(TradeStateEvent(id=uuid.uuid4(),intent_id=intent.id,state='submitting'))
-                    tx.add(Job(id=uuid.uuid4(),kind='trade_reconcile',dedupe_key='trade:'+str(intent.id),trade_intent_id=intent.id,due_at=now+timedelta(seconds=60),status='pending'))
-                    intent_id=intent.id
-            except IntegrityError as exc:
-                with Session(engine) as lookup:
-                    existing=get_existing(lookup,body.wallet_id,request_id,fp)
-                    if existing: return existing.id,False
-                    active=lookup.scalar(select(TradeIntent).where(TradeIntent.wallet_id==body.wallet_id,TradeIntent.request_fingerprint==fp,TradeIntent.state.in_(['submitting','pending','partially_filled','unknown'])))
-                    if active: raise TradingError('duplicate_unresolved','已有相同参数的未解决订单：'+str(active.id)) from exc
-                raise
-            try: signed=gateway.sign_fok(outcome,body.side,price,size) if getattr(body,'order_type','GTC')=='FOK' else gateway.sign(outcome,body.side,price,size)
-            except TradingError as exc:
-                save_result(engine,intent_id,'rejected',exc.code,retry_after=exc.retry_after);return intent_id,True
-            except Exception:
-                log.exception('order_sign_failed intent_id=%s',intent_id)
-                save_result(engine,intent_id,'rejected','sign_failed');return intent_id,True
-            try:
-                response=gateway.post(signed)
-                if getattr(response,'ok',None) is True and re.fullmatch(r'0x[0-9a-fA-F]{64}',str(getattr(response,'order_id',''))): save_result(engine,intent_id,'pending',order_id=str(response.order_id).lower())
-                elif getattr(response,'ok',None) is False: save_result(engine,intent_id,'rejected',code=str(getattr(response,'code','rejected'))[:80])
-                else: save_result(engine,intent_id,'unknown','response_unknown')
-            except Exception as exc:
-                log.exception('order_post_failed intent_id=%s',intent_id)
-                problem=restriction(exc)
-                if problem: save_result(engine,intent_id,'rejected',problem.code,retry_after=problem.retry_after)
-                else: save_result(engine,intent_id,'unknown','submission_unknown')
-            return intent_id,True
+        now = db_now(db)
+        if token and (
+            token.get('fingerprint') != fp
+            or type(token.get('expires_at')) is not int
+            or token['expires_at'] <= int(now.timestamp())
+        ):
+            raise TradingError('preview_stale', '预览已过期或订单参数改变')
+        verify_close_origin(db, body, size)
+        link, market, outcome = resolve(db, body, closing)
+        event = inspection_event(db, link, market, closing)
+        with gateway_cls(settings, wallet) as gateway:
+            context = gateway.inspect(market, outcome, body.side, price, size, event)
+            if not context.get('hash'):
+                raise TradingError('book_unavailable', '订单簿缺少有效版本标识')
+            if token and context['hash'] != token.get('book_hash'):
+                raise TradingError('preview_stale', '盘口变化，请重新预览')
+            intent_id, created = _record_intent(engine, body, wallet, request_id, fp, link, token, price, size, closing)
+            if not created:
+                return intent_id, False
+            _sign_and_submit(engine, gateway, intent_id, outcome, body, price, size)
+            return intent_id, True

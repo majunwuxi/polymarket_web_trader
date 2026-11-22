@@ -11,8 +11,10 @@ BUY 单按二元终态赔付（获胜每份 1 pUSD、未获胜 0）减去持仓�
 RFQ 报价里的投入与预计份额估算，并明确标为估算。组合按全中口径结算，实际赔付以
 Polymarket 组合仓位终态为准。
 """
+
 from __future__ import annotations
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
+
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 
 _STEP = Decimal('0.0001')
 
@@ -35,13 +37,29 @@ def _money(value: Decimal) -> str:
 
 
 def _pending(reason):
-    return {'amount': None, 'tone': 'pending', 'label': '盈亏待确认', 'basis': None,
-            'estimated': False, 'detail': reason, 'cost': None, 'payout': None}
+    return {
+        'amount': None,
+        'tone': 'pending',
+        'label': '盈亏待确认',
+        'basis': None,
+        'estimated': False,
+        'detail': reason,
+        'cost': None,
+        'payout': None,
+    }
 
 
 def _not_applicable(reason):
-    return {'amount': None, 'tone': 'na', 'label': '平仓不适用', 'basis': None,
-            'estimated': False, 'detail': reason, 'cost': None, 'payout': None}
+    return {
+        'amount': None,
+        'tone': 'na',
+        'label': '平仓不适用',
+        'basis': None,
+        'estimated': False,
+        'detail': reason,
+        'cost': None,
+        'payout': None,
+    }
 
 
 def _result(*, pnl: Decimal, cost: Decimal, payout: Decimal, basis, estimated, detail):
@@ -49,9 +67,16 @@ def _result(*, pnl: Decimal, cost: Decimal, payout: Decimal, basis, estimated, d
     word = '盈利' if pnl > 0 else '亏损' if pnl < 0 else '持平'
     prefix = '约' if estimated else ''
     label = f'{prefix}{word} {_money(abs(pnl))} pUSD' if tone != 'flat' else f'{prefix}盈亏持平'
-    return {'amount': _money(abs(pnl)), 'tone': tone, 'label': label, 'basis': basis,
-            'estimated': estimated,
-            'detail': detail, 'cost': _money(cost), 'payout': _money(payout)}
+    return {
+        'amount': _money(abs(pnl)),
+        'tone': tone,
+        'label': label,
+        'basis': basis,
+        'estimated': estimated,
+        'detail': detail,
+        'cost': _money(cost),
+        'payout': _money(payout),
+    }
 
 
 def _confirmed_cost(fills, shares: Decimal):
@@ -84,18 +109,21 @@ def single_pnl(*, side, matched_size, limit_price, result_won, fills=None, score
         cost = _confirmed_cost(fills, shares)
         if cost is not None:
             basis, estimated = 'confirmed_fills', False
-            detail = (f'成交成本 {_money(cost)} pUSD（CONFIRMED 成交明细已覆盖 {_money(shares)} 份）'
-                      f' · 终态收入 {_money(payout)} pUSD')
+            detail = (
+                f'成交成本 {_money(cost)} pUSD（CONFIRMED 成交明细已覆盖 {_money(shares)} 份）'
+                f' · 终态收入 {_money(payout)} pUSD'
+            )
         else:
             price = _decimal(limit_price)
             if price is None or price <= 0 or price >= 1:
                 return _pending('缺少可用的 CONFIRMED 成交明细与有效限价，成本无法核算')
             cost = shares * price
             basis, estimated = 'limit_estimate', True
-            detail = (f'未取得完整 CONFIRMED 成交明细，成本按限价 {_money(price)} × '
-                      f'{_money(shares)} 份估算为 {_money(cost)} pUSD；实际成本以成交记录为准')
-        return _result(pnl=payout - cost, cost=cost, payout=payout,
-                       basis=basis, estimated=estimated, detail=detail)
+            detail = (
+                f'未取得完整 CONFIRMED 成交明细，成本按限价 {_money(price)} × '
+                f'{_money(shares)} 份估算为 {_money(cost)} pUSD；实际成本以成交记录为准'
+            )
+        return _result(pnl=payout - cost, cost=cost, payout=payout, basis=basis, estimated=estimated, detail=detail)
 
 
 def combo_pnl(*, direction, by_score, quantity=None, quote=None, fill=None):
@@ -107,18 +135,21 @@ def combo_pnl(*, direction, by_score, quantity=None, quote=None, fill=None):
     fill = fill or {}
     cost = _decimal(fill.get('cost'))
     shares = _decimal(fill.get('size'))
-    confirmed = (fill.get('state') == 'confirmed' and cost is not None and shares is not None
-                 and cost > 0 and shares > 0)
+    confirmed = fill.get('state') == 'confirmed' and cost is not None and shares is not None and cost > 0 and shares > 0
     with localcontext() as context:
         context.prec = 60
         if confirmed:
             payout = shares if by_score else Decimal(0)
-            origin = ('签名接受订单的 makerAmount/takerAmount'
-                      if fill.get('source') == 'signed_order'
-                      else '官方签名报价按 micro-USDC 精度重建的成交金额')
-            detail = (f'成交成本 {_money(cost)} pUSD（{origin}）· 实际份额 {_money(shares)} 份'
-                      f' · 终态收入 {_money(payout)} pUSD；'
-                      f'组合按全中口径结算，不等于链上赎回或实际到账')
+            origin = (
+                '签名接受订单的 makerAmount/takerAmount'
+                if fill.get('source') == 'signed_order'
+                else '官方签名报价按 micro-USDC 精度重建的成交金额'
+            )
+            detail = (
+                f'成交成本 {_money(cost)} pUSD（{origin}）· 实际份额 {_money(shares)} 份'
+                f' · 终态收入 {_money(payout)} pUSD；'
+                f'组合按全中口径结算，不等于链上赎回或实际到账'
+            )
             basis, estimated = 'combo_fill', False
         else:
             quote = quote or {}
@@ -132,9 +163,10 @@ def combo_pnl(*, direction, by_score, quantity=None, quote=None, fill=None):
             if cost is None or cost <= 0 or shares is None or shares <= 0:
                 return _pending('缺少已确认报价的投入或预计份额，组合盈亏无法估算')
             payout = shares if by_score else Decimal(0)
-            detail = (f'该组合尚未落库 CONFIRMED 成交明细；按已确认报价投入 {_money(cost)} pUSD 与预计份额 '
-                      f'{_money(shares)} 份估算，全中收入 {_money(payout)} pUSD；'
-                      f'实际赔付以 Polymarket 组合仓位终态为准')
+            detail = (
+                f'该组合尚未落库 CONFIRMED 成交明细；按已确认报价投入 {_money(cost)} pUSD 与预计份额 '
+                f'{_money(shares)} 份估算，全中收入 {_money(payout)} pUSD；'
+                f'实际赔付以 Polymarket 组合仓位终态为准'
+            )
             basis, estimated = 'quote_estimate', True
-        return _result(pnl=payout - cost, cost=cost, payout=payout,
-                       basis=basis, estimated=estimated, detail=detail)
+        return _result(pnl=payout - cost, cost=cost, payout=payout, basis=basis, estimated=estimated, detail=detail)

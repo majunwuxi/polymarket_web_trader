@@ -1,12 +1,14 @@
 """组合报价的可信字段检查；真实资金执行需管理员显式开启组合开关。"""
+
 from decimal import Decimal, InvalidOperation
+
 from .trading_gateway import TradingError
 
 
 def combo_position_id(quote):
-    value=str(getattr(quote,'position_id',''))
-    if not value.isascii() or not value.isdigit() or len(value)>78 or int(value)>=2**256:
-        raise TradingError('combo_quote_mismatch','组合持仓标识无效')
+    value = str(getattr(quote, 'position_id', ''))
+    if not value.isascii() or not value.isdigit() or len(value) > 78 or int(value) >= 2**256:
+        raise TradingError('combo_quote_mismatch', '组合持仓标识无效')
     return value
 
 
@@ -16,17 +18,18 @@ def verify_quote(quote, *, rfq_id: str, direction: str, quantity: Decimal, now_m
     if type(quote.expires_at) is not int or quote.expires_at <= now_ms:
         raise TradingError('combo_quote_expired', '组合报价已过期')
     try:
-        price=Decimal(quote.blended_price)
-        maker=Decimal(quote.maker_amount)
-        taker=Decimal(quote.taker_amount)
-        required=Decimal(quote.total_required)
-        if any(not x.is_finite() or x <= 0 for x in (price,maker,taker,required)) or price >= 1:
+        price = Decimal(quote.blended_price)
+        maker = Decimal(quote.maker_amount)
+        taker = Decimal(quote.taker_amount)
+        required = Decimal(quote.total_required)
+        if any(not x.is_finite() or x <= 0 for x in (price, maker, taker, required)) or price >= 1:
             raise ValueError()
-        if maker > required:raise TradingError('combo_quote_mismatch', '签名支出超过报价要求')
+        if maker > required:
+            raise TradingError('combo_quote_mismatch', '签名支出超过报价要求')
         if direction == 'BUY' and required > quantity:
             raise TradingError('combo_quote_mismatch', '报价超过确认的预算')
         if direction == 'SELL':
-            net=Decimal(quote.net_receive)
+            net = Decimal(quote.net_receive)
             if not net.is_finite() or net <= 0 or required > quantity:
                 raise TradingError('combo_quote_mismatch', '报价份额或实际收入无效')
     except TradingError:

@@ -1,4 +1,5 @@
 """可赎回资格查询与整仓赎回入口。"""
+
 from __future__ import annotations
 
 import uuid
@@ -24,20 +25,27 @@ def ok(request, data):
 
 
 def failure(request, exc):
-    status = (404 if exc.code == 'not_found'
-              else 403 if exc.code == 'geoblock_blocked'
-              else 409 if exc.code in ('redeem_not_available', 'redeem_in_progress',
-                                       'redeem_result_unknown', 'redeem_approval_required')
-              else 422 if exc.code == 'invalid_amount'
-              else 503)
+    status = (
+        404
+        if exc.code == 'not_found'
+        else 403
+        if exc.code == 'geoblock_blocked'
+        else 409
+        if exc.code
+        in ('redeem_not_available', 'redeem_in_progress', 'redeem_result_unknown', 'redeem_approval_required')
+        else 422
+        if exc.code == 'invalid_amount'
+        else 503
+    )
     return auth.error(request, status, exc.code.upper(), exc.message, delay=exc.retry_after)
 
 
 @router.post('/redemptions/eligibility')
 def redeem_eligibility(request: Request, body: EligibilityBody):
     try:
-        return ok(request, eligibility(request.app.state.engine, request.app.state.settings,
-                                       body.intent_ids, body.combo_ids))
+        return ok(
+            request, eligibility(request.app.state.engine, request.app.state.settings, body.intent_ids, body.combo_ids)
+        )
     except TradingError as exc:
         return failure(request, exc)
 
@@ -54,8 +62,7 @@ def _execute(request, kind, ident, idempotency_key):
         actor_id = request.state.admin_session['admin_id']
         correlation_id = uuid.UUID(request.state.request_id)
         operation = redeem_single if kind == 'single' else redeem_combo
-        data, status = operation(request.app.state.engine, settings, ident, request_id,
-                                 actor_id, correlation_id)
+        data, status = operation(request.app.state.engine, settings, ident, request_id, actor_id, correlation_id)
         if status == 409:
             return auth.error(request, 409, 'REDEEM_REJECTED', data.get('message') or '赎回请求未发送')
         return JSONResponse(status_code=status, content=ok(request, data))
@@ -64,12 +71,14 @@ def _execute(request, kind, ident, idempotency_key):
 
 
 @router.post('/trade-intents/{intent_id}/redeem')
-def redeem_trade_intent(request: Request, intent_id: uuid.UUID,
-                        idempotency_key: str = Header(..., alias='Idempotency-Key')):
+def redeem_trade_intent(
+    request: Request, intent_id: uuid.UUID, idempotency_key: str = Header(..., alias='Idempotency-Key')
+):
     return _execute(request, 'single', intent_id, idempotency_key)
 
 
 @router.post('/combo-rfqs/{combo_id}/redeem')
-def redeem_combo_rfq(request: Request, combo_id: uuid.UUID,
-                     idempotency_key: str = Header(..., alias='Idempotency-Key')):
+def redeem_combo_rfq(
+    request: Request, combo_id: uuid.UUID, idempotency_key: str = Header(..., alias='Idempotency-Key')
+):
     return _execute(request, 'combo', combo_id, idempotency_key)

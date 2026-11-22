@@ -11,9 +11,19 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from sqlalchemy import text
 
+from . import (
+    auth,
+    combo_api,
+    history_api,
+    market_api,
+    redeem_api,
+    result_binding_api,
+    scheduler_api,
+    sports_api,
+    trading_api,
+)
 from .config import get_settings
 from .database import make_engine
-from . import auth, sports_api, scheduler_api, market_api, trading_api, combo_api, history_api, result_binding_api, redeem_api
 
 logger = logging.getLogger("polysports")
 
@@ -32,15 +42,18 @@ def create_app() -> FastAPI:
                     raise RuntimeError('组合交易仅支持单个 API 进程')
                 combo_lock.commit()
             except BaseException:
-                if combo_lock is not None: combo_lock.close()
+                if combo_lock is not None:
+                    combo_lock.close()
                 app.state.engine.dispose()
                 raise
         logger.info(json.dumps({"event": "application_started", "environment": settings.environment}))
         try:
             yield
         finally:
-            if combo_lock is not None: combo_lock.close()
+            if combo_lock is not None:
+                combo_lock.close()
             from .trading_gateway import close_gateway_clients
+
             close_gateway_clients()
             app.state.engine.dispose()
             logger.info(json.dumps({"event": "application_stopped"}))
@@ -68,10 +81,12 @@ def create_app() -> FastAPI:
                     response = await call_next(request)
             else:
                 response = await call_next(request)
-        except Exception as exc:
+        except Exception:
             # 未捕获异常必须记录完整堆栈，否则下单 503 只剩类型名，无法定位真实原因。
             logger.exception("request_failed request_id=%s method=%s path=%s", request_id, request.method, path)
-            response = auth.error(request, 503, "SERVICE_UNAVAILABLE", "服务暂不可用，请提供请求编号 "+request_id+" 以便排查")
+            response = auth.error(
+                request, 503, "SERVICE_UNAVAILABLE", "服务暂不可用，请提供请求编号 " + request_id + " 以便排查"
+            )
         if path.startswith("/api/v1/auth/"):
             response.headers["Cache-Control"] = "no-store"
         response.headers["X-Request-ID"] = request_id
@@ -82,23 +97,37 @@ def create_app() -> FastAPI:
         return auth.error(request, 422, "VALIDATION_ERROR", "请求参数不符合要求")
 
     def openapi_schema():
-        if app.openapi_schema is not None:return app.openapi_schema
-        schema=get_openapi(title=app.title,version=app.version,routes=app.routes)
-        schema.setdefault('components',{}).setdefault('securitySchemes',{})['AdminSession']={'type':'apiKey','in':'cookie','name':auth.SESSION_COOKIE,'description':'管理员会话；所有修改请求还须携带同源 Origin 与会话绑定 CSRF 令牌。'}
-        public={'/api/v1/health/live','/api/v1/auth/csrf','/api/v1/auth/login'}
-        for path,methods in schema.get('paths',{}).items():
-            if not path.startswith('/api/v1/'):continue
-            for method,operation in methods.items():
-                if method not in ('get','post','put','patch','delete'):continue
+        if app.openapi_schema is not None:
+            return app.openapi_schema
+        schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+        schema.setdefault('components', {}).setdefault('securitySchemes', {})['AdminSession'] = {
+            'type': 'apiKey',
+            'in': 'cookie',
+            'name': auth.SESSION_COOKIE,
+            'description': '管理员会话；所有修改请求还须携带同源 Origin 与会话绑定 CSRF 令牌。',
+        }
+        public = {'/api/v1/health/live', '/api/v1/auth/csrf', '/api/v1/auth/login'}
+        for path, methods in schema.get('paths', {}).items():
+            if not path.startswith('/api/v1/'):
+                continue
+            for method, operation in methods.items():
+                if method not in ('get', 'post', 'put', 'patch', 'delete'):
+                    continue
                 if path not in public:
-                    operation['security']=[{'AdminSession':[]}]
-                    operation.setdefault('responses',{}).setdefault('401',{'description':'未认证'})
-                if method in ('post','put','patch','delete'):
-                    operation.setdefault('parameters',[]).extend([{'name':'Origin','in':'header','required':True,'schema':{'type':'string'}},{'name':'X-CSRF-Token','in':'header','required':True,'schema':{'type':'string'}}])
-                    operation.setdefault('responses',{}).setdefault('403',{'description':'同源或 CSRF 校验失败'})
-        app.openapi_schema=schema
+                    operation['security'] = [{'AdminSession': []}]
+                    operation.setdefault('responses', {}).setdefault('401', {'description': '未认证'})
+                if method in ('post', 'put', 'patch', 'delete'):
+                    operation.setdefault('parameters', []).extend(
+                        [
+                            {'name': 'Origin', 'in': 'header', 'required': True, 'schema': {'type': 'string'}},
+                            {'name': 'X-CSRF-Token', 'in': 'header', 'required': True, 'schema': {'type': 'string'}},
+                        ]
+                    )
+                    operation.setdefault('responses', {}).setdefault('403', {'description': '同源或 CSRF 校验失败'})
+        app.openapi_schema = schema
         return schema
-    app.openapi=openapi_schema
+
+    app.openapi = openapi_schema
 
     app.include_router(auth.router)
     app.include_router(sports_api.router)

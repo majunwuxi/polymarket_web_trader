@@ -1,23 +1,44 @@
 """用户维护的球队资料：用于显示和赛果候选的精确别名扩展，不参与交易身份自动确认。"""
+
 from __future__ import annotations
 
-from functools import lru_cache
 import json
-from pathlib import Path
 import unicodedata
+from functools import lru_cache
+from pathlib import Path
 
 # Polymarket NBA 比赛使用球队简称；仅映射到用户提供目录中的明确全名。
 NBA_SHORT_NAMES = {
-    'Hawks':'Atlanta Hawks', 'Celtics':'Boston Celtics', 'Nets':'Brooklyn Nets',
-    'Hornets':'Charlotte Hornets', 'Bulls':'Chicago Bulls', 'Cavaliers':'Cleveland Cavaliers',
-    'Mavericks':'Dallas Mavericks', 'Nuggets':'Denver Nuggets', 'Pistons':'Detroit Pistons',
-    'Warriors':'Golden State Warriors', 'Rockets':'Houston Rockets', 'Pacers':'Indiana Pacers',
-    'Clippers':'Los Angeles Clippers', 'Lakers':'Los Angeles Lakers', 'Grizzlies':'Memphis Grizzlies',
-    'Heat':'Miami Heat', 'Bucks':'Milwaukee Bucks', 'Timberwolves':'Minnesota Timberwolves',
-    'Pelicans':'New Orleans Pelicans', 'Knicks':'New York Knicks', 'Thunder':'Oklahoma City Thunder',
-    'Magic':'Orlando Magic', '76ers':'Philadelphia 76ers', 'Suns':'Phoenix Suns',
-    'Trail Blazers':'Portland Trail Blazers', 'Kings':'Sacramento Kings', 'Spurs':'San Antonio Spurs',
-    'Raptors':'Toronto Raptors', 'Jazz':'Utah Jazz', 'Wizards':'Washington Wizards',
+    'Hawks': 'Atlanta Hawks',
+    'Celtics': 'Boston Celtics',
+    'Nets': 'Brooklyn Nets',
+    'Hornets': 'Charlotte Hornets',
+    'Bulls': 'Chicago Bulls',
+    'Cavaliers': 'Cleveland Cavaliers',
+    'Mavericks': 'Dallas Mavericks',
+    'Nuggets': 'Denver Nuggets',
+    'Pistons': 'Detroit Pistons',
+    'Warriors': 'Golden State Warriors',
+    'Rockets': 'Houston Rockets',
+    'Pacers': 'Indiana Pacers',
+    'Clippers': 'Los Angeles Clippers',
+    'Lakers': 'Los Angeles Lakers',
+    'Grizzlies': 'Memphis Grizzlies',
+    'Heat': 'Miami Heat',
+    'Bucks': 'Milwaukee Bucks',
+    'Timberwolves': 'Minnesota Timberwolves',
+    'Pelicans': 'New Orleans Pelicans',
+    'Knicks': 'New York Knicks',
+    'Thunder': 'Oklahoma City Thunder',
+    'Magic': 'Orlando Magic',
+    '76ers': 'Philadelphia 76ers',
+    'Suns': 'Phoenix Suns',
+    'Trail Blazers': 'Portland Trail Blazers',
+    'Kings': 'Sacramento Kings',
+    'Spurs': 'San Antonio Spurs',
+    'Raptors': 'Toronto Raptors',
+    'Jazz': 'Utah Jazz',
+    'Wizards': 'Washington Wizards',
 }
 
 
@@ -40,14 +61,17 @@ def _football_alias_indexes():
     variants_by_name: dict[str, frozenset[str] | None] = {}
     alias_targets: dict[str, str | None] = {}
     for item in _football_records().values():
-        if not isinstance(item, dict): continue
+        if not isinstance(item, dict):
+            continue
         name = item.get('name_en')
-        if not isinstance(name, str) or not name.strip(): continue
+        if not isinstance(name, str) or not name.strip():
+            continue
         primary = _match_normal(name)
         raw_aliases = item.get('aliases')
         aliases = raw_aliases if isinstance(raw_aliases, list) else []
         variants = frozenset(
-            value for candidate in [name, *aliases]
+            value
+            for candidate in [name, *aliases]
             if isinstance(candidate, str) and (value := _match_normal(candidate))
         )
         if primary in variants_by_name and variants_by_name[primary] != variants:
@@ -66,7 +90,8 @@ def football_name_variants(name: str) -> set[str]:
     """Return exact normalized aliases for one unambiguous football team."""
     variants_by_name, alias_targets = _football_alias_indexes()
     target = alias_targets.get(_match_normal(name))
-    if target is None: return set()
+    if target is None:
+        return set()
     variants = variants_by_name.get(target)
     return set(variants) if variants else set()
 
@@ -77,7 +102,8 @@ def build_index(sport: str, records, *, include_aliases: bool = False) -> dict[s
         if not isinstance(item, dict) or (sport == 'nba' and item.get('league') != 'nba'):
             continue
         name = item.get('name_en')
-        if not isinstance(name, str) or not name.strip(): continue
+        if not isinstance(name, str) or not name.strip():
+            continue
         keys = [_normal(name)]
         if include_aliases:
             aliases = item.get('aliases')
@@ -104,17 +130,19 @@ def _nba_alias_indexes():
     variants_by_name: dict[str, frozenset[str] | None] = {}
     alias_targets: dict[str, str | None] = {}
     for item in basketball:
-        if not isinstance(item, dict) or item.get('league') != 'nba': continue
+        if not isinstance(item, dict) or item.get('league') != 'nba':
+            continue
         name = item.get('name_en')
-        if not isinstance(name, str) or not name.strip(): continue
+        if not isinstance(name, str) or not name.strip():
+            continue
         primary = _normal(name)
         raw_aliases = item.get('aliases')
         aliases = raw_aliases if isinstance(raw_aliases, list) else []
         variants = frozenset(
-            value for candidate in [name, *aliases]
-            if isinstance(candidate, str) and (value := _normal(candidate))
+            value for candidate in [name, *aliases] if isinstance(candidate, str) and (value := _normal(candidate))
         )
-        if not variants: continue
+        if not variants:
+            continue
         if primary in variants_by_name and variants_by_name[primary] != variants:
             variants_by_name[primary] = None
         else:
@@ -131,7 +159,8 @@ def nba_name_variants(name: str) -> set[str]:
     """Return exact normalized aliases for one unambiguous NBA team."""
     variants_by_name, alias_targets = _nba_alias_indexes()
     target = alias_targets.get(_normal(name))
-    if target is None: return set()
+    if target is None:
+        return set()
     variants = variants_by_name.get(target)
     return set(variants) if variants else set()
 
@@ -140,10 +169,11 @@ def nba_name_variants(name: str) -> set[str]:
 def _directories():
     root = Path(__file__).parent / 'team_data'
     basketball = json.loads((root / 'basketball.json').read_text(encoding='utf-8'))
-    nba=build_index('nba', basketball)
+    nba = build_index('nba', basketball)
     for short, full in NBA_SHORT_NAMES.items():
-        key,full_key=_normal(short),_normal(full)
-        if key not in nba and nba.get(full_key): nba[key]=nba[full_key]
+        key, full_key = _normal(short), _normal(full)
+        if key not in nba and nba.get(full_key):
+            nba[key] = nba[full_key]
     return {'football': build_index('football', _football_records().values(), include_aliases=True), 'nba': nba}
 
 
@@ -157,6 +187,12 @@ def display_team(team) -> dict:
         placeholder = logo == 'https://polymarket-upload.s3.us-east-2.amazonaws.com/soccer-ball.png'
         if (not logo or placeholder) and isinstance(candidate_logo, str) and candidate_logo.startswith('https://'):
             logo = candidate_logo
-    return {'id': str(team.id), 'sport': team.sport, 'source_name': team.source_name,
-            'name_zh': name_zh, 'name_zh_source': name_source,
-            'translation_status': team.translation_status, 'logo_url': logo}
+    return {
+        'id': str(team.id),
+        'sport': team.sport,
+        'source_name': team.source_name,
+        'name_zh': name_zh,
+        'name_zh_source': name_source,
+        'translation_status': team.translation_status,
+        'logo_url': logo,
+    }

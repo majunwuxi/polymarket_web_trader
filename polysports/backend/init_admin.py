@@ -1,4 +1,5 @@
 """本机唯一管理员初始化；密码只通过终端交互输入。"""
+
 import argparse
 import getpass
 import uuid
@@ -26,7 +27,10 @@ def main() -> int:
     engine = make_engine(get_settings())
     try:
         with engine.begin() as conn:
-            conn.execute(text("INSERT INTO admin_users (id,username,password_hash) VALUES (:id,:username,:password_hash)"), {"id":uuid.uuid4(), "username":username, "password_hash":hasher.hash(password)})
+            conn.execute(
+                text("INSERT INTO admin_users (id,username,password_hash) VALUES (:id,:username,:password_hash)"),
+                {"id": uuid.uuid4(), "username": username, "password_hash": hasher.hash(password)},
+            )
         print("管理员已初始化")
         return 0
     except IntegrityError:

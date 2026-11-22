@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -18,15 +18,18 @@ class SourceError(Exception):
 
 def retry_delay(response: httpx.Response) -> int:
     """仅接受有限的非负秒数；不记录上游响应或请求凭据。"""
-    value=response.headers.get('retry-after','')
-    if value.isdecimal(): return int(value)
+    value = response.headers.get('retry-after', '')
+    if value.isdecimal():
+        return int(value)
     if value:
         try:
             from email.utils import parsedate_to_datetime
-            target=parsedate_to_datetime(value)
+
+            target = parsedate_to_datetime(value)
             if target.tzinfo is not None:
-                return max(0,int((target-datetime.now(timezone.utc)).total_seconds())+1)
-        except (TypeError,ValueError,OverflowError): pass
+                return max(0, int((target - datetime.now(UTC)).total_seconds()) + 1)
+        except (TypeError, ValueError, OverflowError):
+            pass
     return 0
 
 
@@ -63,7 +66,7 @@ def timestamp(value: Any) -> datetime:
         raise SourceError('invalid_datetime') from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise SourceError('invalid_datetime')
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def identity(value: Any) -> str:
@@ -98,7 +101,24 @@ def football_game(item: Any) -> SourceGame:
         raw = fixture['status']['short']
         if not isinstance(raw, str) or not raw:
             raise SourceError('invalid_status')
-        status = {'NS':'scheduled', 'TBD':'unknown', '1H':'live', 'HT':'live', '2H':'live', 'ET':'live', 'BT':'live', 'P':'live', 'FT':'finished', 'AET':'finished', 'PEN':'finished', 'PST':'postponed', 'CANC':'cancelled', 'ABD':'cancelled', 'SUSP':'interrupted', 'INT':'interrupted'}.get(raw, 'unknown')
+        status = {
+            'NS': 'scheduled',
+            'TBD': 'unknown',
+            '1H': 'live',
+            'HT': 'live',
+            '2H': 'live',
+            'ET': 'live',
+            'BT': 'live',
+            'P': 'live',
+            'FT': 'finished',
+            'AET': 'finished',
+            'PEN': 'finished',
+            'PST': 'postponed',
+            'CANC': 'cancelled',
+            'ABD': 'cancelled',
+            'SUSP': 'interrupted',
+            'INT': 'interrupted',
+        }.get(raw, 'unknown')
         goals = item['goals']
         home, away = team(teams['home']), team(teams['away'])
         if home.external_id == away.external_id:
@@ -107,7 +127,21 @@ def football_game(item: Any) -> SourceGame:
         if not isinstance(name, str) or not name.strip():
             raise SourceError('invalid_league')
         logo = league.get('logo')
-        return SourceGame('api_football','football',identity(fixture['id']),timestamp(fixture['date']),status,raw,home,away,identity(league['id']),name,logo if isinstance(logo,str) and logo.startswith('https://') else None,score(goals['home']),score(goals['away']))
+        return SourceGame(
+            'api_football',
+            'football',
+            identity(fixture['id']),
+            timestamp(fixture['date']),
+            status,
+            raw,
+            home,
+            away,
+            identity(league['id']),
+            name,
+            logo if isinstance(logo, str) and logo.startswith('https://') else None,
+            score(goals['home']),
+            score(goals['away']),
+        )
     except (KeyError, TypeError) as exc:
         raise SourceError('invalid_fixture') from exc
 
@@ -117,14 +151,37 @@ def nba_game(item: Any) -> SourceGame:
         raw = item.get('status_state', 'unknown')
         if not isinstance(raw, str):
             raise SourceError('invalid_status')
-        status = {'scheduled':'scheduled','in_progress':'live','final':'finished','postponed':'postponed','canceled':'cancelled','delayed':'postponed','suspended':'interrupted','abandoned':'cancelled'}.get(raw,'unknown')
+        status = {
+            'scheduled': 'scheduled',
+            'in_progress': 'live',
+            'final': 'finished',
+            'postponed': 'postponed',
+            'canceled': 'cancelled',
+            'delayed': 'postponed',
+            'suspended': 'interrupted',
+            'abandoned': 'cancelled',
+        }.get(raw, 'unknown')
         home, away = team(item['home_team'], True), team(item['visitor_team'], True)
         if home.external_id == away.external_id:
             raise SourceError('invalid_team')
         # 赛前来源可能将未知比分表示为 0，不把它当成真实比分。
-        hs = score(item.get('home_team_score')) if status in ('live','finished') else None
-        aws = score(item.get('visitor_team_score')) if status in ('live','finished') else None
-        return SourceGame('balldontlie','nba',identity(item['id']),timestamp(item['datetime']),status,raw,home,away,None,None,None,hs,aws)
+        hs = score(item.get('home_team_score')) if status in ('live', 'finished') else None
+        aws = score(item.get('visitor_team_score')) if status in ('live', 'finished') else None
+        return SourceGame(
+            'balldontlie',
+            'nba',
+            identity(item['id']),
+            timestamp(item['datetime']),
+            status,
+            raw,
+            home,
+            away,
+            None,
+            None,
+            None,
+            hs,
+            aws,
+        )
     except (KeyError, TypeError) as exc:
         raise SourceError('invalid_fixture') from exc
 
@@ -153,14 +210,16 @@ def check_football_provider_errors(body: dict) -> None:
     raise SourceError('provider_error')
 
 
-def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Client, *, season_type: str | None = None) -> tuple[list[SourceGame], int, int]:
+def fetch_schedule(
+    provider: str, key: str, start: datetime, client: httpx.Client, *, season_type: str | None = None
+) -> tuple[list[SourceGame], int, int]:
     if not key or key.startswith('CHANGE_ME'):
         raise SourceError('missing_api_key')
     if start.tzinfo is None or start.utcoffset() is None:
         raise ValueError('start must be timezone-aware')
-    start = start.astimezone(timezone.utc)
+    start = start.astimezone(UTC)
     end = start + timedelta(hours=36)
-    if provider not in ('api_football','balldontlie'):
+    if provider not in ('api_football', 'balldontlie'):
         raise ValueError('unknown provider')
     football_dates = []
     if provider == 'api_football':
@@ -168,16 +227,24 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
         while day <= end.date():
             football_dates.append(day.isoformat())
             day += timedelta(days=1)
-        params = {'date':football_dates[0],'timezone':'UTC'}
+        params = {'date': football_dates[0], 'timezone': 'UTC'}
     else:
         # NBA 的比赛日期可能按美国本地赛历划分，扩展一天再精确过滤 UTC 窗口。
-        params = {'start_date':(start-timedelta(days=1)).date().isoformat(),'end_date':(end+timedelta(days=1)).date().isoformat(),'per_page':100}
+        params = {
+            'start_date': (start - timedelta(days=1)).date().isoformat(),
+            'end_date': (end + timedelta(days=1)).date().isoformat(),
+            'per_page': 100,
+        }
     if season_type is not None:
         if provider != 'balldontlie' or season_type != 'preseason':
             raise ValueError('unsupported season type')
         params['season_type'] = season_type
-    url = 'https://v3.football.api-sports.io/fixtures' if provider == 'api_football' else 'https://api.balldontlie.io/v1/games'
-    headers = {'x-apisports-key':key} if provider == 'api_football' else {'Authorization':key}
+    url = (
+        'https://v3.football.api-sports.io/fixtures'
+        if provider == 'api_football'
+        else 'https://api.balldontlie.io/v1/games'
+    )
+    headers = {'x-apisports-key': key} if provider == 'api_football' else {'Authorization': key}
     seen, output, pages, received = set(), [], 0, 0
     football_date_index, football_page, football_total = 0, 0, None
     while True:
@@ -199,7 +266,14 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
             football_page += 1
             check_football_provider_errors(body)
             rows, paging = body.get('response'), body.get('paging')
-            if not isinstance(rows,list) or not isinstance(paging,dict) or type(paging.get('current')) is not int or type(paging.get('total')) is not int or paging['current'] != football_page or paging['total'] < football_page:
+            if (
+                not isinstance(rows, list)
+                or not isinstance(paging, dict)
+                or type(paging.get('current')) is not int
+                or type(paging.get('total')) is not int
+                or paging['current'] != football_page
+                or paging['total'] < football_page
+            ):
                 raise SourceError('invalid_pagination')
             if football_total is not None and football_total != paging['total']:
                 raise SourceError('invalid_pagination')
@@ -209,7 +283,7 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
             next_value = football_page + 1 if football_page < paging['total'] else None
         else:
             rows, meta = body.get('data'), body.get('meta')
-            if not isinstance(rows,list) or not isinstance(meta,dict):
+            if not isinstance(rows, list) or not isinstance(meta, dict):
                 raise SourceError('invalid_pagination')
             next_value = meta.get('next_cursor')
             if next_value is not None and (type(next_value) is not int or next_value <= 0):
@@ -225,7 +299,7 @@ def fetch_schedule(provider: str, key: str, start: datetime, client: httpx.Clien
                 football_page, football_total = 0, None
                 seen.clear()
                 params['date'] = football_dates[football_date_index]
-                params.pop('page',None)
+                params.pop('page', None)
                 continue
             return output, pages, received
         if next_value in seen:
@@ -240,32 +314,37 @@ def fetch_game(provider: str, key: str, external_id: str, client: httpx.Client) 
     if not external_id.isdecimal():
         raise SourceError('invalid_identity')
     if provider == 'api_football':
-        url='https://v3.football.api-sports.io/fixtures'
-        params={'id':external_id,'timezone':'UTC'}
-        headers={'x-apisports-key':key}
+        url = 'https://v3.football.api-sports.io/fixtures'
+        params = {'id': external_id, 'timezone': 'UTC'}
+        headers = {'x-apisports-key': key}
     elif provider == 'balldontlie':
-        url='https://api.balldontlie.io/v1/games/'+external_id
-        params={}
-        headers={'Authorization':key}
+        url = 'https://api.balldontlie.io/v1/games/' + external_id
+        params = {}
+        headers = {'Authorization': key}
     else:
         raise SourceError('invalid_provider')
     try:
-        response=client.get(url,params=params,headers=headers,timeout=20.0,follow_redirects=False)
-        if response.status_code != 200: raise SourceError('http_'+str(response.status_code), retry_delay(response))
-        body=response.json()
+        response = client.get(url, params=params, headers=headers, timeout=20.0, follow_redirects=False)
+        if response.status_code != 200:
+            raise SourceError('http_' + str(response.status_code), retry_delay(response))
+        body = response.json()
     except httpx.TimeoutException as exc:
         raise SourceError('timeout') from exc
-    except (httpx.RequestError,ValueError) as exc:
+    except (httpx.RequestError, ValueError) as exc:
         raise SourceError('network_or_invalid_json') from exc
-    if not isinstance(body,dict): raise SourceError('invalid_response')
-    if provider=='api_football':
+    if not isinstance(body, dict):
+        raise SourceError('invalid_response')
+    if provider == 'api_football':
         check_football_provider_errors(body)
-        rows=body.get('response')
-        if not isinstance(rows,list) or len(rows)!=1: raise SourceError('fixture_unavailable')
-        result=football_game(rows[0])
+        rows = body.get('response')
+        if not isinstance(rows, list) or len(rows) != 1:
+            raise SourceError('fixture_unavailable')
+        result = football_game(rows[0])
     else:
-        item=body.get('data')
-        if not isinstance(item,dict): raise SourceError('fixture_unavailable')
-        result=nba_game(item)
-    if result.external_id != external_id: raise SourceError('fixture_mismatch')
+        item = body.get('data')
+        if not isinstance(item, dict):
+            raise SourceError('fixture_unavailable')
+        result = nba_game(item)
+    if result.external_id != external_id:
+        raise SourceError('fixture_mismatch')
     return result

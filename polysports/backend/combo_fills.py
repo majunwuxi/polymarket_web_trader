@@ -10,10 +10,11 @@ SDK 明确定义 BUY 报价的 ``maker_amount`` 是签名接受订单实际支�
 只有 RFQ 进入 CONFIRMED 后明细才置为 confirmed；终态失败则作废，绝不把
 未成交或结果不明的报价当成已确认盈亏。
 """
+
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP, localcontext
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 
 from sqlalchemy import select
 
@@ -48,9 +49,14 @@ def fill_payload(fill):
     """把 ORM 明细转成 pnl/接口可用的普通字典；非 confirmed 一律视为无明细。"""
     if fill is None:
         return None
-    return {'cost': str(fill.cost), 'size': str(fill.size), 'source': fill.source,
-            'state': fill.state, 'tx_hash': fill.tx_hash,
-            'confirmed_at': fill.confirmed_at.isoformat() if fill.confirmed_at else None}
+    return {
+        'cost': str(fill.cost),
+        'size': str(fill.size),
+        'source': fill.source,
+        'state': fill.state,
+        'tx_hash': fill.tx_hash,
+        'confirmed_at': fill.confirmed_at.isoformat() if fill.confirmed_at else None,
+    }
 
 
 def confirm_combo_fill(db, row, now):
@@ -67,9 +73,18 @@ def confirm_combo_fill(db, row, now):
     cost = rebuilt_cost(row.quote_price, row.quote_receive, row.quote_required)
     if cost is None or row.quote_receive is None:
         return None
-    fill = ComboFill(id=uuid.uuid4(), rfq_id=row.id, quote_id=row.quote_id, direction='BUY',
-                     cost=cost, size=row.quote_receive, source='quote_rebuilt', state='confirmed',
-                     tx_hash=row.tx_hash, confirmed_at=now)
+    fill = ComboFill(
+        id=uuid.uuid4(),
+        rfq_id=row.id,
+        quote_id=row.quote_id,
+        direction='BUY',
+        cost=cost,
+        size=row.quote_receive,
+        source='quote_rebuilt',
+        state='confirmed',
+        tx_hash=row.tx_hash,
+        confirmed_at=now,
+    )
     db.add(fill)
     return fill
 
@@ -114,30 +129,56 @@ def buy_summary(direction, quote, fill):
     quote = quote or {}
     cost = _decimal(fill.get('cost'))
     size = _decimal(fill.get('size'))
-    if (fill.get('state') == 'confirmed' and cost is not None and size is not None
-            and cost > 0 and size > 0):
+    if fill.get('state') == 'confirmed' and cost is not None and size is not None and cost > 0 and size > 0:
         with localcontext() as context:
             context.prec = 50
             price = cost / size
-        return {'size': _trim(size), 'price': _trim(price), 'cost': _trim(cost),
-                'basis': 'combo_fill', 'estimated': False, 'source': fill.get('source'),
-                'detail': ('份额与金额取自已确认组合成交明细（签名接受订单的 '
-                           'makerAmount / takerAmount）；每份价格 = 买入金额 ÷ 份额。')}
+        return {
+            'size': _trim(size),
+            'price': _trim(price),
+            'cost': _trim(cost),
+            'basis': 'combo_fill',
+            'estimated': False,
+            'source': fill.get('source'),
+            'detail': (
+                '份额与金额取自已确认组合成交明细（签名接受订单的 '
+                'makerAmount / takerAmount）；每份价格 = 买入金额 ÷ 份额。'
+            ),
+        }
 
     price = _decimal(quote.get('price'))
     shares = _decimal(quote.get('net_receive'))
     if price is None or shares is None or not (Decimal(0) < price < Decimal(1)) or shares <= 0:
-        return {'size': None, 'price': None, 'cost': None, 'basis': 'unavailable',
-                'estimated': False, 'source': None,
-                'detail': '缺少已确认成交明细或完整签名报价，份额、价格与金额均无法核实。'}
+        return {
+            'size': None,
+            'price': None,
+            'cost': None,
+            'basis': 'unavailable',
+            'estimated': False,
+            'source': None,
+            'detail': '缺少已确认成交明细或完整签名报价，份额、价格与金额均无法核实。',
+        }
 
     rebuilt = rebuilt_cost(price, shares, quote.get('total_required'))
     if rebuilt is not None:
-        return {'size': _trim(shares), 'price': _trim(price), 'cost': _trim(rebuilt),
-                'basis': 'quote_rebuilt', 'estimated': True, 'source': 'quote_rebuilt',
-                'detail': ('未落库 CONFIRMED 成交明细；份额与每份价格来自官方签名报价，'
-                           '金额按 blended_price × takerAmount 以 micro-USDC 精度重建，为约值。')}
-    return {'size': _trim(shares), 'price': _trim(price), 'cost': None,
-            'basis': 'quote_partial', 'estimated': True, 'source': 'quote',
-            'detail': ('签名报价字段不完整或校验未通过，金额不猜测；total_required 只是'
-                       '接受报价所需余额，不等于实际支出。')}
+        return {
+            'size': _trim(shares),
+            'price': _trim(price),
+            'cost': _trim(rebuilt),
+            'basis': 'quote_rebuilt',
+            'estimated': True,
+            'source': 'quote_rebuilt',
+            'detail': (
+                '未落库 CONFIRMED 成交明细；份额与每份价格来自官方签名报价，'
+                '金额按 blended_price × takerAmount 以 micro-USDC 精度重建，为约值。'
+            ),
+        }
+    return {
+        'size': _trim(shares),
+        'price': _trim(price),
+        'cost': None,
+        'basis': 'quote_partial',
+        'estimated': True,
+        'source': 'quote',
+        'detail': ('签名报价字段不完整或校验未通过，金额不猜测；total_required 只是接受报价所需余额，不等于实际支出。'),
+    }

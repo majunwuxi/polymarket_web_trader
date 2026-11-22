@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from functools import lru_cache
 import os
-from pathlib import Path
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -14,22 +14,24 @@ from sqlalchemy.engine import make_url
 
 class WalletConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    label: str = Field(min_length=1,max_length=100)
+    label: str = Field(min_length=1, max_length=100)
     wallet_address: str
     signer_address: str
-    wallet_type: Literal['EOA','POLY_PROXY','GNOSIS_SAFE','DEPOSIT_WALLET']
-    credential_ref: str | None = Field(default=None,pattern=r'^[A-Za-z0-9_-]{1,64}$')
+    wallet_type: Literal['EOA', 'POLY_PROXY', 'GNOSIS_SAFE', 'DEPOSIT_WALLET']
+    credential_ref: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_-]{1,64}$')
 
-    @field_validator('wallet_address','signer_address')
+    @field_validator('wallet_address', 'signer_address')
     @classmethod
     def validate_address(cls, value: str) -> str:
         import re
-        if not re.fullmatch(r'0x[0-9a-fA-F]{40}',value): raise ValueError('invalid wallet address')
+
+        if not re.fullmatch(r'0x[0-9a-fA-F]{40}', value):
+            raise ValueError('invalid wallet address')
         return value.lower()
 
 
 class WalletSecrets(BaseModel):
-    model_config = ConfigDict(extra='forbid',hide_input_in_errors=True)
+    model_config = ConfigDict(extra='forbid', hide_input_in_errors=True)
     private_key: SecretStr
     clob_api_key: SecretStr | None = None
     clob_api_secret: SecretStr | None = None
@@ -42,19 +44,33 @@ class WalletSecrets(BaseModel):
 
     @model_validator(mode='after')
     def complete_clob_credentials(self):
-        values=[x.get_secret_value() if x else '' for x in (self.clob_api_key,self.clob_api_secret,self.clob_api_passphrase)]
-        if any(values) and not all(values): raise ValueError('CLOB credentials must all be set or all omitted')
-        builder=[x.get_secret_value() if x else '' for x in (self.builder_api_key,self.builder_api_secret,self.builder_api_passphrase)]
-        if any(builder) and not all(builder): raise ValueError('Builder credentials must all be set or all omitted')
-        relayer=[self.relayer_api_key.get_secret_value() if self.relayer_api_key else '',self.relayer_api_key_address or '']
-        if any(relayer) and not all(relayer): raise ValueError('Relayer credentials must all be set or all omitted')
-        if self.relayer_api_key_address and not re.fullmatch(r'0x[0-9a-fA-F]{40}',self.relayer_api_key_address):
+        values = [
+            x.get_secret_value() if x else ''
+            for x in (self.clob_api_key, self.clob_api_secret, self.clob_api_passphrase)
+        ]
+        if any(values) and not all(values):
+            raise ValueError('CLOB credentials must all be set or all omitted')
+        builder = [
+            x.get_secret_value() if x else ''
+            for x in (self.builder_api_key, self.builder_api_secret, self.builder_api_passphrase)
+        ]
+        if any(builder) and not all(builder):
+            raise ValueError('Builder credentials must all be set or all omitted')
+        relayer = [
+            self.relayer_api_key.get_secret_value() if self.relayer_api_key else '',
+            self.relayer_api_key_address or '',
+        ]
+        if any(relayer) and not all(relayer):
+            raise ValueError('Relayer credentials must all be set or all omitted')
+        if self.relayer_api_key_address and not re.fullmatch(r'0x[0-9a-fA-F]{40}', self.relayer_api_key_address):
             raise ValueError('invalid relayer API key address')
         return self
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="POLYSPORTS_", env_file=".env", extra="ignore", hide_input_in_errors=True)
+    model_config = SettingsConfigDict(
+        env_prefix="POLYSPORTS_", env_file=".env", extra="ignore", hide_input_in_errors=True
+    )
     database_url: SecretStr
     environment: Literal["development", "test", "production"] = "development"
     auth_secret: SecretStr
@@ -62,22 +78,25 @@ class Settings(BaseSettings):
     api_football_key: SecretStr | None = None
     balldontlie_key: SecretStr | None = None
     wallets: list[WalletConfig] = Field(default_factory=list)
-    wallet_credentials: dict[str, WalletSecrets] = Field(default_factory=dict,repr=False)
+    wallet_credentials: dict[str, WalletSecrets] = Field(default_factory=dict, repr=False)
     polygon_rpc_url: SecretStr | None = None
     combo_execution_enabled: bool = False
     redeem_execution_enabled: bool = False
 
     @classmethod
-    def settings_customise_sources(cls,settings_cls,init_settings,env_settings,dotenv_settings,file_secret_settings):
+    def settings_customise_sources(
+        cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+    ):
         # systemd 凭据模式下禁止从环境变量回退，防止管理员命令误连其他数据库。
         if os.environ.get('CREDENTIALS_DIRECTORY'):
-            return init_settings,dotenv_settings
-        return init_settings,env_settings,dotenv_settings,file_secret_settings
+            return init_settings, dotenv_settings
+        return init_settings, env_settings, dotenv_settings, file_secret_settings
 
     @model_validator(mode="after")
     def unique_wallets(self):
-        addresses=[wallet.wallet_address for wallet in self.wallets]
-        if len(addresses)!=len(set(addresses)): raise ValueError("duplicate wallet address")
+        addresses = [wallet.wallet_address for wallet in self.wallets]
+        if len(addresses) != len(set(addresses)):
+            raise ValueError("duplicate wallet address")
         return self
 
     @field_validator("auth_secret")
@@ -91,7 +110,15 @@ class Settings(BaseSettings):
     @classmethod
     def validate_origin(cls, value: str) -> str:
         parsed = urlsplit(value)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+        ):
             raise ValueError("PUBLIC_ORIGIN must be an HTTPS origin without path")
         return value.rstrip("/")
 
@@ -100,7 +127,9 @@ class Settings(BaseSettings):
     def validate_postgresql_url(cls, value: SecretStr) -> SecretStr:
         try:
             url = make_url(value.get_secret_value())
-            valid = url.drivername == "postgresql+psycopg" and bool(url.host) and bool(url.database) and bool(url.username)
+            valid = (
+                url.drivername == "postgresql+psycopg" and bool(url.host) and bool(url.database) and bool(url.username)
+            )
         except Exception:
             valid = False
         if not valid:
@@ -110,9 +139,10 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    credential_dir=os.environ.get('CREDENTIALS_DIRECTORY')
+    credential_dir = os.environ.get('CREDENTIALS_DIRECTORY')
     if credential_dir:
-        credential_file=Path(credential_dir)/'polysports.env'
-        if not credential_file.is_file():raise RuntimeError('systemd 配置凭据缺失')
+        credential_file = Path(credential_dir) / 'polysports.env'
+        if not credential_file.is_file():
+            raise RuntimeError('systemd 配置凭据缺失')
         return Settings(_env_file=credential_file)
     return Settings()

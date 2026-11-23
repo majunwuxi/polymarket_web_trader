@@ -37,6 +37,12 @@ def test_football_directory_alias_matches_api_name_without_breaking_strict_rules
     assert match_fixture_candidates('football',START,'North Macedonia','Slovenia',delayed)==[]
 
 
+def test_football_directory_alias_matches_polymarket_la_liga_names():
+    rows=[fixture('la-liga-1','Levante','Elche')]
+    assert [x.external_id for x in match_fixture_candidates(
+        'football',START,'Levante UD','Elche CF',rows)]==['la-liga-1']
+
+
 def test_verified_database_aliases_expand_football_matching():
     rows=[fixture('1','Mock Alias','Mock Away')]
     assert match_fixture_candidates('football',START,'Mock Home','Mock Away',rows)==[]

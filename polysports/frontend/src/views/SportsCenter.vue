@@ -24,6 +24,7 @@ const singleError=ref(''),comboError=ref(''),singleLoading=ref(false),comboLoadi
 const totalLine=(market:any)=>{const text=String(market.group||market.question||''),match=text.match(/-?\d+(?:\.\d+)?/);return match?Number.parseFloat(match[0]):null}
 const compareTotals=(a:any,b:any)=>{const left=totalLine(a),right=totalLine(b);if(left===null&&right===null)return String(a.id).localeCompare(String(b.id));if(left===null)return 1;if(right===null)return -1;return left-right||String(a.id).localeCompare(String(b.id))}
 const marketGroups=computed(()=>{const defs=[{type:'moneyline',football:'全场胜平负',nba:'胜负'},{type:'totals',football:'全场总进球大小',nba:'总分大小'}];return defs.map(def=>({...def,label:sport()==='football'?def.football:def.nba,events:(liveData.value?.events||[]).map((event:any)=>{const markets=event.markets.filter((market:any)=>market.type===def.type);if(def.type==='totals')markets.sort(compareTotals);return {...event,markets}}).filter((event:any)=>event.markets.length)}))})
+const comboPrompt=computed(()=>message.value==='已加入组合，可继续选择其他比赛，或打开')
 let detailRequest=0
 const sport=()=>String(route.params.sport)
 const title=()=>sport()==='football'?'足球赛事中心':'NBA 赛事中心'
@@ -163,7 +164,7 @@ async function addComboOutcome(event:any,market:any,outcome:any,index:string|num
     if(!Array.isArray(legs))throw new Error('组合单数据无法读取，请先清理组合单。')
     if(legs.some((leg:any)=>leg.market_link_id===chosen.market_link_id)){message.value='该市场已有选项在组合单中，请先移除原选项。';return}
     legs.push({...chosen,label:name(game.home_team)+' 对 '+name(game.away_team)+' · '+(market.group||market.question||'市场')+' · '+outcome.label})
-    localStorage.setItem(key,JSON.stringify(legs));message.value='已加入组合，可继续选择其他比赛，或打开组合交易。'
+    localStorage.setItem(key,JSON.stringify(legs));message.value='已加入组合，可继续选择其他比赛，或打开'
   }catch(e){message.value=e instanceof Error?e.message:'无法验证组合市场，请稍后重试。'}finally{mappingBusy.value=false}
 }
 function edit(team:Team){editor.value=team; chinese.value=team.name_zh || ''; alias.value=''}
@@ -201,7 +202,7 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
       <div v-if="detail" class="dialog-content">
         <div class="detail-sticky">
         <header class="dialog-heading"><div><p class="eyebrow">MATCH CENTRE <span> / </span> UTC+8</p><h2 id="game-dialog-title">赛事详情</h2></div><button class="dialog-close" autofocus aria-label="关闭详情" @click="closeDetail">×</button></header>
-        <p v-if="message" role="status" class="form-message">{{message}}</p>
+        <p v-if="message" role="status" class="form-message">{{message}}<RouterLink v-if="comboPrompt" to="/combos" @click="closeDetail">组合交易</RouterLink><template v-if="comboPrompt">。</template></p>
         <section class="match-summary" aria-label="比赛信息">
           <div class="summary-meta"><span>{{detail.league?.name || (sport()==='nba'?'NBA':'足球')}}</span><span>·</span><span>{{detail.starts_at ? formatDateTime(detail.starts_at)+' UTC+8' : '开赛时间未知'}}</span><span class="summary-status">{{gameStatusName(detail.status)}}</span></div>
           <div v-if="detail.home_team && detail.away_team" class="summary-teams"><div class="summary-team"><img v-if="detail.home_team.logo_url" :src="detail.home_team.logo_url" alt=""><span v-else class="summary-logo">主</span><div><small>主队</small><strong>{{name(detail.home_team)}}</strong><small v-if="detail.home_team.name_zh" class="summary-source-name">{{detail.home_team.source_name}}</small><button class="text-button team-maintain" @click="editFromDetail(detail.home_team)">维护名称</button></div></div><div v-if="detail.home_score!==null && detail.away_score!==null" class="game-scoreboard summary-scoreboard" :aria-label="`${scoreLabel(detail)}：${name(detail.home_team)} ${detail.home_score} 比 ${detail.away_score} ${name(detail.away_team)}`"><span class="game-score-label">{{scoreLabel(detail)}}</span><div class="game-score-line"><strong :class="detail.home_score>detail.away_score?'score-winner':detail.home_score<detail.away_score?'score-loser':''">{{detail.home_score}}</strong><span class="game-score-sep">:</span><strong :class="detail.away_score>detail.home_score?'score-winner':detail.away_score<detail.home_score?'score-loser':''">{{detail.away_score}}</strong></div></div><span v-else class="summary-versus">VS</span><div class="summary-team away"><div><small>客队</small><strong>{{name(detail.away_team)}}</strong><small v-if="detail.away_team.name_zh" class="summary-source-name">{{detail.away_team.source_name}}</small><button class="text-button team-maintain" @click="editFromDetail(detail.away_team)">维护名称</button></div><img v-if="detail.away_team.logo_url" :src="detail.away_team.logo_url" alt=""><span v-else class="summary-logo">客</span></div></div>

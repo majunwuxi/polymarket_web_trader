@@ -16,6 +16,7 @@ const games=ref<Game[]>([]), next=ref<string|null>(null), message=ref(''), loadi
 const lastSync=ref<{status:string;error_code:string|null;started_at:string|null;scheduled_for:string}|null>(null)
 const mappingBusy=ref(false)
 const detail=ref<Record<string,any>|null>(null), editor=ref<Team|null>(null), chinese=ref(''), alias=ref(''), selectedRange=ref('upcoming')
+const teamDialog=ref<HTMLDialogElement|null>(null), savingTeam=ref(false), teamError=ref('')
 const detailDialog=ref<HTMLDialogElement|null>(null), liveData=ref<any>(null), liveError=ref(''), liveLoading=ref(false), binding=ref<any>(null)
 const bindingSummary=ref<any>(null),bindingSummaryLoading=ref(false),bindingSummaryError=ref(''),bindingActionError=ref(''),bindingBusy=ref<string|null>(null),expandedBinding=ref<string|null>(null)
 let summaryRequest=0
@@ -100,7 +101,7 @@ async function followGame(game:Game) {
     if(detail.value?.id===game.id) await showDetail(game)
   } catch(e) { message.value=e instanceof Error?e.message:'关注失败，请检查服务状态。' }
 }
-function closeDetail(){detailRequest++;detailDialog.value?.close();detail.value=null;liveData.value=null;binding.value=null;matchSingle.value=[];matchCombo.value=[]}
+function closeDetail(){detailRequest++;teamDialog.value?.close();editor.value=null;teamError.value='';detailDialog.value?.close();detail.value=null;liveData.value=null;binding.value=null;matchSingle.value=[];matchCombo.value=[]}
 const polySlugs=new Map<string,string>(),polyBusy=ref<string|null>(null)
 async function openPolymarket(game:Game){
   if(polyBusy.value)return
@@ -167,15 +168,26 @@ async function addComboOutcome(event:any,market:any,outcome:any,index:string|num
     localStorage.setItem(key,JSON.stringify(legs));message.value='已加入组合，可继续选择其他比赛，或打开'
   }catch(e){message.value=e instanceof Error?e.message:'无法验证组合市场，请稍后重试。'}finally{mappingBusy.value=false}
 }
-function edit(team:Team){editor.value=team; chinese.value=team.name_zh || ''; alias.value=''}
-function editFromDetail(team:Team){closeDetail();edit(team)}
+function edit(team:Team){editor.value=team; chinese.value=team.name_zh || ''; alias.value=''; teamError.value=''; void nextTick().then(()=>{if(teamDialog.value&&!teamDialog.value.open)teamDialog.value.showModal()})}
+function editFromDetail(team:Team){edit(team)}
+function closeTeamEditor(){teamDialog.value?.close();editor.value=null;chinese.value='';alias.value='';teamError.value=''}
 async function saveTeam() {
-  if(!editor.value) return
+  if(!editor.value||savingTeam.value) return
+  savingTeam.value=true;teamError.value=''
   try {
-    await api('/teams/'+editor.value.id,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({name_zh:chinese.value.trim() || null,translation_status:chinese.value.trim()?'verified':'missing'})})
+    const updated=await api('/teams/'+editor.value.id,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({name_zh:chinese.value.trim() || null,translation_status:chinese.value.trim()?'verified':'missing'})})
     if(alias.value.trim()) await api('/teams/'+editor.value.id+'/aliases',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({alias:alias.value.trim(),language:'zh-CN',verified:true})})
-    editor.value=null; detail.value=null; await load()
-  } catch {message.value='球队资料保存失败，译名可能已保存；请刷新后核对。'}
+    // 保持在详情内：就地更新球队显示，不关闭详情也不离开主界面。
+    const patch=(team:Team)=>({...team,name_zh:updated?.name_zh ?? (chinese.value.trim()||null),name_zh_source:chinese.value.trim()?'manual':null})
+    if(detail.value){
+      if(detail.value.home_team?.id===editor.value.id) detail.value={...detail.value,home_team:patch(detail.value.home_team)}
+      if(detail.value.away_team?.id===editor.value.id) detail.value={...detail.value,away_team:patch(detail.value.away_team)}
+    }
+    games.value=games.value.map(game=>({...game,home_team:game.home_team.id===editor.value!.id?patch(game.home_team):game.home_team,away_team:game.away_team.id===editor.value!.id?patch(game.away_team):game.away_team}))
+    message.value='球队中文名已保存。'
+    closeTeamEditor()
+  } catch {teamError.value='球队资料保存失败，译名可能已保存；请刷新后核对。'}
+  finally {savingTeam.value=false}
 }
 async function signOut() {try {await logout(); await router.replace('/login')} catch(e) {if(e instanceof ApiError && e.status===401) {clearSession(); await router.replace('/login')} else message.value='退出请求未确认，请重试。'}}
 watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRange.value='upcoming';load();loadBindingSummary()},{immediate:true})
@@ -245,7 +257,18 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
         </section>
 <details class="match-history"><summary>赛事来源与变更记录</summary><p v-if="detail.watch">关注状态：{{detail.watch.state}}<span v-if="detail.watch.next_due_at"> · 下次查询：{{formatDateTime(detail.watch.next_due_at)}} UTC+8</span></p><p v-if="!detail.recent_revisions.length">暂无变更记录</p><p v-for="(revision,index) in detail.recent_revisions" :key="index">{{formatDateTime(revision.observed_at)}} · {{revision.old_status}} → {{revision.new_status}}<span v-if="revision.old_starts_at !== revision.new_starts_at"> · 时间已调整</span></p></details>
 </div></dialog>
-    <section v-if="editor" class="welcome-card detail"><h2>维护球队：{{editor.source_name}}</h2><label for="chinese">已确认中文名（留空表示待补充）</label><input id="chinese" v-model="chinese" maxlength="200"><label for="alias">中文别名（可选）</label><input id="alias" v-model="alias" maxlength="200"><div><button class="text-button" @click="editor=null">取消</button><button class="text-button" @click="saveTeam">保存</button></div></section>
+    <dialog ref="teamDialog" class="team-dialog" aria-labelledby="team-dialog-title" @cancel.prevent="closeTeamEditor" @close="editor=null">
+      <form v-if="editor" class="team-dialog-body" @submit.prevent="saveTeam">
+        <header class="dialog-heading"><div><p class="eyebrow">TEAM DIRECTORY</p><h2 id="team-dialog-title">维护球队：{{editor.name_zh || editor.source_name}}</h2></div><button type="button" class="dialog-close" aria-label="关闭球队维护" @click="closeTeamEditor">×</button></header>
+        <p class="team-dialog-source">来源名称：{{editor.source_name}}</p>
+        <label for="chinese">已确认中文名（留空表示待补充）</label>
+        <input id="chinese" v-model="chinese" maxlength="200" autofocus>
+        <label for="alias">中文别名（可选）</label>
+        <input id="alias" v-model="alias" maxlength="200">
+        <p v-if="teamError" role="alert" class="form-message">{{teamError}}</p>
+        <div class="team-dialog-actions"><button type="button" class="text-button" :disabled="savingTeam" @click="closeTeamEditor">取消</button><button type="submit" class="text-button" :disabled="savingTeam">{{savingTeam?'保存中…':'保存'}}</button></div>
+      </form>
+    </dialog>
   </main>
 </div>
 </template>

@@ -74,7 +74,26 @@ it('赛事卡合并重复的队名提示，并把球队维护移入详情',async
   const summaryInfo=view.get('[aria-label="比赛信息"]')
   expect(summaryInfo.findAll('button').filter(button=>button.text()==='维护名称')).toHaveLength(2)
   await summaryInfo.findAll('button').find(button=>button.text()==='维护名称')!.trigger('click');await flushPromises()
-  expect(view.text()).toContain('维护球队：瑞士')
+  const teamDialog=view.get('.team-dialog')
+  expect(teamDialog.text()).toContain('维护球队：瑞士')
+  // 维护窗体是叠在详情之上的独立弹窗，详情仍然打开。
+  expect(teamDialog.attributes('open')).toBeDefined()
+  expect(view.get('[aria-label="比赛信息"]').exists()).toBe(true)
+  view.unmount()
+})
+
+it('球队维护弹窗保存后留在详情，并就地更新队名',async()=>{
+  const {view,fetchMock}=setup();await flushPromises()
+  await view.get('.game-card').findAll('button').find(button=>button.text()==='查看详情')!.trigger('click');await flushPromises()
+  await view.get('[aria-label="比赛信息"]').findAll('button').find(button=>button.text()==='维护名称')!.trigger('click');await flushPromises()
+  await view.get('.team-dialog input#chinese').setValue('瑞士队')
+  await view.get('.team-dialog form').trigger('submit')
+  await flushPromises()
+  const request=fetchMock.mock.calls.find(([url])=>String(url).endsWith('/teams/瑞士'))
+  expect((request![1] as RequestInit).method).toBe('PATCH')
+  // 详情没有被关闭，队名就地更新。
+  expect(view.get('[aria-label="比赛信息"]').exists()).toBe(true)
+  expect(view.get('[aria-label="比赛信息"]').text()).toContain('瑞士队')
   view.unmount()
 })
 

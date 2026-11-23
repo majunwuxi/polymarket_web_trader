@@ -60,6 +60,20 @@
 .match-orders .match-order-card .result-badge{margin-left:2px}
 @media(max-width:600px){.summary-scoreboard{min-width:0;margin:0 4px;padding:6px 10px}.summary-scoreboard .game-score-line strong{font-size:22px}}
 .team-maintain{margin-top:2px;font-size:11px;font-weight:600}
+/* 球队维护：叠在赛事详情之上的独立弹窗，保存后不关闭详情、不离开主界面。 */
+.team-dialog{width:min(420px,calc(100vw - 32px));padding:0;border:0;border-radius:16px;background:#f7faf8;box-shadow:0 24px 80px #10251a66;color:#20332b}
+.team-dialog::backdrop{background:#10251a66}
+.team-dialog-body{padding:20px 22px 22px;display:grid;gap:4px}
+.team-dialog-body .dialog-heading{margin-bottom:6px}
+.team-dialog-body label{display:block;margin:12px 0 6px;font-size:12px;font-weight:700;color:#5c7266}
+.team-dialog-body input{display:block;width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #d9e5de;border-radius:8px;font:inherit;background:#fff;color:#20332b}
+.team-dialog-body input:focus{outline:2px solid #bfe0cd;outline-offset:1px;border-color:#8fc4a8}
+.team-dialog-source{margin:0;font-size:12px;color:#7d9085;overflow-wrap:anywhere}
+.team-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.team-dialog-actions .text-button{min-width:72px;justify-content:center}
+.team-dialog-actions .text-button:last-child{background:#1f7a58;color:#fff;border-radius:8px;padding:8px 14px}
+.team-dialog-actions .text-button:last-child:disabled{background:#9bb7a8;cursor:not-allowed}
+@media(max-width:600px){.team-dialog{width:calc(100vw - 20px)}.team-dialog-body{padding:16px}}
 .summary-source-name{display:block;margin-top:2px;color:#7d9085;font-size:11px;font-weight:600;letter-spacing:.02em}
 .job-target{flex:1 1 100%;margin-top:2px;font-size:12px;line-height:1.6;color:#53675c;overflow-wrap:anywhere}
 

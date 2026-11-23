@@ -106,6 +106,20 @@ def test_football_directory_acle_api_names_share_polymarket_aliases():
         assert football_name_variants(api_name), api_name
 
 
+def test_football_directory_backfilled_teams_share_polymarket_aliases():
+    # API-Football 名与 Polymarket 队名必须解析到同一组归一化别名。
+    pairs={
+        'Aalesund':'Aalesunds FK', 'Malaga':'Málaga CF',
+        'Deportivo La Coruna':'RC Deportivo A Coruña', 'Maritimo':'CS Marítimo',
+        'Academico Viseu':'Académico de Viseu FC', 'Degerfors IF':'Degerfors IF',
+        'Orgryte IS':'Örgryte IS', 'PK-35 Vantaa':'PK-35',
+        'Turku PS':'TPS Turku', 'Aldosivi':'CA Aldosivi',
+    }
+    for api_name,polymarket_name in pairs.items():
+        assert football_name_variants(api_name)==football_name_variants(polymarket_name), api_name
+        assert football_name_variants(api_name), api_name
+
+
 def test_football_alias_collisions_stay_conservative():
     # 别名与另一支球队的键冲突时，冲突键回退为不匹配，不猜测归属。
     alpha={'name_en':'Alpha FC','name_zh':'甲队','aliases':['Shared Name']}

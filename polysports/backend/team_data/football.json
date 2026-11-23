@@ -1396,6 +1396,16 @@
     "logo": "https://media.api-sports.io/football/teams/212.png",
     "leagues": "PRIMEIRA"
   },
+  "214": {
+    "name_en": "Maritimo",
+    "name_zh": "马里迪莫",
+    "country": "Portugal",
+    "logo": "https://media.api-sports.io/football/teams/214.png",
+    "leagues": "PRIMEIRA",
+    "aliases": [
+      "CS Marítimo"
+    ]
+  },
   "215": {
     "name_en": "Moreirense",
     "name_zh": "莫雷伦斯",
@@ -1480,6 +1490,16 @@
     "country": "Portugal",
     "logo": "https://media.api-sports.io/football/teams/231.png",
     "leagues": "PRIMEIRA"
+  },
+  "238": {
+    "name_en": "Academico Viseu",
+    "name_zh": "维塞乌学院",
+    "country": "Portugal",
+    "logo": "https://media.api-sports.io/football/teams/238.png",
+    "leagues": "LIGA_PORTUGAL2",
+    "aliases": [
+      "Académico de Viseu FC"
+    ]
   },
   "240": {
     "name_en": "Arouca",
@@ -2278,6 +2298,16 @@
       "CA San Lorenzo de Almagro"
     ]
   },
+  "463": {
+    "name_en": "Aldosivi",
+    "name_zh": "阿尔多西维",
+    "country": "Argentina",
+    "logo": "https://media.api-sports.io/football/teams/463.png",
+    "leagues": "ARG_A",
+    "aliases": [
+      "CA Aldosivi"
+    ]
+  },
   "473": {
     "name_en": "Independ. Rivadavia",
     "name_zh": "门多萨独立",
@@ -2550,6 +2580,17 @@
     "logo": "https://media.api-sports.io/football/teams/534.png",
     "leagues": "LALIGA"
   },
+  "535": {
+    "name_en": "Malaga",
+    "name_zh": "马拉加",
+    "country": "Spain",
+    "logo": "https://media.api-sports.io/football/teams/535.png",
+    "leagues": "LALIGA",
+    "aliases": [
+      "Málaga CF",
+      "Malaga CF"
+    ]
+  },
   "536": {
     "name_en": "Sevilla",
     "name_zh": "塞维利亚",
@@ -2625,6 +2666,18 @@
     "leagues": "LALIGA",
     "aliases": [
       "Real Betis Balompié"
+    ]
+  },
+  "544": {
+    "name_en": "Deportivo La Coruna",
+    "name_zh": "拉科鲁尼亚",
+    "country": "Spain",
+    "logo": "https://media.api-sports.io/football/teams/544.png",
+    "leagues": "LALIGA",
+    "aliases": [
+      "RC Deportivo A Coruña",
+      "RC Deportivo La Coruña",
+      "Deportivo La Coruña"
     ]
   },
   "546": {
@@ -2979,6 +3032,16 @@
       "Náutico",
       "Náutico Recife",
       "Clube Náutico Capibaribe"
+    ]
+  },
+  "757": {
+    "name_en": "Aalesund",
+    "name_zh": "奥勒松",
+    "country": "Norway",
+    "logo": "https://media.api-sports.io/football/teams/757.png",
+    "leagues": "ELITES",
+    "aliases": [
+      "Aalesunds FK"
     ]
   },
   "759": {
@@ -3516,6 +3579,29 @@
       "FC Lahti"
     ]
   },
+  "1168": {
+    "name_en": "Turku PS",
+    "name_zh": "TPS图尔库",
+    "country": "Finland",
+    "logo": "https://media.api-sports.io/football/teams/1168.png",
+    "leagues": "VEIK",
+    "aliases": [
+      "TPS Turku",
+      "TPS",
+      "Turun Palloseura"
+    ]
+  },
+  "1173": {
+    "name_en": "PK-35 Vantaa",
+    "name_zh": "PK-35万塔",
+    "country": "Finland",
+    "logo": "https://media.api-sports.io/football/teams/1173.png",
+    "leagues": "YKKOSLIIGA",
+    "aliases": [
+      "PK-35",
+      "PK-35 Helsinki"
+    ]
+  },
   "1193": {
     "name_en": "Cuiaba",
     "name_zh": "库亚巴",
@@ -3765,11 +3851,28 @@
     "logo": "https://media.api-sports.io/football/teams/2163.png",
     "leagues": "ALLSV"
   },
+  "2166": {
+    "name_en": "Orgryte IS",
+    "name_zh": "奥尔格里特",
+    "country": "Sweden",
+    "logo": "https://media.api-sports.io/football/teams/2166.png",
+    "leagues": "ALLSV",
+    "aliases": [
+      "Örgryte IS"
+    ]
+  },
   "2170": {
     "name_en": "Gais",
     "name_zh": "哥德堡盖斯",
     "country": "Sweden",
     "logo": "https://media.api-sports.io/football/teams/2170.png",
+    "leagues": "ALLSV"
+  },
+  "2172": {
+    "name_en": "Degerfors IF",
+    "name_zh": "代格福什",
+    "country": "Sweden",
+    "logo": "https://media.api-sports.io/football/teams/2172.png",
     "leagues": "ALLSV"
   },
   "2176": {

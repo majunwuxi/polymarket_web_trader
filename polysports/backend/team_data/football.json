@@ -1541,7 +1541,7 @@
     "name_zh": "柏太阳神",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/281.png",
-    "leagues": "J1"
+    "leagues": "ACLE,J1"
   },
   "282": {
     "name_en": "Sanfrecce Hiroshima",
@@ -1576,14 +1576,17 @@
     "name_zh": "神户胜利船",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/289.png",
-    "leagues": "J1"
+    "leagues": "ACLE,J1"
   },
   "290": {
     "name_en": "Kashima",
     "name_zh": "鹿岛鹿角",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/290.png",
-    "leagues": "J1"
+    "leagues": "ACLE,J1",
+    "aliases": [
+      "Kashima Antlers"
+    ]
   },
   "291": {
     "name_en": "Cerezo Osaka",
@@ -1604,7 +1607,7 @@
     "name_zh": "大阪钢巴",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/293.png",
-    "leagues": "J1"
+    "leagues": "ACLE,J1"
   },
   "294": {
     "name_en": "Kawasaki Frontale",
@@ -1632,7 +1635,10 @@
     "name_zh": "京都不死鸟",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/302.png",
-    "leagues": "J1"
+    "leagues": "ACLE,J1",
+    "aliases": [
+      "Kyoto Sanga FC"
+    ]
   },
   "303": {
     "name_en": "Machida Zelvia",
@@ -3146,6 +3152,16 @@
     "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/d/d3/Shanghai_Shenhua_F.C.svg/1280px-Shanghai_Shenhua_F.C.svg.png",
     "leagues": "ACLE,CSL"
   },
+  "836": {
+    "name_en": "SHANGHAI SIPG",
+    "name_zh": "上海海港",
+    "country": "China",
+    "logo": "https://media.api-sports.io/football/teams/836.png",
+    "aliases": [
+      "Shanghai Port FC"
+    ],
+    "leagues": "ACLE,CSL"
+  },
   "867": {
     "name_en": "Lecce",
     "name_zh": "莱切",
@@ -3165,6 +3181,16 @@
     "aliases": [
       "Como 1907"
     ]
+  },
+  "946": {
+    "name_en": "Newcastle Jets",
+    "name_zh": "纽卡斯尔喷气机",
+    "country": "Australia",
+    "logo": "https://media.api-sports.io/football/teams/946.png",
+    "aliases": [
+      "Newcastle United Jets"
+    ],
+    "leagues": "ACLE"
   },
   "998": {
     "name_en": "Trabzonspor",
@@ -3794,6 +3820,18 @@
       "CA Barracas Central"
     ]
   },
+  "2523": {
+    "name_en": "Johor Darul Takzim FC",
+    "name_zh": "柔佛新山",
+    "country": "Malaysia",
+    "logo": "https://media.api-sports.io/football/teams/2523.png",
+    "aliases": [
+      "Johor Darul Ta'zim",
+      "JDT",
+      "柔佛DT"
+    ],
+    "leagues": "ACLE"
+  },
   "2618": {
     "name_en": "Botafogo SP",
     "name_zh": "博塔弗戈SP",
@@ -3805,12 +3843,33 @@
       "Botafogo Ribeirão Preto"
     ]
   },
+  "2733": {
+    "name_en": "Esteghlal FC",
+    "name_zh": "德黑兰独立",
+    "country": "Iran",
+    "logo": "https://media.api-sports.io/football/teams/2733.png",
+    "aliases": [
+      "Esteghlal FC Tehran",
+      "埃斯特格拉尔"
+    ],
+    "leagues": "ACLE"
+  },
+  "2737": {
+    "name_en": "Tractor Sazi",
+    "name_zh": "大不里士拖拉机",
+    "country": "Iran",
+    "logo": "https://media.api-sports.io/football/teams/2737.png",
+    "aliases": [
+      "Tractor Tabriz"
+    ],
+    "leagues": "ACLE"
+  },
   "2746": {
     "name_en": "Gangwon FC",
     "name_zh": "江原FC",
     "country": "South-Korea",
     "logo": "https://media.api-sports.io/football/teams/2746.png",
-    "leagues": "K1"
+    "leagues": "ACLE,K1"
   },
   "2747": {
     "name_en": "Daegu FC",
@@ -3831,7 +3890,10 @@
     "name_zh": "大田市民",
     "country": "South-Korea",
     "logo": "https://media.api-sports.io/football/teams/2750.png",
-    "leagues": "K1"
+    "leagues": "ACLE,K1",
+    "aliases": [
+      "Daejeon Citizen FC"
+    ]
   },
   "2753": {
     "name_en": "Asan Mugunghwa",
@@ -3863,10 +3925,14 @@
   },
   "2762": {
     "name_en": "Jeonbuk Motors",
-    "name_zh": "全北现代汽车",
+    "name_zh": "全北现代",
     "country": "South-Korea",
     "logo": "https://media.api-sports.io/football/teams/2762.png",
-    "leagues": "K1"
+    "leagues": "ACLE,K1",
+    "aliases": [
+      "全北现代汽车",
+      "Jeonbuk FC"
+    ]
   },
   "2763": {
     "name_en": "Incheon United",
@@ -3880,7 +3946,10 @@
     "name_zh": "浦项制铁",
     "country": "South-Korea",
     "logo": "https://media.api-sports.io/football/teams/2764.png",
-    "leagues": "K1"
+    "leagues": "ACLE,K1",
+    "aliases": [
+      "FC Pohang Steelers"
+    ]
   },
   "2766": {
     "name_en": "FC Seoul",
@@ -3903,16 +3972,165 @@
     "logo": "https://media.api-sports.io/football/teams/2768.png",
     "leagues": "K1"
   },
+  "2776": {
+    "name_en": "Ratchaburi",
+    "name_zh": "叻丕府",
+    "country": "Thailand",
+    "logo": "https://media.api-sports.io/football/teams/2776.png",
+    "aliases": [
+      "Ratchaburi FC",
+      "拉查武里"
+    ],
+    "leagues": "ACLE"
+  },
   "2780": {
     "name_en": "Buriram United",
-    "name_zh": "布里兰",
+    "name_zh": "武里南联",
     "aliases": [
       "Buriram United F.C.",
       "Buriram United FC",
-      "武里南联"
+      "武里南联",
+      "布里兰"
     ],
     "country": "Thailand",
     "logo": "https://thumb.wikimedia.org/wikipedia/en/thumb/9/93/Buriram_United_logo.svg/500px-Buriram_United_logo.svg.png",
+    "leagues": "ACLE"
+  },
+  "2789": {
+    "name_en": "Port FC",
+    "name_zh": "泰港",
+    "country": "Thailand",
+    "logo": "https://media.api-sports.io/football/teams/2789.png",
+    "aliases": [
+      "Port Authority of Thailand",
+      "狮子港"
+    ],
+    "leagues": "ACLE"
+  },
+  "2865": {
+    "name_en": "Al Ain",
+    "name_zh": "艾因",
+    "country": "United-Arab-Emirates",
+    "logo": "https://media.api-sports.io/football/teams/2865.png",
+    "aliases": [
+      "Al Ain FC"
+    ],
+    "leagues": "ACLE"
+  },
+  "2870": {
+    "name_en": "Shabab Al Ahli Dubai",
+    "name_zh": "迪拜青年国民",
+    "country": "United-Arab-Emirates",
+    "logo": "https://media.api-sports.io/football/teams/2870.png",
+    "aliases": [
+      "Shabab Al Ahli Club"
+    ],
+    "leagues": "ACLE"
+  },
+  "2871": {
+    "name_en": "Al-Jazira",
+    "name_zh": "阿布扎比半岛",
+    "country": "United-Arab-Emirates",
+    "logo": "https://media.api-sports.io/football/teams/2871.png",
+    "aliases": [
+      "Al Jazira (UAE)",
+      "Al Jazira Club"
+    ],
+    "leagues": "ACLE"
+  },
+  "2872": {
+    "name_en": "Al-Wasl FC",
+    "name_zh": "迪拜瓦斯尔",
+    "country": "United-Arab-Emirates",
+    "logo": "https://media.api-sports.io/football/teams/2872.png",
+    "aliases": [
+      "Al Wasl FC"
+    ],
+    "leagues": "ACLE"
+  },
+  "2895": {
+    "name_en": "Al Sadd",
+    "name_zh": "萨德",
+    "country": "Qatar",
+    "logo": "https://media.api-sports.io/football/teams/2895.png",
+    "aliases": [
+      "Al Sadd SC",
+      "阿尔萨德"
+    ],
+    "leagues": "ACLE"
+  },
+  "2903": {
+    "name_en": "Al-Gharafa",
+    "name_zh": "加拉法",
+    "country": "Qatar",
+    "logo": "https://media.api-sports.io/football/teams/2903.png",
+    "aliases": [
+      "Al Gharafa SC",
+      "阿尔加拉法"
+    ],
+    "leagues": "ACLE"
+  },
+  "2916": {
+    "name_en": "Al Shamal",
+    "name_zh": "沙马尔",
+    "country": "Qatar",
+    "logo": "https://media.api-sports.io/football/teams/2916.png",
+    "aliases": [
+      "Al-Shamal",
+      "舒马尔"
+    ],
+    "leagues": "ACLE"
+  },
+  "2929": {
+    "name_en": "Al-Ahli Jeddah",
+    "name_zh": "吉达国民",
+    "country": "Saudi-Arabia",
+    "logo": "https://media.api-sports.io/football/teams/2929.png",
+    "aliases": [
+      "Al Ahli Saudi FC",
+      "吉达阿赫利"
+    ],
+    "leagues": "ACLE"
+  },
+  "2932": {
+    "name_en": "Al-Hilal Saudi FC",
+    "name_zh": "利雅得新月",
+    "country": "Saudi-Arabia",
+    "logo": "https://media.api-sports.io/football/teams/2932.png",
+    "aliases": [
+      "Al Hilal SFC"
+    ],
+    "leagues": "ACLE"
+  },
+  "2933": {
+    "name_en": "Al-Qadisiyah FC",
+    "name_zh": "胡拜尔库迪西亚",
+    "country": "Saudi-Arabia",
+    "logo": "https://media.api-sports.io/football/teams/2933.png",
+    "aliases": [
+      "Al Qadsiah",
+      "卡迪西亚"
+    ],
+    "leagues": "ACLE"
+  },
+  "2938": {
+    "name_en": "Al-Ittihad FC",
+    "name_zh": "吉达联合",
+    "country": "Saudi-Arabia",
+    "logo": "https://media.api-sports.io/football/teams/2938.png",
+    "aliases": [
+      "Al-Ittihad Club"
+    ],
+    "leagues": "ACLE"
+  },
+  "2939": {
+    "name_en": "Al-Nassr",
+    "name_zh": "利雅得胜利",
+    "country": "Saudi-Arabia",
+    "logo": "https://media.api-sports.io/football/teams/2939.png",
+    "aliases": [
+      "Al Nassr Club"
+    ],
     "leagues": "ACLE"
   },
   "3012": {
@@ -3964,6 +4182,27 @@
     "logo": "https://media.api-sports.io/football/teams/4160.png",
     "leagues": "UCL"
   },
+  "4217": {
+    "name_en": "Neftchi",
+    "name_zh": "费尔干纳纳夫奇",
+    "country": "Uzbekistan",
+    "logo": "https://media.api-sports.io/football/teams/4217.png",
+    "aliases": [
+      "FK Neftchi Fargona",
+      "Neftchi Fergana"
+    ],
+    "leagues": "ACLE"
+  },
+  "4220": {
+    "name_en": "Pakhtakor",
+    "name_zh": "塔什干棉农",
+    "country": "Uzbekistan",
+    "logo": "https://media.api-sports.io/football/teams/4220.png",
+    "aliases": [
+      "Pakhtakor Tashkent"
+    ],
+    "leagues": "ACLE"
+  },
   "4346": {
     "name_en": "Struga",
     "name_zh": "斯特鲁加",
@@ -3977,6 +4216,18 @@
     "country": "Slovenia",
     "logo": "https://media.api-sports.io/football/teams/4360.png",
     "leagues": "UCL"
+  },
+  "4532": {
+    "name_en": "Al Hussein",
+    "name_zh": "伊尔比德侯赛因",
+    "country": "Jordan",
+    "logo": "https://media.api-sports.io/football/teams/4532.png",
+    "aliases": [
+      "Al Hussein Irbid",
+      "侯赛因伊尔比德",
+      "胡塞因"
+    ],
+    "leagues": "ACLE"
   },
   "4626": {
     "name_en": "Hamrun Spartans",
@@ -4069,6 +4320,16 @@
       "Mirassol FC"
     ]
   },
+  "8009": {
+    "name_en": "Al Quwa Al Jawiya",
+    "name_zh": "巴格达空军",
+    "country": "Iraq",
+    "logo": "https://media.api-sports.io/football/teams/8009.png",
+    "aliases": [
+      "Al-Quwa Al-Jawiya"
+    ],
+    "leagues": "ACLE"
+  },
   "10862": {
     "name_en": "Amazonas",
     "name_zh": "亚马孙",
@@ -4095,6 +4356,17 @@
     "aliases": [
       "CF Estrela da Amadora"
     ]
+  },
+  "16400": {
+    "name_en": "Công An Nhân Dân",
+    "name_zh": "河内公安",
+    "country": "Vietnam",
+    "logo": "https://media.api-sports.io/football/teams/16400.png",
+    "aliases": [
+      "Cong An Ha Noi FC",
+      "Hanoi Police"
+    ],
+    "leagues": "ACLE"
   },
   "21595": {
     "name_en": "AVS",

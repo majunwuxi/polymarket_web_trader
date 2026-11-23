@@ -66,6 +66,46 @@ def test_football_directory_serie_a_polymarket_names_show_chinese():
         assert result['name_zh']==name_zh and result['name_zh_source']=='sportsmatch', source
 
 
+def test_football_directory_acle_polymarket_names_show_chinese():
+    # 亚冠精英：Polymarket Gamma `league=acle` 的 35 支现役球队必须都能显示中文名。
+    expected={
+        'Al Ahli Saudi FC':'吉达国民', 'Al Ain FC':'艾因', 'Al Gharafa SC':'加拉法',
+        'Al Hilal SFC':'利雅得新月', 'Al Hussein Irbid':'伊尔比德侯赛因',
+        'Al Jazira (UAE)':'阿布扎比半岛', 'Al Nassr Club':'利雅得胜利',
+        'Al Qadsiah':'胡拜尔库迪西亚', 'Al Quwa Al Jawiya':'巴格达空军', 'Al Sadd SC':'萨德',
+        'Al Wasl FC':'迪拜瓦斯尔', 'Al-Ittihad Club':'吉达联合', 'Al-Shamal':'沙马尔',
+        'Beijing Guoan':'北京国安', 'Buriram United':'武里南联', 'Cong An Ha Noi FC':'河内公安',
+        'Daejeon Citizen FC':'大田市民', 'Esteghlal FC Tehran':'德黑兰独立',
+        'FC Pohang Steelers':'浦项制铁', 'FK Neftchi Fargona':'费尔干纳纳夫奇',
+        'Gamba Osaka':'大阪钢巴', 'Gangwon FC':'江原FC', 'Jeonbuk FC':'全北现代',
+        "Johor Darul Ta'zim":'柔佛新山', 'Kashima Antlers':'鹿岛鹿角', 'Kashiwa Reysol':'柏太阳神',
+        'Kyoto Sanga FC':'京都不死鸟', 'Newcastle United Jets':'纽卡斯尔喷气机',
+        'Pakhtakor':'塔什干棉农', 'Port FC':'泰港', 'Ratchaburi FC':'叻丕府',
+        'Shabab Al Ahli Dubai':'迪拜青年国民', 'Shanghai Port FC':'上海海港',
+        'Tractor Tabriz':'大不里士拖拉机', 'Vissel Kobe':'神户胜利船',
+    }
+    assert len(expected)==35
+    for source,name_zh in expected.items():
+        result=display_team(team(source))
+        assert result['name_zh']==name_zh and result['name_zh_source']=='sportsmatch', source
+        assert result['logo_url'] and result['logo_url'].startswith('https://'), source
+
+
+def test_football_directory_acle_api_names_share_polymarket_aliases():
+    # 赛果绑定用 API-Football 名，显示用 Polymarket 名；两者必须是同一支球队的精确别名。
+    pairs={
+        'Kashima':'Kashima Antlers', 'Kyoto Sanga':'Kyoto Sanga FC',
+        'Daejeon Citizen':'Daejeon Citizen FC', 'Jeonbuk Motors':'Jeonbuk FC',
+        'Pohang Steelers':'FC Pohang Steelers', 'SHANGHAI SIPG':'Shanghai Port FC',
+        'Al-Hilal Saudi FC':'Al Hilal SFC', 'Al-Ahli Jeddah':'Al Ahli Saudi FC',
+        'Al-Nassr':'Al Nassr Club',
+    }
+    for api_name,polymarket_name in pairs.items():
+        # API-Football 名与 Polymarket 名必须解析到同一组归一化别名。
+        assert football_name_variants(api_name)==football_name_variants(polymarket_name), api_name
+        assert football_name_variants(api_name), api_name
+
+
 def test_football_alias_collisions_stay_conservative():
     # 别名与另一支球队的键冲突时，冲突键回退为不匹配，不猜测归属。
     alpha={'name_en':'Alpha FC','name_zh':'甲队','aliases':['Shared Name']}

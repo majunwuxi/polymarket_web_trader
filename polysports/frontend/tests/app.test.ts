@@ -41,7 +41,7 @@ describe('管理员页面（模拟接口）', () => {
   it('首页三张入口卡分别进入足球、NBA 和交易记录', async () => {
     session.username = 'mock-admin'; session.csrf = 'mock-session-csrf'; session.authenticated = true
     const view = mount(Dashboard, { global: { plugins: [router] } })
-    const entries = view.findAll('a.home-entry')
+    const entries = view.get('[aria-label="赛事与交易入口"]').findAll('a')
     expect(entries.map(entry => entry.attributes('href'))).toEqual(['/sports/football', '/sports/nba', '/orders'])
     await entries[1].trigger('click'); await flushPromises()
     expect(router.currentRoute.value.path).toBe('/sports/nba')

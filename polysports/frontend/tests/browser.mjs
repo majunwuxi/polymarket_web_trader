@@ -75,6 +75,11 @@ try {
       if (endpoint === 'sync-runs') return route.fulfill({status:200,json:{data:{items:[]}}})
       if (endpoint === 'summary' && url.pathname.includes('/result-bindings/')) return route.fulfill({status:200,json:{data:{sport:'football',as_of:'2026-01-01T00:00:00Z',totals:{total:0,bound:0,pending:0,needs_review:0,unbound:0,ready_to_confirm:0},items:[],has_more:false}}})
       if (endpoint === 'games') {
+        if (url.searchParams.get('watched')==='true') {
+          const game = {id:'mock-followed',starts_at:new Date(Date.now()+3600000).toISOString(),
+            home_team:{source_name:'关注主队'},away_team:{source_name:'关注客队'}}
+          return route.fulfill({status:200,json:{data:{items:url.searchParams.get('sport')==='football'?[game]:[],next_cursor:null}}})
+        }
         const team = (id, name) => ({ id, source_name:name, name_zh:null, translation_status:'missing', logo_url:null })
         const game = { id:'mock-game', starts_at:'2026-01-01T18:00:00Z', status:'scheduled', home_team:team('mock-home','Mock Home'), away_team:team('mock-away','Mock Away'), home_score:null, away_score:null, league:null, last_synced_at:null }
         return route.fulfill({status:200,json:{data:{items:[game],next_cursor:null}}})
@@ -94,6 +99,11 @@ try {
     await page.getByRole('heading', { name: '赛事工作台' }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 横向溢出`)
     await page.getByRole('heading', { name: /即将开赛的关注赛事/ }).waitFor()
+    const followed=page.getByRole('link',{name:/关注主队 对 关注客队/})
+    await followed.waitFor()
+    assert.match(await followed.getAttribute('href'), /watched=1&game=mock-followed/)
+    assert.equal(await followed.locator('.schedule-time strong').count(),1)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true)
     if (viewport.width < 600) {
       const menu = page.getByRole('button', { name: '菜单' })
       await menu.click()

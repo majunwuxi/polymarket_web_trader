@@ -14,10 +14,11 @@ onMounted(load)
 let activated=false
 onActivated(()=>{if(!activated){activated=true;return}void load()})
 const deposit=ref<{walletId:string;address:string;wallet_address:string;checked_at:string;assets:{symbol:string;contract:string;minimum_usd:string}[]} | null>(null)
-const depositBusy=ref(false), depositMessage=ref('')
+const depositBusy=ref(false), depositMessage=ref(''), depositQr=ref('')
 async function loadDeposit(id:string){
   depositBusy.value=true
   deposit.value=null
+  depositQr.value=''
   depositMessage.value=''
   try{
     const response=await fetch('/api/v1/wallets/'+encodeURIComponent(id)+'/deposit-address',{
@@ -26,6 +27,12 @@ async function loadDeposit(id:string){
     const body=await response.json()
     if(!response.ok)throw new Error(body?.error?.message || '充值地址暂不可用')
     deposit.value={...body.data,walletId:id}
+    try{
+      const {toDataURL}=await import('qrcode')
+      depositQr.value=await toDataURL(body.data.address,{width:240,margin:4,errorCorrectionLevel:'M'})
+    }catch{
+      depositMessage.value='二维码暂不可用，可复制下方充值地址。'
+    }
   }catch(e){depositMessage.value=e instanceof Error?e.message:'充值地址暂不可用'}
   finally{depositBusy.value=false}
 }
@@ -38,9 +45,19 @@ async function copyDeposit(address:string){
 <button type="button" class="text-button" :disabled="depositBusy" @click="loadDeposit(wallet.id)">查询 Polygon 充值地址</button>
 <section v-if="deposit?.walletId===wallet.id" aria-label="Polygon 充值">
   <h3>Polygon 充值地址</h3>
-  <p class="wallet-address">{{deposit.address}}</p>
-  <p class="wallet-address">入账钱包 {{deposit.wallet_address}}</p>
-  <p>Polymarket Bridge · {{formatDateTimeSeconds(deposit.checked_at)}} UTC+8</p>
-  <ul><li v-for="asset in deposit.assets" :key="asset.contract" class="wallet-address">{{asset.symbol}} · 最低 {{asset.minimum_usd}} USD · 合约 {{asset.contract}}</li></ul>
+  <p><strong>充值网络：</strong>Polygon PoS（EVM，Chain ID 137）</p>
+  <p><strong>充值金额：</strong>在发送钱包中填写，按所选代币的最低充值金额核对。</p>
+  <img v-if="depositQr" class="deposit-qr" :src="depositQr" alt="Polygon 充值地址二维码" width="240" height="240">
+  <p>二维码只包含收款地址。扫码后请在发送钱包中选择 Polygon 网络和下表支持的代币。</p>
+  <p class="wallet-address"><strong>收款地址：</strong>{{deposit.address}}</p>
   <button type="button" class="text-button" @click="copyDeposit(deposit.address)">复制充值地址</button>
+  <h4>支持代币与最低充值金额</h4>
+  <ul>
+    <li v-for="asset in deposit.assets" :key="asset.contract" class="wallet-address">
+      <strong>{{asset.symbol}} · 最低 {{asset.minimum_usd}} USD 等值</strong><br>
+      Polygon 代币合约 {{asset.contract}}
+    </li>
+  </ul>
+  <p class="wallet-address">入账钱包 {{deposit.wallet_address}}</p>
+  <p>来源 Polymarket Bridge · {{formatDateTimeSeconds(deposit.checked_at)}} UTC+8</p>
 </section><div v-if="selected?.wallet.id===wallet.id"><p>余额：{{selected.collateral_balance ?? '未知'}}</p><p>授权状态：{{selected.allowance_status==='unknown'?'未检查':selected.allowance_status}}</p><p>地区状态：{{selected.availability==='blocked'?'受限':selected.availability==='allowed'?'本次检查允许':'未知'}} · Builder 能力：未检查</p><WalletDiagnosticSteps :steps="selected.steps" /><p v-if="selected.diagnostic" class="form-message" role="status">检查结果：{{selected.diagnostic.message}}（{{selected.diagnostic.code}}）</p></div></article></section></main></div></template>

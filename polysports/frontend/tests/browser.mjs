@@ -54,6 +54,10 @@ try {
       if (endpoint === 'combo-rfqs' && route.request().method()==='POST') {mockCombos=[{id:'mock-combo',state:'executing',direction:'BUY',quantity:'10',wallet_address:'mock-wallet',external_rfq_id:'mock-rfq',error_code:null,legs:[{outcome_id:'o1',home:'Mock Home',away:'Mock Away',market_question:'模拟市场问题',outcome_label:'Yes',starts_at:'2026-01-01T18:00:00Z'}],quote:{id:'mock-quote',price:'0.5',total_required:'10',net_receive:'18',expires_at:'2099-01-01T00:00:00Z'}}];return route.fulfill({status:200,json:{data:mockCombos[0]}})}
       if (endpoint === 'combo-rfqs') return route.fulfill({status:200,json:{data:{items:mockCombos}}})
       if (endpoint === 'accept' && url.pathname.includes('/combo-rfqs/')) {mockCombos[0].state='executing';return route.fulfill({status:200,json:{data:mockCombos[0]}})}
+      if (endpoint === 'deposit-address') return route.fulfill({status:200,json:{data:{
+        address:'0x'+'3'.repeat(40),wallet_address:'0x'+'1'.repeat(40),chain_id:137,
+        assets:[{symbol:'USDC',contract:'0x'+'4'.repeat(40),minimum_usd:'2'}],checked_at:'2026-01-01T00:00:00Z',
+      }}})
       if (endpoint === 'wallets') return route.fulfill({status:200,json:{data:{items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'0x'+'1'.repeat(40),signer_address:'0x'+'2'.repeat(40),wallet_type:'EOA'}]}}})
       if (endpoint === 'status' && url.pathname.includes('/wallets/')) return route.fulfill({status:200,json:{data:{wallet:{id:'mock-wallet'},collateral_balance:null,allowance_status:'unknown',availability:'allowed',diagnostic:{code:'signer_mismatch',message:'签名私钥与配置的签名地址不一致。'}}}})
       if (endpoint === 'live-markets') {const call=++mockLiveCalls;if(call===1)await new Promise(resolve=>setTimeout(resolve,1000));return route.fulfill({status:200,json:{data:{match_status:mockProvider==='polymarket'?'source_identity':'candidate',observed_at:'2026-01-01T18:00:00Z',events:[{id:'mock-event',title:'模拟赛事市场',slug:'mock-event',markets:[{id:'mock-market',question:'模拟胜负问题',group:null,type:'moneyline',closed:false,accepting_orders:true,outcomes:[{label:'Yes',price:call===1?'0.17':'0.42'},{label:'No',price:null}]}]}]}}})}
@@ -181,6 +185,14 @@ try {
     await page.getByText('地区状态：本次检查允许', {exact:false}).waitFor()
     await page.getByText('签名私钥与配置的签名地址不一致。', {exact:false}).waitFor()
     await page.getByText('授权状态：未检查').waitFor()
+    await page.getByRole('button', {name:'查询 Polygon 充值地址'}).click()
+    const depositPanel=page.getByRole('region',{name:'Polygon 充值'})
+    await depositPanel.getByText(/Polygon PoS.*Chain ID 137/).waitFor()
+    await depositPanel.getByText('USDC · 最低 2 USD 等值').waitFor()
+    const qr=depositPanel.getByRole('img',{name:'Polygon 充值地址二维码'})
+    await qr.waitFor()
+    assert.match(await qr.getAttribute('src'), /^data:image\/png;base64,/)
+    await page.waitForFunction(()=>document.querySelector('.deposit-qr')?.naturalWidth===240)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 钱包页横向溢出`)
     await page.getByRole('button', { name: '退出' }).click()
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()

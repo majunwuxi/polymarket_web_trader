@@ -219,3 +219,5 @@
 @media (max-width: 680px) {
   .trade-drawer { width: 100%; padding: 1rem; }
 }
+
+.deposit-qr { display: block; max-width: 100%; height: auto; background: #fff; }

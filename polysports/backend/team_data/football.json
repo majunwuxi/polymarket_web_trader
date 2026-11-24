@@ -4487,5 +4487,238 @@
     "country": "Portugal",
     "logo": "https://media.api-sports.io/football/teams/21595.png",
     "leagues": "PRIMEIRA"
+  },
+  "1595": {
+    "name_en": "Seattle Sounders",
+    "name_zh": "西雅图海湾人",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1595.png",
+    "leagues": "MLS",
+    "aliases": [
+      "Seattle Sounders FC"
+    ]
+  },
+  "1596": {
+    "name_en": "San Jose Earthquakes",
+    "name_zh": "圣何塞地震",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1596.png",
+    "leagues": "MLS"
+  },
+  "1597": {
+    "name_en": "FC Dallas",
+    "name_zh": "达拉斯FC",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1597.png",
+    "leagues": "MLS"
+  },
+  "1598": {
+    "name_en": "Orlando City SC",
+    "name_zh": "奥兰多城",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1598.png",
+    "leagues": "MLS"
+  },
+  "1599": {
+    "name_en": "Philadelphia Union",
+    "name_zh": "费城联合",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1599.png",
+    "leagues": "MLS"
+  },
+  "1600": {
+    "name_en": "Houston Dynamo",
+    "name_zh": "休斯敦迪纳摩",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1600.png",
+    "leagues": "MLS"
+  },
+  "1601": {
+    "name_en": "Toronto FC",
+    "name_zh": "多伦多FC",
+    "country": "Canada",
+    "logo": "https://media.api-sports.io/football/teams/1601.png",
+    "leagues": "MLS"
+  },
+  "1602": {
+    "name_en": "New York Red Bulls",
+    "name_zh": "纽约红牛",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1602.png",
+    "leagues": "MLS"
+  },
+  "1603": {
+    "name_en": "Vancouver Whitecaps",
+    "name_zh": "温哥华白浪",
+    "country": "Canada",
+    "logo": "https://media.api-sports.io/football/teams/1603.png",
+    "leagues": "MLS",
+    "aliases": [
+      "Vancouver Whitecaps FC"
+    ]
+  },
+  "1604": {
+    "name_en": "New York City FC",
+    "name_zh": "纽约城",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1604.png",
+    "leagues": "MLS"
+  },
+  "1605": {
+    "name_en": "Los Angeles Galaxy",
+    "name_zh": "洛杉矶银河",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1605.png",
+    "leagues": "MLS"
+  },
+  "1606": {
+    "name_en": "Real Salt Lake",
+    "name_zh": "皇家盐湖城",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1606.png",
+    "leagues": "MLS"
+  },
+  "1607": {
+    "name_en": "Chicago Fire",
+    "name_zh": "芝加哥火焰",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1607.png",
+    "leagues": "MLS",
+    "aliases": [
+      "Chicago Fire FC"
+    ]
+  },
+  "1608": {
+    "name_en": "Atlanta United FC",
+    "name_zh": "亚特兰大联",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1608.png",
+    "leagues": "MLS"
+  },
+  "1609": {
+    "name_en": "New England Revolution",
+    "name_zh": "新英格兰革命",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1609.png",
+    "leagues": "MLS"
+  },
+  "1610": {
+    "name_en": "Colorado Rapids",
+    "name_zh": "科罗拉多急流",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1610.png",
+    "leagues": "MLS",
+    "aliases": [
+      "Colorado Rapids SC"
+    ]
+  },
+  "1611": {
+    "name_en": "Sporting Kansas City",
+    "name_zh": "堪萨斯城竞技",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1611.png",
+    "leagues": "MLS"
+  },
+  "1612": {
+    "name_en": "Minnesota United FC",
+    "name_zh": "明尼苏达联",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1612.png",
+    "leagues": "MLS"
+  },
+  "1613": {
+    "name_en": "Columbus Crew",
+    "name_zh": "哥伦布机员",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1613.png",
+    "leagues": "MLS"
+  },
+  "1614": {
+    "name_en": "CF Montreal",
+    "name_zh": "蒙特利尔CF",
+    "country": "Canada",
+    "logo": "https://media.api-sports.io/football/teams/1614.png",
+    "leagues": "MLS",
+    "aliases": [
+      "CF Montréal"
+    ]
+  },
+  "1615": {
+    "name_en": "DC United",
+    "name_zh": "华盛顿联",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1615.png",
+    "leagues": "MLS",
+    "aliases": [
+      "D.C. United SC"
+    ]
+  },
+  "1616": {
+    "name_en": "Los Angeles FC",
+    "name_zh": "洛杉矶FC",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1616.png",
+    "leagues": "MLS"
+  },
+  "1617": {
+    "name_en": "Portland Timbers",
+    "name_zh": "波特兰伐木工",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/1617.png",
+    "leagues": "MLS"
+  },
+  "2242": {
+    "name_en": "FC Cincinnati",
+    "name_zh": "辛辛那提FC",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/2242.png",
+    "leagues": "MLS"
+  },
+  "9568": {
+    "name_en": "Inter Miami",
+    "name_zh": "迈阿密国际",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/9568.png",
+    "leagues": "MLS",
+    "aliases": [
+      "Inter Miami CF"
+    ]
+  },
+  "9569": {
+    "name_en": "Nashville SC",
+    "name_zh": "纳什维尔SC",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/9569.png",
+    "leagues": "MLS"
+  },
+  "16489": {
+    "name_en": "Austin",
+    "name_zh": "奥斯汀FC",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/16489.png",
+    "leagues": "MLS",
+    "aliases": [
+      "Austin FC"
+    ]
+  },
+  "18310": {
+    "name_en": "Charlotte",
+    "name_zh": "夏洛特FC",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/18310.png",
+    "leagues": "MLS",
+    "aliases": [
+      "Charlotte FC"
+    ]
+  },
+  "20787": {
+    "name_en": "St. Louis City",
+    "name_zh": "圣路易斯城",
+    "country": "USA",
+    "logo": "https://media.api-sports.io/football/teams/20787.png",
+    "leagues": "MLS",
+    "aliases": [
+      "St. Louis City SC"
+    ]
   }
 }

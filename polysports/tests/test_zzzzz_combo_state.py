@@ -73,6 +73,9 @@ def test_timeout_stays_unknown_and_cannot_bypass_by_new_key(sample,monkeypatch):
     monkeypatch.setattr(FakeGateway,'request_combo_quote',fail)
     ident,_=combo_service.request_quote(engine,settings,body,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
     with Session(engine) as db:assert db.get(ComboRFQ,ident).state=='unknown'
+    response=client.get('/api/v1/combo-rfqs?state=unknown&limit=4',headers=headers)
+    assert response.status_code==200
+    assert [row['id'] for row in response.json()['data']['items']]==[str(ident)]
     with pytest.raises(TradingError):combo_service.request_quote(engine,settings,body,uuid.uuid4(),gateway_cls=FakeGateway,catalog=catalog)
 
 

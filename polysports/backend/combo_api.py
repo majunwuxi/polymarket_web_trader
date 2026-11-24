@@ -535,7 +535,7 @@ def list_combos(
     request: Request,
     limit: int = 50,
     cursor: str | None = None,
-    state: Literal['confirmed'] | None = None,
+    state: Literal['confirmed', 'unknown'] | None = None,
     game_id: uuid.UUID | None = None,
     hide_settled: bool = False,
 ):

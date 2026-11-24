@@ -12,7 +12,7 @@ const errorMessage = ref('')
 const loading = ref(true)
 const sports = ['football', 'nba'] as const
 const sportName = { football: '足球', nba: 'NBA' }
-const groups = ref<{ title:string; links:{ label:string; to:string }[]; count:string; failed:boolean }[]>([])
+const groups = ref<{ title:string; links:{ label:string; to:string }[]; count:string; failed:boolean; description?:string }[]>([])
 const teamName = (team:any) => team?.name_zh || team?.source_name || '未知球队'
 
 async function read(path:string) {
@@ -36,7 +36,7 @@ async function load() {
     {title:'待确认的赛事映射', paths:['/result-bindings/summary?sport=football&limit=4'],
       rows:(data:any)=>data.items.map((game:any)=>({label:game.home+' 对 '+game.away,to:'/sports/football#binding-summary'})),
       count:(data:any)=>data.totals.needs_review, more:()=>false},
-    {title:'结果未知的交易', paths:['/trade-intents?state=unknown&limit=4','/combo-rfqs?state=unknown&limit=4'],
+    {title:'结果未知的交易', description:'提交结果待核实的订单。', paths:['/trade-intents?state=unknown&limit=4','/combo-rfqs?state=unknown&limit=4'],
       rows:(data:any,i:number)=>data.items.map((order:any)=>({
         label:(i?'组合':'单场')+' · '+formatDateTime(order.created_at)+' · '+String(order.id).slice(0,8),
         to:'/orders?state=unknown#trade-'+order.id,
@@ -55,7 +55,7 @@ async function load() {
       more ||= group.more(response.value)
     }
     const failed=responses.some(response=>response.status==='rejected')
-    return {title:group.title,links,count:failed?'':String(count)+(more?'+':''),failed}
+    return {title:group.title,description:group.description,links,count:failed?'':String(count)+(more?'+':''),failed}
   }))
   loading.value=false
 }
@@ -81,6 +81,7 @@ onMounted(load)
       <div class="dashboard-tasks">
         <section v-for="group in groups" :key="group.title" class="welcome-card">
           <h2>{{group.title}} <span v-if="group.count">{{group.count}}</span></h2>
+          <p v-if="group.description">{{group.description}}</p>
           <p v-if="group.failed" role="status">部分数据暂不可用，请刷新重试。</p>
           <p v-else-if="!group.links.length">暂无记录。</p>
           <ul v-if="group.links.length">

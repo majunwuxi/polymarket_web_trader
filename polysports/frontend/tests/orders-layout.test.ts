@@ -45,3 +45,17 @@ describe('交易记录左右两列与隐藏规则（模拟接口）', () => {
     view.unmount()
   })
 })
+
+
+it('结果未知的订单列表仍隐藏已结算旧记录', async () => {
+  await router.push('/?state=unknown')
+  const fetchMock = vi.fn((url: string) => Promise.resolve(json({ data: { items: [], next_cursor: null } })))
+  vi.stubGlobal('fetch', fetchMock)
+  const view = mount(Orders, { global: { plugins: [router] } })
+  await flushPromises()
+  for (const path of ['/api/v1/trade-intents?', '/api/v1/combo-rfqs?']) {
+    expect(fetchMock.mock.calls.some(([url]) => url.startsWith(path) && url.includes('state=unknown') && url.includes('hide_settled=true'))).toBe(true)
+  }
+  expect(view.text()).toContain('显示提交结果待核实的组合')
+  view.unmount()
+})

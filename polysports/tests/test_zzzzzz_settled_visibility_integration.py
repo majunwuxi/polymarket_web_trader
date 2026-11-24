@@ -139,6 +139,25 @@ def test_combo_hidden_only_when_last_leg_old_and_any_leg_settled(env):
             link = db.get(MarketLink, link_id)
             db.get(PolyMarket, link.market_id).accepting_orders = True
         assert ident in list_ids(client, '/api/v1/combo-rfqs', True)
+        with Session(engine) as db, db.begin():
+            db.get(ComboRFQ, rfq_id).state = 'unknown'
+            db.get(Game, late_game_id).starts_at = RECENT()
+            link = db.get(MarketLink, link_id)
+            db.get(PolyMarket, link.market_id).accepting_orders = False
+        path = '/api/v1/combo-rfqs'
+        def unknown_ids(hide_settled=False):
+            params = {'state': 'unknown'}
+            if hide_settled:
+                params['hide_settled'] = 'true'
+            response = client.get(path, params=params)
+            assert response.status_code == 200, response.text
+            return {item['id'] for item in response.json()['data']['items']}
+
+        assert ident in unknown_ids(True)
+        with Session(engine) as db, db.begin():
+            db.get(Game, late_game_id).starts_at = OLD()
+        assert ident not in unknown_ids(True)
+        assert ident in unknown_ids()
     finally:
         with engine.begin() as conn:
             conn.execute(text('DELETE FROM combo_legs WHERE rfq_id=:id'), {'id': str(rfq_id)})

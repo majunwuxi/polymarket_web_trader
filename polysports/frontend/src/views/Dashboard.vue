@@ -36,7 +36,7 @@ async function load() {
     {title:'待确认的赛事映射', paths:['/result-bindings/summary?sport=football&limit=4'],
       rows:(data:any)=>data.items.map((game:any)=>({label:game.home+' 对 '+game.away,to:'/sports/football#binding-summary'})),
       count:(data:any)=>data.totals.needs_review, more:()=>false},
-    {title:'结果未知的交易', description:'提交结果待核实的订单。', paths:['/trade-intents?state=unknown&limit=4','/combo-rfqs?state=unknown&limit=4'],
+    {title:'结果未知的交易', description:'提交结果待核实的订单。', paths:['/trade-intents?state=unknown&limit=4&hide_settled=true','/combo-rfqs?state=unknown&limit=4&hide_settled=true'],
       rows:(data:any,i:number)=>data.items.map((order:any)=>({
         label:(i?'组合':'单场')+' · '+formatDateTime(order.created_at)+' · '+String(order.id).slice(0,8),
         to:'/orders?state=unknown#trade-'+order.id,

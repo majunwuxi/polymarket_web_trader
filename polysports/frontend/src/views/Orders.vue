@@ -48,7 +48,7 @@ async function loadCombos(append = false): Promise<string[] | undefined> {
   comboError.value = ''
   try {
     const query = new URLSearchParams({limit: '20', state: 'confirmed', hide_settled: 'true'})
-    if(route.query.state==='unknown'){query.set('state','unknown');query.delete('hide_settled')}
+    if(route.query.state==='unknown')query.set('state','unknown')
     if (append && comboCursor.value) query.set('cursor', comboCursor.value)
     const data = await api('/combo-rfqs?' + query)
     combos.value = append ? [...combos.value, ...data.items] : data.items
@@ -67,7 +67,7 @@ async function load(append = false): Promise<string[] | undefined> {
   ordersBusy.value = true
   try {
     const query = new URLSearchParams({limit: '20', hide_settled: 'true'})
-    if(route.query.state==='unknown'){query.set('state','unknown');query.delete('hide_settled')}
+    if(route.query.state==='unknown')query.set('state','unknown')
     if (append && nextCursor.value) query.set('cursor', nextCursor.value)
     const data = await api('/trade-intents?' + query)
     orders.value = append ? [...orders.value, ...data.items] : data.items
@@ -257,7 +257,7 @@ onActivated(()=>{if(!activated){activated=true;return}void loadAndFocus()})
 
     <section class="welcome-card" aria-label="组合交易记录">
       <h2>组合交易</h2>
-      <p class="scope-note">仅显示已确认组合；全部腿命中才算组合获胜；粉色卡片可整仓赎回。</p>
+      <p class="scope-note">{{ route.query.state==='unknown' ? '显示提交结果待核实的组合。各腿赛果不代表订单已成交。' : '仅显示已确认组合；全部腿命中才算组合获胜；粉色卡片可整仓赎回。' }}</p>
       <button class="text-button" :disabled="comboBusy" @click="refreshCombos()">刷新组合记录</button>
       <p v-if="comboError" role="alert">{{comboError}}</p>
       <p v-else-if="comboLoaded && !combos.length">暂无已确认组合交易。</p>

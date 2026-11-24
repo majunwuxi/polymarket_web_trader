@@ -27,6 +27,9 @@ def test_default_game_windows_and_explicit_history_range(monkeypatch):
         statement=None
         def __enter__(self): return self
         def __exit__(self,*args): pass
+        def get(self, model, ident):
+            assert model is sports_api.FootballDisplaySettings and ident == 1
+            return None  # Default visibility when no system setting has been saved.
         def scalars(self,statement):
             self.statement=statement
             return iter([])

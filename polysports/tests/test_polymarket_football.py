@@ -108,3 +108,20 @@ def test_mock_supported_competition_tag_and_series(tag_id):
     with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200,json={'events':[event]}))) as client:
         games=discover_football(client, START)[0]
         assert len(games)==1 and games[0].competition_name==FOOTBALL_COMPETITIONS[tag_id]
+
+
+@pytest.mark.parametrize(('tags', 'series', 'expected'), [
+    (['100977'], '10204', '1234'),
+    (['1234', '100977'], '10204', '1234'),
+    (['100977'], '10188', None),
+    (['306', '100977'], '10204', None),
+])
+def test_ucl_event_tag_alias_preserves_series_and_conflict_checks(tags, series, expected):
+    from backend.polymarket_football import _candidate
+
+    event = mock_event()
+    start = datetime.fromisoformat(event['startTime'])
+    event['tags'][1:] = [{'id': tag} for tag in tags]
+    event['series'] = [{'id': series}]
+    candidate = _candidate(event, start, start + timedelta(hours=1))
+    assert (candidate.competition_id if candidate else None) == expected

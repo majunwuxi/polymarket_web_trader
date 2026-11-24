@@ -9,6 +9,7 @@ from typing import Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select, tuple_
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,6 +18,7 @@ from .models import (
     AuditEvent,
     ComboLeg,
     ComboRFQ,
+    FootballDisplaySettings,
     Game,
     GameRevision,
     Job,
@@ -28,6 +30,7 @@ from .models import (
     TradeIntent,
     WatchedGame,
 )
+from .polymarket_football import FOOTBALL_COMPETITIONS
 from .prefetch import objects_by_id
 
 router = APIRouter(prefix='/api/v1')
@@ -118,6 +121,56 @@ def result_check_at(db, ids):
     return dict(rows.all())
 
 
+def football_competition_options():
+    groups: dict[str, list[str]] = {}
+    for ident, name in FOOTBALL_COMPETITIONS.items():
+        groups.setdefault(name, []).append(ident)
+    return {ids[0]: (name, ids) for name, ids in groups.items()}
+
+
+class FootballDisplayBody(BaseModel):
+    competition_ids: list[str] | None = Field(max_length=len(FOOTBALL_COMPETITIONS))
+
+
+@router.get('/system/football-display')
+def get_football_display(request: Request):
+    with Session(request.app.state.engine) as db:
+        settings = db.get(FootballDisplaySettings, 1)
+        return envelope(
+            request,
+            {
+                'competition_ids': settings.competition_ids if settings else None,
+                'options': [
+                    {'id': ident, 'label': name} for ident, (name, _) in football_competition_options().items()
+                ],
+            },
+        )
+
+
+@router.put('/system/football-display')
+def save_football_display(request: Request, body: FootballDisplayBody):
+    selected = body.competition_ids
+    options = football_competition_options()
+    if selected is not None:
+        if set(selected) - options.keys():
+            return auth.error(request, 422, 'VALIDATION_ERROR', '包含不支持的足球联赛')
+        selected = [ident for ident in options if ident in selected]
+    with Session(request.app.state.engine) as db, db.begin():
+        stmt = insert(FootballDisplaySettings).values(id=1, competition_ids=selected)
+        db.execute(
+            stmt.on_conflict_do_update(index_elements=['id'], set_={'competition_ids': stmt.excluded.competition_ids})
+        )
+        db.add(
+            AuditEvent(
+                actor_id=request.state.admin_session['admin_id'],
+                action='football_display_updated',
+                entity_type='football_display',
+                details={'competition_ids': selected},
+            )
+        )
+    return envelope(request, {'competition_ids': selected})
+
+
 @router.get('/games')
 def games(
     request: Request,
@@ -157,6 +210,21 @@ def games(
     except (ValueError, TypeError):
         return auth.error(request, 422, 'VALIDATION_ERROR', '分页参数无效')
     with Session(request.app.state.engine) as db:
+        if sport == 'football':
+            settings = db.get(FootballDisplaySettings, 1)
+            if settings and settings.competition_ids is not None:
+                options = football_competition_options()
+                league_ids = [
+                    ident
+                    for selected in settings.competition_ids
+                    if selected in options
+                    for ident in options[selected][1]
+                ]
+                query = query.where(
+                    Game.league_id.in_(
+                        select(League.id).where(League.provider == 'polymarket', League.external_id.in_(league_ids))
+                    )
+                )
         order = (Game.starts_at.desc(), Game.id.desc()) if not upcoming else (Game.starts_at, Game.id)
         rows = list(db.scalars(query.order_by(*order).limit(limit + 1)))
         more = len(rows) > limit

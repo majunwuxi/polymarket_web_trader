@@ -70,6 +70,10 @@ COMPETITION_SERIES = {
     '102648': '10359',
     '102561': '10312',
 }
+# 欧冠体育目录同时列出两个标签，新赛季比赛事件可只带 100977。
+# 保留已入库的赛事联赛 ID，两个标签同时出现也只算同一赛事系列。
+COMPETITION_TAG_ALIASES = {'100977': '1234'}
+
 # 官方足球体育元数据当前没有可核实的亚洲杯 primaryTagId；不猜测。
 
 
@@ -114,7 +118,10 @@ def _candidate(raw: Any, start: datetime, end: datetime) -> FootballMarketGame |
     tags = raw.get('tags')
     if not isinstance(tags, list) or not any(isinstance(x, dict) and x.get('slug') == 'soccer' for x in tags):
         return None
-    competition_ids = {_id(x.get('id')) for x in tags if isinstance(x, dict)} & FOOTBALL_COMPETITIONS.keys()
+    tag_ids = {_id(x.get('id')) for x in tags if isinstance(x, dict)}
+    competition_ids = {
+        COMPETITION_TAG_ALIASES.get(tag_id, tag_id) for tag_id in tag_ids if tag_id is not None
+    } & FOOTBALL_COMPETITIONS.keys()
     if len(competition_ids) != 1:
         return None
     competition_id = next(iter(competition_ids))

@@ -482,6 +482,14 @@ class MarketRefresh(Base):
     error_code: Mapped[str | None] = mapped_column(String(80))
 
 
+class FootballDisplaySettings(Base):
+    __tablename__ = 'football_display_settings'
+    __table_args__ = (CheckConstraint('id = 1', name='ck_football_display_singleton'),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    competition_ids: Mapped[list[str] | None] = mapped_column(JSONB(none_as_null=True))
+
+
 class TradeLimitSettingsRow(Base):
     __tablename__ = 'trade_limit_settings'
     __table_args__ = (CheckConstraint('id = 1', name='ck_trade_limit_settings_singleton'),)

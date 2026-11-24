@@ -26,6 +26,7 @@ try {
     let mockLiveCalls = 0
     let mockProvider = 'mock-test-provider'
     let prepared = 0
+    let footballDisplay = null
     let tradeLimits = {order_limit_percent:null,order_limit_floor_usd:'1',max_daily_usd:null}
     await context.route('**/*', async route => {
       const url = new URL(route.request().url())
@@ -37,6 +38,10 @@ try {
       if (endpoint === 'statistics') return route.fulfill({status:200,json:{data:{games_total:0,finished_total:0,trade_count:0,confirmed_fill_count:0,confirmed_combo_count:0,realized_pnl:null,scope:'模拟统计口径'}}})
       if (url.pathname==='/api/v1/system/status') return route.fulfill({status:200,json:{data:{database:{status:'ok',checked_at:'2026-01-01T00:00:00Z'},configuration:{football_key_configured:false,nba_key_configured:false,wallet_count:0,combo_enabled:false}}}})
       if (endpoint === 'audit-events') return route.fulfill({status:200,json:{data:{items:[]}}})
+      if (url.pathname==='/api/v1/system/football-display') {
+        if(route.request().method()==='PUT')footballDisplay=route.request().postDataJSON().competition_ids
+        return route.fulfill({status:200,json:{data:{competition_ids:footballDisplay,options:[{id:'1234',label:'欧冠'},{id:'306',label:'英超'}]}}})
+      }
       if (url.pathname==='/api/v1/system/trade-limits') {
         if(route.request().method()==='PUT')tradeLimits=route.request().postDataJSON()
         return route.fulfill({status:200,json:{data:tradeLimits}})
@@ -163,6 +168,11 @@ try {
     await page.getByLabel('单笔上限最低值（pUSD）').fill('1')
     await page.getByLabel('每钱包每日上限（pUSD，留空关闭）').fill('20')
     await page.getByRole('button',{name:'保存交易限额'}).click()
+    await page.getByLabel('显示范围').selectOption('selected')
+    await page.getByLabel('英超',{exact:true}).uncheck()
+    await page.getByRole('button',{name:'保存显示设置'}).click()
+    await page.getByText('足球赛事显示设置已保存。').waitFor()
+    assert.deepEqual(footballDisplay,['1234'])
     await page.getByText('交易限额已保存，下次提交时生效。').waitFor()
     assert.deepEqual(tradeLimits,{order_limit_percent:'6',order_limit_floor_usd:'1',max_daily_usd:'20'})
     assert.equal(await page.getByLabel('football UTC 同步时间').inputValue(),'00:00')

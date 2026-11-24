@@ -30,7 +30,7 @@ def aliases(db: Session, team_id: uuid.UUID) -> list[str]:
     return result
 
 
-def ambiguous_name(db: Session, sport: str, name: str) -> bool:
+def ambiguous_name(db: Session, sport: str, name: str, *, allow_short_exact: bool = False) -> bool:
     cache = db.info.setdefault('market_team_names', {})
     if sport not in cache:
         names = {
@@ -44,7 +44,9 @@ def ambiguous_name(db: Session, sport: str, name: str) -> bool:
             if team_id in names:
                 names[team_id].append(alias)
         cache[sport] = names
-    return sum(1 for values in cache[sport].values() if names_match(values, name)) > 1
+    return (
+        sum(1 for values in cache[sport].values() if names_match(values, name, allow_short_exact=allow_short_exact)) > 1
+    )
 
 
 def evidence_for(game, event, market, ordered, home_ambiguous=False, away_ambiguous=False):
@@ -100,12 +102,15 @@ def valid_link(db: Session, link: MarketLink, *, require_confirmed=True) -> bool
         return False
     if abs((event.starts_at - game.starts_at).total_seconds()) > 7200:
         return False
-    if ev.get('home_name_ambiguous') != ambiguous_name(db, game.sport, event.home_name) or ev.get(
-        'away_name_ambiguous'
-    ) != ambiguous_name(db, game.sport, event.away_name):
+    allow_short = game.sport == 'football' and game.provider == 'polymarket'
+    if ev.get('home_name_ambiguous') != ambiguous_name(
+        db, game.sport, event.home_name, allow_short_exact=allow_short
+    ) or ev.get('away_name_ambiguous') != ambiguous_name(
+        db, game.sport, event.away_name, allow_short_exact=allow_short
+    ):
         return False
-    return names_match(aliases(db, game.home_team_id), event.home_name) and names_match(
-        aliases(db, game.away_team_id), event.away_name
+    return names_match(aliases(db, game.home_team_id), event.home_name, allow_short_exact=allow_short) and names_match(
+        aliases(db, game.away_team_id), event.away_name, allow_short_exact=allow_short
     )
 
 
@@ -304,8 +309,18 @@ def refresh_game(engine, game_id, client: httpx.Client | None = None):
                         source_event,
                         sm,
                         ordered,
-                        ambiguous_name(db, game.sport, source_event.home),
-                        ambiguous_name(db, game.sport, source_event.away),
+                        ambiguous_name(
+                            db,
+                            game.sport,
+                            source_event.home,
+                            allow_short_exact=game.sport == 'football' and game.provider == 'polymarket',
+                        ),
+                        ambiguous_name(
+                            db,
+                            game.sport,
+                            source_event.away,
+                            allow_short_exact=game.sport == 'football' and game.provider == 'polymarket',
+                        ),
                     )
                     link = db.scalar(
                         select(MarketLink)

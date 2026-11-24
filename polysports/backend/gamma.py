@@ -50,10 +50,10 @@ def normal(value: str) -> str:
     return ' '.join(''.join(c if c.isalnum() else ' ' for c in unicodedata.normalize('NFKC', value).casefold()).split())
 
 
-def names_match(source: list[str], external: str) -> bool:
+def names_match(source: list[str], external: str, *, allow_short_exact: bool = False) -> bool:
     other = normal(external)
     if len(other) < 4:
-        return False
+        return allow_short_exact and bool(other) and any(normal(value) == other for value in source)
     for value in source:
         item = normal(value)
         if item == other or item.endswith(' ' + other) or other.endswith(' ' + item):
@@ -122,7 +122,7 @@ def parse_market(raw: dict) -> GammaMarket:
 
 
 def parse_event(
-    raw: Any, sport: str, start: datetime, home_names: list[str], away_names: list[str]
+    raw: Any, sport: str, start: datetime, home_names: list[str], away_names: list[str], *, source_id: str | None = None
 ) -> tuple[GammaEvent, bool] | None:
     if not isinstance(raw, dict):
         raise SourceError('invalid_event')
@@ -145,8 +145,15 @@ def parse_event(
         return None
     if abs((event_start - start).total_seconds()) > 7200:
         return None
-    ordered = names_match(home_names, home['name']) and names_match(away_names, away['name'])
-    reversed_order = names_match(home_names, away['name']) and names_match(away_names, home['name'])
+    if source_id is not None and str(raw.get('gameId')) != source_id:
+        return None
+    allow_short = sport == 'football' and source_id is not None
+    ordered = names_match(home_names, home['name'], allow_short_exact=allow_short) and names_match(
+        away_names, away['name'], allow_short_exact=allow_short
+    )
+    reversed_order = names_match(home_names, away['name'], allow_short_exact=allow_short) and names_match(
+        away_names, home['name'], allow_short_exact=allow_short
+    )
     if not ordered and not reversed_order:
         return None
     ident = raw.get('id')
@@ -253,7 +260,7 @@ def discover(
             if raw['id'] in seen:
                 raise SourceError('pagination_duplicate')
             seen.add(raw['id'])
-            matched = parse_event(raw, sport, start, home_names, away_names)
+            matched = parse_event(raw, sport, start, home_names, away_names, source_id=source_id)
             if matched:
                 found.append(matched)
         if not next_cursor:

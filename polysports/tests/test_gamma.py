@@ -132,3 +132,15 @@ def test_full_page_without_cursor_is_not_complete_success():
     with httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={'events':[mock_event()]}))) as client:
         with pytest.raises(SourceError,match='invalid_pagination'):
             discover(client,'nba',START,['Mock Home'],['Mock Away'],page_size=1)
+
+
+def test_football_short_team_name_requires_exact_name_and_same_source_game():
+    raw = mock_event()
+    raw['tags'] = [{'slug': 'soccer'}]
+    raw['gameId'] = 90122511
+    raw['teams'][1]['name'] = 'AEK'
+    matched = parse_event(raw, 'football', START, ['Mock Home'], ['AEK'], source_id='90122511')
+    assert matched is not None and matched[1] and matched[0].markets[0].outcomes
+    assert parse_event(raw, 'football', START, ['Mock Home'], ['AEK']) is None
+    assert parse_event(raw, 'football', START, ['Mock Home'], ['AEK'], source_id='90122512') is None
+    assert parse_event(raw, 'football', START, ['Mock Home'], ['Mock AEK'], source_id='90122511') is None

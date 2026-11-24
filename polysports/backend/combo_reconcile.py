@@ -237,8 +237,11 @@ def apply_combo(db, job, payload, error=None, settings=None):
                         request_binding_for_accepted_order(db, game_id)
                 elif target in ('failed', 'expired', 'rejected'):
                     from .combo_fills import void_combo_fill
+                    from .risk_limits import release_buy_budget
 
                     void_combo_fill(db, row)
+                    if row.direction == 'BUY':
+                        release_buy_budget(db, row.id)
             elif row.state == 'confirmed':
                 # 迁移之外的兜底：历史组合已确认但尚未回填明细时，按签名报价补齐。
                 from .combo_fills import confirm_combo_fill

@@ -398,7 +398,7 @@ def accept_quote(engine, settings, ident, quote_id, gateway_cls=ComboGateway, ca
     with gateway_cls(settings, wallet) as gateway:
         with ThreadPoolExecutor(max_workers=1) as pool:
             positions_future = pool.submit(catalog, markets, outcomes)
-            gateway.ensure_funding(quote, row.direction)
+            available_balance = gateway.ensure_funding(quote, row.direction)
             positions = positions_future.result()
         if any(positions[x.outcome_id] != x.position_id for x in saved):
             raise TradingError('combo_market_mismatch', '组合市场已变更')
@@ -435,6 +435,10 @@ def accept_quote(engine, settings, ident, quote_id, gateway_cls=ComboGateway, ca
                 if game and game.provider != 'polymarket':
                     watch_game(tx, game_id)
             external_id = row.external_rfq_id
+            if row.direction == 'BUY':
+                from .risk_limits import reserve_buy_budget
+
+                reserve_buy_budget(tx, settings, row.wallet_id, row.id, row.quantity, available_balance)
             row.accept_started_at = now
             record(tx, row, 'accepting')
             # 签名接受订单的 makerAmount/takerAmount 就是链上实际支出与收到的组合份额，
@@ -490,8 +494,11 @@ def accept_quote(engine, settings, ident, quote_id, gateway_cls=ComboGateway, ca
                 # 不留孤儿 pending 记录；结果未知必须保留给后台对账判定。
                 if state == 'rejected':
                     from .combo_fills import void_combo_fill
+                    from .risk_limits import release_buy_budget
 
                     void_combo_fill(tx, row)
+                    if row.direction == 'BUY':
+                        release_buy_budget(tx, row.id)
                 if job.status == 'pending':
                     if state == 'rejected':
                         job.status = 'done'

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import WalletDiagnosticSteps from './WalletDiagnosticSteps.vue'
 import { formatDateTime } from '../utils/format'
 
-const props=defineProps<{ wallets: any[]; book: any; context: any; orderSize: string; busy: boolean; estimatedNotional: string; pending: any; previousPrice?: string; marketUrl?: string; walletCheck?: {loading:boolean;data?:any;error?:string} }>()
+const props=defineProps<{ wallets: any[]; book: any; context: any; orderSize: string; busy: boolean; estimatedNotional: string; pending: any; previousPrice?: string; marketUrl?: string; tradingLimits?: { order_limit_percent?: string | null; order_limit_floor_usd?: string; remaining_daily_usd?: string | null; resets_at?: string }; walletCheck?: {loading:boolean;data?:any;error?:string} }>()
 const wallet = defineModel<string>('wallet', { required: true })
 const side = defineModel<string>('side', { required: true })
 const price = defineModel<string>('price', { required: true })
@@ -16,13 +17,32 @@ const levels=(side:'bids'|'asks') => ([...(props.book?.[side] ?? [])] as Level[]
   .sort((a,b)=>side==='asks'?Number(a.price)-Number(b.price):Number(b.price)-Number(a.price))
 const bids=computed(()=>levels('bids'))
 const asks=computed(()=>levels('asks'))
-const visibleDepth=computed(()=>{
+const executionEstimate=computed(()=>{
   const limit=Number(price.value)
   if(!props.book||!(limit>0&&limit<1))return null
   const eligible=side.value==='BUY'?asks.value.filter(level=>Number(level.price)<=limit)
     :bids.value.filter(level=>Number(level.price)>=limit)
-  return eligible.reduce((total,level)=>total+Number(level.size),0)
+  const size=Number(props.orderSize)
+  const depth=eligible.reduce((total,level)=>total+Number(level.size),0)
+  if(!Number.isFinite(size)||size<=0)return {depth, filled:0, remaining:0, average:null}
+  let remaining=size
+  let notional=0
+  for(const level of eligible){
+    const take=Math.min(Number(level.size),remaining)
+    notional+=take*Number(level.price)
+    remaining-=take
+    if(remaining<=0)break
+  }
+  const filled=size-remaining
+  return {depth, filled, remaining, average:filled>0?notional/filled:null}
 })
+const remainingAfterOrder=computed(()=>{
+  const remaining=props.tradingLimits?.remaining_daily_usd
+  const amount=Number(price.value)*Number(props.orderSize)
+  if(remaining==null||!Number.isFinite(amount)||amount<=0)return null
+  return Math.max(0,Number(remaining)-amount).toLocaleString('zh-CN',{maximumFractionDigits:6})
+})
+const formatShares=(value:number)=>value.toLocaleString('zh-CN',{maximumFractionDigits:6})
 </script>
 
 <template>
@@ -59,6 +79,7 @@ const visibleDepth=computed(()=>{
           <span v-if="walletCheck.data.diagnostic"> · {{ walletCheck.data.diagnostic.message }}</span>
         </template>
       </p>
+      <WalletDiagnosticSteps :steps="walletCheck?.data?.steps" />
       <label for="side">方向</label>
       <select id="side" v-model="side"><option value="BUY">买入</option><option value="SELL">卖出</option></select>
       <label for="price">限价</label>
@@ -76,7 +97,20 @@ const visibleDepth=computed(()=>{
         <label for="size">份额</label>
         <input id="size" v-model="size" inputmode="decimal" required>
       </template>
-      <p v-if="visibleDepth !== null">限价内可见深度 {{ visibleDepth.toLocaleString('zh-CN',{maximumFractionDigits:4}) }} 份<span v-if="Number(orderSize)>visibleDepth"> · 当前深度低于所填份额</span></p>
+      <p v-if="executionEstimate">限价内可见深度 {{ formatShares(executionEstimate.depth) }} 份<span v-if="executionEstimate.remaining>0"> · 当前深度低于所填份额</span></p>
+      <p v-if="executionEstimate && Number(orderSize)>0">
+        预计立即成交 {{ formatShares(executionEstimate.filled) }} 份
+        <span v-if="executionEstimate.average!==null"> · 预估均价 {{ executionEstimate.average.toFixed(6) }} pUSD/份</span>
+        <span v-if="executionEstimate.remaining>0"> · 预计剩余挂单 {{ formatShares(executionEstimate.remaining) }} 份</span>
+      </p>
+      <p v-if="side==='BUY' && tradingLimits?.order_limit_percent">
+        单笔买入上限为可用余额的 {{ tradingLimits.order_limit_percent }}%，最低按 {{ tradingLimits.order_limit_floor_usd }} pUSD 计算，以实际可用余额为限。
+      </p>
+      <p v-if="side==='BUY' && tradingLimits?.remaining_daily_usd!=null">
+        今日买入剩额 {{ tradingLimits.remaining_daily_usd }} pUSD
+        <span v-if="remainingAfterOrder!==null"> · 提交后预计剩余 {{ remainingAfterOrder }} pUSD</span>
+        <span v-if="tradingLimits.resets_at"> · 重置 {{ formatDateTime(tradingLimits.resets_at) }} UTC+8</span>
+      </p>
       <p v-if="side==='BUY' && Number(orderSize)>0">命中时预计总返还 {{ orderSize }} pUSD（按全部成交、每份 1 pUSD 估算）</p>
       <p v-if="estimatedNotional">预计限价金额 {{ estimatedNotional }} pUSD；手续费未知，实际成交以交易所记录为准。</p>
       <p>点击「按当前价直接下单」将按当前盘口立即提交真实资金订单，不设二次确认；执行中不代表成交。</p>

@@ -6,6 +6,7 @@ import { session, logout, clearSession, ApiError } from '../auth'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppTopbar from '../components/AppTopbar.vue'
 import ResultBindingSummary from '../components/ResultBindingSummary.vue'
+import ComboBuyMetrics from '../components/ComboBuyMetrics.vue'
 import GameCard from '../components/GameCard.vue'
 import { formatDateTime, formatDateTimeSeconds } from '../utils/format'
 import { gameStatusName, orderStateName, resultBadge } from '../utils/labels'
@@ -313,7 +314,8 @@ onActivated(()=>{if(!activated){activated=true;return}comboDraft.value=readCombo
           <article v-for="combo in matchCombo" :key="combo.id" class="match-order-card">
             <strong>组合{{combo.direction==='BUY'?'买入':'卖出'}} · 已确认</strong>
             <p v-for="leg in combo.legs.filter((item:any)=>item.game_id===detail?.id)" :key="leg.outcome_id">本场选项：{{leg.market_question || '市场信息未知'}} · {{leg.outcome_label || '选项信息未知'}}<span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span></p>
-            <p>组合预算或份额：{{combo.quantity}}<span v-if="combo.quote"> · 组合报价：{{combo.quote.price}} · 报价所需：{{combo.quote.total_required}}</span></p>
+            <ComboBuyMetrics v-if="combo.direction==='BUY'" :summary="combo.buy_summary" />
+            <p v-else>委托卖出份额：{{ String(combo.quantity ?? '').replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') || '待核实' }}</p>
             <p>创建时间：{{formatDateTime(combo.created_at)}} UTC+8</p>
             <p>组合 RFQ：{{combo.external_rfq_id || '未知'}}<span v-if="combo.tx_hash"> · 交易哈希：{{combo.tx_hash}}</span></p>
           </article>

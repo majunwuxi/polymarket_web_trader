@@ -3,17 +3,18 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StrictStr
-from sqlalchemy import and_, or_, select, tuple_
+from sqlalchemy import and_, or_, select, text, tuple_
 from sqlalchemy.orm import Session
 
 from . import auth
 from .close_policy import score_verified_clause, settled_visibility_cutoff
-from .models import Game, Job, MarketLink, PolyMarket, TradeFill, TradeIntent, TradeStateEvent, TradeSubmission
+from .models import AuditEvent, Game, Job, MarketLink, PolyMarket, TradeFill, TradeIntent, TradeStateEvent, TradeSubmission
 from .scheduler import db_now
 from .sports_api import cursor_decode, cursor_encode
 from .trading import as_data, execute, prefetch_intents, prepare, wallet_for
@@ -61,7 +62,7 @@ def error(request, exc):
             'position_settled',
         )
         else 422
-        if code in ('invalid_amount', 'price_tick_invalid', 'size_invalid')
+        if code in ('invalid_amount', 'price_tick_invalid', 'size_invalid', 'order_limit_exceeded', 'daily_limit_exceeded')
         else 503
     )
     return auth.error(request, status, code.upper(), exc.message, delay=exc.retry_after)
@@ -103,6 +104,65 @@ def submit(request: Request, body: SubmitBody, idempotency_key: str = Header(...
             )
     except TradingError as exc:
         return error(request, exc)
+
+
+class TradeLimitSettings(BaseModel):
+    order_limit_percent: Decimal | None = Field(gt=0, le=100, allow_inf_nan=False)
+    order_limit_floor_usd: Decimal = Field(ge=0, allow_inf_nan=False)
+    max_daily_usd: Decimal | None = Field(gt=0, allow_inf_nan=False)
+
+
+def limit_settings_payload(settings):
+    return {
+        field: str(value) if (value := getattr(settings, field)) is not None else None
+        for field in TradeLimitSettings.model_fields
+    }
+
+
+@router.get('/system/trade-limits')
+def get_trade_limit_settings(request: Request):
+    from .risk_limits import configured_limits
+
+    with Session(request.app.state.engine) as db:
+        return ok(request, limit_settings_payload(configured_limits(db, request.app.state.settings)))
+
+
+@router.put('/system/trade-limits')
+def save_trade_limit_settings(request: Request, body: TradeLimitSettings):
+    payload = limit_settings_payload(body)
+    with Session(request.app.state.engine) as db, db.begin():
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended('polysports:trade-limit-settings', 0))"))
+        db.execute(
+            text('''INSERT INTO trade_limit_settings (id, order_limit_percent, order_limit_floor_usd, max_daily_usd)
+                    VALUES (1, :order_limit_percent, :order_limit_floor_usd, :max_daily_usd)
+                    ON CONFLICT (id) DO UPDATE SET
+                      order_limit_percent = EXCLUDED.order_limit_percent,
+                      order_limit_floor_usd = EXCLUDED.order_limit_floor_usd,
+                      max_daily_usd = EXCLUDED.max_daily_usd'''),
+            body.model_dump(),
+        )
+        db.add(AuditEvent(
+            actor_id=request.state.admin_session['admin_id'],
+            action='trade_limits_updated',
+            entity_type='trade_limits',
+            details=payload,
+        ))
+    return ok(request, payload)
+
+
+@router.get('/wallets/{wallet_id}/trade-limits')
+def trade_limits(request: Request, wallet_id: uuid.UUID):
+    from .risk_limits import configured_limits, limit_snapshot
+
+    settings = request.app.state.settings
+    try:
+        wallet_for(settings, wallet_id)
+    except TradingError as exc:
+        return error(request, exc)
+    with Session(request.app.state.engine) as db:
+        snapshot = limit_snapshot(db, configured_limits(db, settings), wallet_id)
+    snapshot.pop('day')
+    return ok(request, {key: str(value) if value is not None else None for key, value in snapshot.items()})
 
 
 @router.get('/trade-intents/by-key/{request_id}')

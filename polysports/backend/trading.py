@@ -399,6 +399,10 @@ def save_result(engine, intent_id, state, code=None, order_id=None, retry_after=
         if not intent or intent.state not in ('submitting', 'unknown'):
             return
         now = db_now(db)
+        if state == 'rejected' and intent.side == 'BUY':
+            from .risk_limits import release_buy_budget
+
+            release_buy_budget(db, intent_id)
         intent.state = state
         intent.external_order_id = order_id
         intent.error_code = code
@@ -420,7 +424,8 @@ def save_result(engine, intent_id, state, code=None, order_id=None, retry_after=
                 job.due_at = now + timedelta(seconds=30)
 
 
-def _record_intent(engine, body, wallet, request_id, fp, link, token, price, size, closing):
+def _record_intent(engine, settings, body, wallet, request_id, fp, link, token, price, size, closing, balance):
+    from .risk_limits import reserve_buy_budget
     """在单个事务内锁定相关记录、复核映射与平仓来源，并写入 submitting 状态的订单意图。
 
     返回 (intent_id, created)。命中同一幂等键的已有订单时 created=False。
@@ -441,8 +446,13 @@ def _record_intent(engine, body, wallet, request_id, fp, link, token, price, siz
             # 一步式下单没有预览令牌（token=None），过期复检只适用于带令牌的旧两步流程。
             if token and token['expires_at'] <= int(now.timestamp()):
                 raise TradingError('preview_stale', '预览已过期，请重新预览')
+            intent_id = uuid.uuid4()
+            if body.side == 'BUY':
+                with localcontext() as ctx:
+                    ctx.prec = 80
+                    reserve_buy_budget(tx, settings, body.wallet_id, intent_id, price * size, balance)
             intent = TradeIntent(
-                id=uuid.uuid4(),
+                id=intent_id,
                 wallet_id=body.wallet_id,
                 wallet_address=wallet.wallet_address,
                 client_request_id=request_id,
@@ -555,7 +565,9 @@ def execute(engine, settings, body, request_id: uuid.UUID, gateway_cls=Gateway):
                 raise TradingError('book_unavailable', '订单簿缺少有效版本标识')
             if token and context['hash'] != token.get('book_hash'):
                 raise TradingError('preview_stale', '盘口变化，请重新预览')
-            intent_id, created = _record_intent(engine, body, wallet, request_id, fp, link, token, price, size, closing)
+            intent_id, created = _record_intent(
+                engine, settings, body, wallet, request_id, fp, link, token, price, size, closing, context.get('balance')
+            )
             if not created:
                 return intent_id, False
             _sign_and_submit(engine, gateway, intent_id, outcome, body, price, size)

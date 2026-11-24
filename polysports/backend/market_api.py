@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import re
 import uuid
-from datetime import UTC
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
@@ -376,7 +379,7 @@ def wallets(request: Request):
 
 
 @router.get('/wallets/{wallet_id_value}/status')
-def wallet_status(request: Request, wallet_id_value: uuid.UUID):
+def wallet_status(request: Request, wallet_id_value: uuid.UUID, fresh: bool = False):
     wallet = next(
         (w for w in request.app.state.settings.wallets if wallet_id(w.wallet_address) == wallet_id_value), None
     )
@@ -397,15 +400,18 @@ def wallet_status(request: Request, wallet_id_value: uuid.UUID):
         'builder_access': 'unknown',
         'diagnostic': None,
     }
+    if fresh:
+        result['steps'] = []
     if wallet.credential_ref and wallet.credential_ref in request.app.state.settings.wallet_credentials:
         try:
             from .trading_gateway import Gateway
 
             gateway = Gateway(request.app.state.settings, wallet)
-            with gateway:
-                result.update(gateway.wallet_status())
-            from datetime import datetime
-
+            if fresh:
+                result.update(gateway.diagnose_wallet(result['steps']))
+            else:
+                with gateway:
+                    result.update(gateway.wallet_status())
             result['checked_at'] = datetime.now(UTC).isoformat()
             result['availability'] = 'allowed'
         except Exception as exc:
@@ -418,4 +424,47 @@ def wallet_status(request: Request, wallet_id_value: uuid.UUID):
                 result['availability'] = 'allowed'
     else:
         result['diagnostic'] = {'code': 'credentials_missing', 'message': WALLET_DIAGNOSTICS['credentials_missing']}
+        if fresh:
+            result['steps'].append({'name': 'credentials', 'state': 'failed', 'elapsed_ms': 0, 'attempts': 1})
     return ok(request, result)
+
+
+@router.post('/wallets/{wallet_id_value}/deposit-address')
+def deposit_address(request: Request, wallet_id_value: uuid.UUID):
+    wallet = next(
+        (w for w in request.app.state.settings.wallets if wallet_id(w.wallet_address) == wallet_id_value), None
+    )
+    if wallet is None:
+        return auth.error(request, 404, 'NOT_FOUND', '钱包不存在')
+    bridge = 'https://bridge.polymarket.com'
+    address_pattern = r'0x[0-9a-fA-F]{40}'
+    try:
+        with httpx.Client(timeout=8, follow_redirects=False) as client:
+            assets = client.get(bridge + '/supported-assets')
+            assets.raise_for_status()
+            supported = []
+            for asset in assets.json()['supportedAssets']:
+                if str(asset['chainId']) != '137':
+                    continue
+                token = asset['token']
+                if token['symbol'] not in ('USDC', 'USDC.e', 'USDT'):
+                    continue
+                minimum = Decimal(str(asset['minCheckoutUsd']))
+                if re.fullmatch(address_pattern, token['address']) and minimum.is_finite() and minimum >= 0 and int(token['address'], 16) != 0:
+                    supported.append({'symbol': token['symbol'], 'contract': token['address'], 'minimum_usd': str(minimum)})
+            if not supported:
+                raise ValueError('No verified Polygon stablecoin')
+            response = client.post(bridge + '/deposit', json={'address': wallet.wallet_address})
+            response.raise_for_status()
+            address = response.json()['address']['evm']
+        if not re.fullmatch(address_pattern, address) or int(address, 16) == 0:
+            raise ValueError('Invalid bridge address')
+    except (httpx.HTTPError, ValueError, TypeError, KeyError, InvalidOperation):
+        return auth.error(request, 503, 'DEPOSIT_ADDRESS_UNAVAILABLE', '暂时无法核实充值地址或支持资产，请稍后重试')
+    return ok(request, {
+        'address': address,
+        'wallet_address': wallet.wallet_address,
+        'chain_id': 137,
+        'assets': supported,
+        'checked_at': datetime.now(UTC).isoformat(),
+    })

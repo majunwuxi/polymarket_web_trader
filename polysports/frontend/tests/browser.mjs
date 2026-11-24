@@ -26,6 +26,7 @@ try {
     let mockLiveCalls = 0
     let mockProvider = 'mock-test-provider'
     let prepared = 0
+    let tradeLimits = {order_limit_percent:null,order_limit_floor_usd:'1',max_daily_usd:null}
     await context.route('**/*', async route => {
       const url = new URL(route.request().url())
       if (url.origin !== base) return route.abort()
@@ -36,6 +37,11 @@ try {
       if (endpoint === 'statistics') return route.fulfill({status:200,json:{data:{games_total:0,finished_total:0,trade_count:0,confirmed_fill_count:0,confirmed_combo_count:0,realized_pnl:null,scope:'模拟统计口径'}}})
       if (url.pathname==='/api/v1/system/status') return route.fulfill({status:200,json:{data:{database:{status:'ok',checked_at:'2026-01-01T00:00:00Z'},configuration:{football_key_configured:false,nba_key_configured:false,wallet_count:0,combo_enabled:false}}}})
       if (endpoint === 'audit-events') return route.fulfill({status:200,json:{data:{items:[]}}})
+      if (url.pathname==='/api/v1/system/trade-limits') {
+        if(route.request().method()==='PUT')tradeLimits=route.request().postDataJSON()
+        return route.fulfill({status:200,json:{data:tradeLimits}})
+      }
+      if (endpoint==='trade-limits') return route.fulfill({status:200,json:{data:{order_limit_percent:'6',order_limit_floor_usd:'1',remaining_daily_usd:'20'}}})
       if (endpoint === 'trade-intents') return route.fulfill({status:200,json:{data:{items:[],next_cursor:null}}})
       if (url.pathname.includes('/combo-legs/')) return route.fulfill({status:200,json:{data:{accepting_orders:true}}})
       if (endpoint === 'prepare-selection') {
@@ -124,6 +130,8 @@ try {
     await page.getByLabel('份额').fill('5')
     await page.getByRole('button',{name:'刷新盘口'}).click()
     await page.getByText(/限价内可见深度 15 份/).waitFor()
+    await page.getByText(/预估均价 0.420000 pUSD/).waitFor()
+    await page.getByText(/提交后预计剩余 17.5 pUSD/).waitFor()
     assert.equal(await page.getByLabel('份额').inputValue(),'5')
     assert.equal(new URL(page.url()).pathname,'/sports/football')
     await page.getByRole('button',{name:'按当前价直接下单'}).click()
@@ -147,6 +155,12 @@ try {
     await page.getByRole('link', {name:'系统管理'}).click()
     await page.getByRole('heading', {name:'同步与任务'}).waitFor()
     await page.getByText('未发现 worker 心跳；请启动独立 worker。').waitFor()
+    await page.getByLabel('单笔余额比例（%，留空关闭）').fill('6')
+    await page.getByLabel('单笔上限最低值（pUSD）').fill('1')
+    await page.getByLabel('每钱包每日上限（pUSD，留空关闭）').fill('20')
+    await page.getByRole('button',{name:'保存交易限额'}).click()
+    await page.getByText('交易限额已保存，下次提交时生效。').waitFor()
+    assert.deepEqual(tradeLimits,{order_limit_percent:'6',order_limit_floor_usd:'1',max_daily_usd:'20'})
     assert.equal(await page.getByLabel('football UTC 同步时间').inputValue(),'00:00')
     await page.getByRole('button', {name:'保存计划'}).click()
     await page.getByText('同步计划已保存。').waitFor()

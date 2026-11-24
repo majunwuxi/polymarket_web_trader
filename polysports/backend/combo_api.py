@@ -381,6 +381,8 @@ def failure(request, exc):
             'quote_unavailable',
             'combo_quote_expired',
             'position_settled',
+            'order_limit_exceeded',
+            'daily_limit_exceeded',
         )
         else 422
         if exc.code in ('invalid_amount', 'combo_legs_invalid')

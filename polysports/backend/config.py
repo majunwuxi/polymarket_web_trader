@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -82,6 +83,9 @@ class Settings(BaseSettings):
     polygon_rpc_url: SecretStr | None = None
     combo_execution_enabled: bool = False
     redeem_execution_enabled: bool = False
+    order_limit_percent: Decimal | None = Field(default=None, gt=0, le=100, allow_inf_nan=False)
+    order_limit_floor_usd: Decimal = Field(default=Decimal('1'), ge=0, allow_inf_nan=False)
+    max_daily_usd: Decimal | None = Field(default=None, gt=0, allow_inf_nan=False)
 
     @classmethod
     def settings_customise_sources(

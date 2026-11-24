@@ -124,12 +124,12 @@ def close_gateway_clients() -> None:
         _close_quietly(client)
 
 
-def ensure_geography() -> None:
+def ensure_geography(*, fresh=False) -> None:
     global _GEO_CACHE
     now = time.monotonic()
     with _GEO_LOCK:
         cached = _GEO_CACHE
-    if cached and cached[0] > now:
+    if not fresh and cached and cached[0] > now:
         if cached[1]:
             return
         raise TradingError('geoblock_blocked', '当前服务位置受交易限制')
@@ -387,6 +387,36 @@ class Gateway:
             raise
         except Exception as exc:
             raise restriction(exc) or TradingError('book_or_balance_unavailable', '无法验证盘口、余额或授权') from exc
+
+    def diagnose_wallet(self, steps):
+        def run(name, operation):
+            started = time.monotonic()
+            for attempt in (1, 2):
+                try:
+                    result = operation()
+                except Exception as exc:
+                    cause = exc.__cause__
+                    transient = isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)) or isinstance(
+                        cause, (httpx.TimeoutException, httpx.NetworkError)
+                    )
+                    if transient and attempt == 1:
+                        continue
+                    steps.append({'name': name, 'state': 'failed', 'attempts': attempt,
+                                  'elapsed_ms': round((time.monotonic() - started) * 1000)})
+                    raise
+                steps.append({'name': name, 'state': 'passed', 'attempts': attempt,
+                              'elapsed_ms': round((time.monotonic() - started) * 1000)})
+                return result
+
+        run('geography', lambda: ensure_geography(fresh=True))
+        self.geography_verified = True
+        credential = run('credentials', self._credential)
+        self.client = run('session', lambda: self._new_client(credential))
+        try:
+            return run('balance_allowance', self.wallet_status)
+        finally:
+            _close_quietly(self.client)
+            self.client = None
 
     def wallet_status(self):
         try:

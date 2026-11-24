@@ -125,6 +125,8 @@ class ComboGateway(Gateway):
                 raise TradingError('balance_insufficient', '组合交易余额不足')
             if not approved:
                 raise TradingError('allowance_insufficient', '组合交易授权不足，请在外部完成授权')
+            if direction == 'BUY':
+                return Decimal(balance).scaleb(-6)
         except TradingError:
             raise
         except Exception as exc:

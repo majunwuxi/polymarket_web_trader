@@ -30,13 +30,26 @@ const menuOpen=ref(false),wallets=ref<any[]>([]),wallet=ref('')
 const side=ref('BUY'),price=ref(''),size=ref(''),budget=ref(''),inputMode=ref<'amount'|'shares'>('amount')
 const book=ref<any>(null),context=ref<any>(null),closeContext=ref<any>(null)
 const message=ref(''),busy=ref(false),result=ref<any>(null),pending=ref<any>(null),clearAcknowledged=ref(false)
+const tradingLimits=ref<any>(null)
+let limitsRevision=0
+async function loadTradingLimits(){
+  const revision=++limitsRevision
+  tradingLimits.value=null
+  if(!wallet.value||closing.value)return
+  try{
+    const limits=await api('/wallets/'+encodeURIComponent(wallet.value)+'/trade-limits')
+    if(revision===limitsRevision)tradingLimits.value=limits
+  }catch{
+    if(revision===limitsRevision)tradingLimits.value=null
+  }
+}
 const walletCheck=ref<{ id:string; loading:boolean; data?:any; error?:string }>()
 async function checkWallet(){
   const id=wallet.value
   if(!id)return
   const check={id,loading:true} as NonNullable<typeof walletCheck.value>
   walletCheck.value=check
-  try{check.data=await api('/wallets/'+encodeURIComponent(id)+'/status')}
+  try{check.data=await api('/wallets/'+encodeURIComponent(id)+'/status?fresh=true')}
   catch(e){check.error=e instanceof Error?e.message:'钱包状态不可用'}
   finally{
     if(walletCheck.value?.id===id)walletCheck.value={...check,loading:false}
@@ -53,7 +66,7 @@ let loadRevision=0
 // 与组合订单一致：只有能确定发生在发送下单请求之前的错误，才可安全清除本机待查记录并允许重试。
 // 其余错误（超时、网络中断、交易所未知响应）一律保留标记，避免重复真实下单。
 const SAFE_CODES=[
-  'PREVIEW_STALE','MAPPING_INVALID','MARKET_UNAVAILABLE','IDEMPOTENCY_CONFLICT','POSITION_SETTLED',
+  'ORDER_LIMIT_EXCEEDED','DAILY_LIMIT_EXCEEDED','PREVIEW_STALE','MAPPING_INVALID','MARKET_UNAVAILABLE','IDEMPOTENCY_CONFLICT','POSITION_SETTLED',
   'INVALID_AMOUNT','PRICE_TICK_INVALID','SIZE_INVALID','GEOBLOCK_BLOCKED','GEOBLOCK_UNKNOWN',
   'WALLET_NOT_FOUND','WALLET_MISMATCH','SIGNER_MISMATCH','WALLET_UNDEPLOYED','WALLET_DEPLOYMENT_UNKNOWN',
   'WALLET_INVALID','RPC_WRONG_CHAIN','CREDENTIALS_MISSING','BALANCE_INSUFFICIENT','ALLOWANCE_INSUFFICIENT',
@@ -163,7 +176,7 @@ async function submit(){
     message.value=known
       ?(error.message||'下单前检查未通过')+'（本次未发送下单请求）'
       :'下单结果未核实：'+(error.code||'HTTP '+String(error.status??'?'))+' '+(error.message||'网络或服务无响应')+'。请按原键查询，不要重复提交。'
-  }finally{busy.value=false}
+  }finally{busy.value=false;void loadTradingLimits()}
 }
 
 async function lookup(){
@@ -216,6 +229,7 @@ async function signOut(){
   try{await logout();await router.replace('/login')}
   catch(e){if(e instanceof ApiError&&e.status===401){clearSession();await router.replace('/login')}else message.value='退出请求未确认，请重试。'}
 }
+watch(wallet,loadTradingLimits)
 onMounted(()=>{
   const reference=props.selection?.reference ?? route.query.reference
   if(!closing.value&&typeof reference==='string'&&/^(?:0?\.\d{1,18})$/.test(reference)&&Number(reference)>0&&Number(reference)<1)price.value=reference
@@ -248,7 +262,7 @@ watch(()=>[linkId.value,outcomeId.value,closing.value],()=>{context.value=null;b
 
     <OpenOrderForm v-else :wallets="wallets" :book="book" :context="context" :order-size="orderSize"
       :busy="busy || refreshing" :pending="pending" :estimated-notional="orderNotional" :previous-price="priceChange" :market-url="selection?.marketUrl"
-      :wallet-check="walletCheck?.id===wallet ? walletCheck : undefined" @check-wallet="checkWallet" @refresh="refreshBook"
+      :trading-limits="tradingLimits" :wallet-check="walletCheck?.id===wallet ? walletCheck : undefined" @check-wallet="checkWallet" @refresh="refreshBook"
       v-model:wallet="wallet" v-model:side="side" v-model:price="price" v-model:size="size"
       v-model:budget="budget" v-model:input-mode="inputMode" @submit="submit" />
 

@@ -27,8 +27,7 @@ def main() -> None:
     import dashboard_api
     dashboard_api.init_services()
     port = dashboard_api.get_dashboard_port()
-    logging.info("Starting Dashboard API server on http://0.0.0.0:%d", port)
-    dashboard_api.app.run(host="0.0.0.0", port=port, debug=False)
+    dashboard_api.run_dashboard(port)
 
 
 if __name__ == "__main__":

@@ -104,6 +104,10 @@ def apply_reconciliation(db, job, payload, error=None):
             if status in ('canceled', 'cancelled'):
                 intent.state = 'cancelled'
                 intent.cancel_state = 'confirmed'
+                if intent.side == 'BUY' and matched == 0:
+                    from .risk_limits import release_buy_budget
+
+                    release_buy_budget(db, intent.id)
             elif matched == intent.requested_size and status in ('matched', 'filled'):
                 intent.state = 'filled'
             elif matched > 0:

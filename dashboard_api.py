@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from flask import Flask, jsonify, send_from_directory, request, session, redirect, url_for
-from flask_cors import CORS
+from urllib.parse import urlsplit
 
 import os
 from dotenv import load_dotenv
@@ -36,7 +36,33 @@ load_dotenv()
 
 app = Flask(__name__, static_folder="dashboard", static_url_path="")
 app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24).hex())  # Session密钥
-CORS(app)  # 允许跨域请求
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Strict')
+_login_attempts: dict[str, tuple[float, int]] = {}
+_login_lock = threading.Lock()
+
+
+def dashboard_origins():
+    configured = os.getenv('DASHBOARD_PUBLIC_ORIGIN')
+    if configured:
+        return {configured.rstrip('/')}
+    port = get_dashboard_port()
+    return {f'http://{host}:{port}' for host in ('127.0.0.1', 'localhost')}
+
+
+def login_throttled():
+    now = time.monotonic()
+    source = request.remote_addr or 'unknown'
+    with _login_lock:
+        for key, (end, _) in list(_login_attempts.items()):
+            if end <= now:
+                del _login_attempts[key]
+        if source not in _login_attempts and len(_login_attempts) >= 4096:
+            return True
+        end, count = _login_attempts.get(source, (now + 900, 0))
+        if count >= 5:
+            return True
+        _login_attempts[source] = (end, count + 1)
+    return False
 
 logger = logging.getLogger(__name__)
 
@@ -538,6 +564,12 @@ def init_services() -> None:
 @app.before_request
 def require_auth():
     """保护所有路由，除了登录页面和登录API"""
+    origins = dashboard_origins()
+    allowed_hosts = {urlsplit(origin).netloc for origin in origins}
+    if request.host not in allowed_hosts:
+        return jsonify({'error': 'Dashboard host not allowed'}), 403
+    if request.method not in ('GET', 'HEAD', 'OPTIONS') and request.headers.get('Origin') not in origins:
+        return jsonify({'error': 'Dashboard origin not allowed'}), 403
     # 允许访问的路径
     allowed_paths = ['/login', '/api/auth/login', '/api/auth/check', '/api/auth/logout']
     static_paths = ['/static/', '/favicon.ico']
@@ -748,6 +780,8 @@ def verify_totp(secret: str, code: str) -> bool:
 @app.route("/api/auth/login", methods=["POST"])
 def api_auth_login():
     """Login with Password + 2FA"""
+    if login_throttled():
+        return jsonify({'error': '登录尝试过多，请稍后重试'}), 429
     data = request.json or {}
     password = data.get("password", "")
     code = data.get("code", "")
@@ -777,6 +811,8 @@ def api_auth_login():
     # Set session
     session['authenticated'] = True
     session['login_time'] = time.time()
+    with _login_lock:
+        _login_attempts.pop(request.remote_addr or 'unknown', None)
     session.permanent = True
     app.permanent_session_lifetime = 3600 * 24  # 24 hours
     
@@ -1641,6 +1677,12 @@ def get_dashboard_port() -> int:
     return port
 
 
+def run_dashboard(port):
+    app.config['SESSION_COOKIE_SECURE'] = any(origin.startswith('https://') for origin in dashboard_origins())
+    logger.info("Starting Dashboard API server on http://127.0.0.1:%d", port)
+    app.run(host="127.0.0.1", port=port, debug=False)
+
+
 if __name__ == "__main__":
     # Print startup banner
     print("="*50)
@@ -1664,5 +1706,4 @@ if __name__ == "__main__":
     init_services()
     
     port = get_dashboard_port()
-    logger.info("Starting Dashboard API server on http://0.0.0.0:%d", port)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    run_dashboard(port)

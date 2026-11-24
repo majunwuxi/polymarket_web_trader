@@ -79,3 +79,44 @@ def test_mock_success_has_no_diagnostic(monkeypatch, mock_wallet_request):
     result = market_api.wallet_status(request, wallet_id)['data']
     assert result['diagnostic'] is None and result['availability'] == 'allowed'
     assert result['collateral_balance'] == '12.5' and result['checked_at']
+
+
+def test_bridge_address_uses_only_configured_wallet_and_verified_polygon_assets(monkeypatch, mock_wallet_request):
+    request, wallet, wallet_id = mock_wallet_request
+    bridge_address = '0x' + '3' * 40
+    contract = '0x' + '4' * 40
+    calls = []
+
+    class MockBridge:
+        def __init__(self, **options):
+            assert options['follow_redirects'] is False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def get(self, url):
+            calls.append(url)
+            token = {'symbol': 'USDC', 'address': contract}
+            return SimpleNamespace(
+                raise_for_status=lambda: None,
+                json=lambda: {'supportedAssets': [
+                    {'chainId': '1', 'token': token, 'minCheckoutUsd': 5},
+                    {'chainId': '137', 'token': token, 'minCheckoutUsd': 2},
+                ]},
+            )
+
+        def post(self, url, json):
+            calls.append(url)
+            assert json == {'address': wallet.wallet_address}
+            return SimpleNamespace(
+                raise_for_status=lambda: None, json=lambda: {'address': {'evm': bridge_address}}
+            )
+
+    monkeypatch.setattr(market_api.httpx, 'Client', MockBridge)
+    data = market_api.deposit_address(request, wallet_id)['data']
+    assert data['address'] == bridge_address and data['chain_id'] == 137
+    assert data['assets'] == [{'symbol': 'USDC', 'contract': contract, 'minimum_usd': '2'}]
+    assert calls == ['https://bridge.polymarket.com/supported-assets', 'https://bridge.polymarket.com/deposit']

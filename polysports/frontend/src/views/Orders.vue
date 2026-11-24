@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ComboBuyMetrics from '../components/ComboBuyMetrics.vue'
 import {onActivated,onMounted,ref} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {formatDateTimeSeconds} from '../utils/format'
@@ -178,16 +179,6 @@ async function attach(){if(!recoveryId.value||!ack.value)return;try{await api('/
 async function signOut(){try{await logout();await router.replace('/login')}catch(e){if(e instanceof ApiError&&e.status===401){clearSession();await router.replace('/login')}else message.value='退出请求未确认，请重试。'}}
 const comboResolutionId=ref<string|null>(null),comboResolution=ref<any>(null)
 async function loadComboResolution(id:string){try{const data=await api('/combo-rfqs/'+id+'/resolution');comboResolution.value=data;comboResolutionId.value=id;if(data?.resolved_legs===data?.leg_count&&data?.leg_count>0){const row=combos.value.find((c:any)=>c.id===id);if(row){row.close_blocked=true;row.close_block_reason='各腿市场均已终态结算，不能平仓'}}}catch(e){message.value=e instanceof Error?e.message:'组合胜负核对失败'}}
-// 组合买入三项摘要只消费后端 buy_summary：不把 quantity（预算）当份额，也不把
-// total_required（接受报价所需余额）当买入金额。缺数据时明确写「待核实」。
-const buyMetrics=(c:any)=>{
-  const s=c?.buy_summary
-  return [
-    {label:'份额总额',value:s?.size?s.size+' 份':'待核实'},
-    {label:'买入价格',value:s?.price?s.price+' pUSD/份':'待核实'},
-    {label:'买入金额',value:s?.cost?(s.estimated?'约':'')+s.cost+' pUSD':'待核实'}
-  ]
-}
 const buyNote=(c:any)=>({quote_rebuilt:'金额按签名报价重建，标「约」为估算值。',quote_partial:'报价字段不完整，金额待核实。',unavailable:'缺少可核实数据，金额不做猜测。'} as Record<string,string>)[c?.buy_summary?.basis]||''
 async function loadAndFocus(){
   await refreshAll()
@@ -272,9 +263,7 @@ onActivated(()=>{if(!activated){activated=true;return}void loadAndFocus()})
       <p v-else-if="comboLoaded && !combos.length">暂无已确认组合交易。</p>
       <article v-for="combo in combos" :key="combo.id" :id="'trade-'+combo.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('combo',combo.id)}]">
         <h3 class="card-title"><span>组合{{combo.direction==='BUY'?'买入':'卖出'}} · {{comboStateName(combo.state)}}</span><span class="pnl-badge" :class="pnlBadge(combo).cls" :title="pnlBadge(combo).hint">{{pnlBadge(combo).text}}</span></h3>
-        <div v-if="combo.direction==='BUY'" class="buy-metrics" aria-label="组合买入摘要">
-          <div v-for="m in buyMetrics(combo)" :key="m.label" class="buy-metric"><span class="buy-metric-label">{{m.label}}</span><strong class="buy-metric-value">{{m.value}}</strong></div>
-        </div>
+        <ComboBuyMetrics v-if="combo.direction==='BUY'" :summary="combo.buy_summary" />
         <p class="order-times">成交确认时间 {{orderTime(combo.fill_confirmed_at)}}</p>
         <p v-if="buyNote(combo)" class="buy-note">{{buyNote(combo)}}</p>
         <RouterLink v-if="combo.state==='unknown'" :to="{path:'/combos',hash:'#combo-'+combo.id}">打开组合记录核对</RouterLink>

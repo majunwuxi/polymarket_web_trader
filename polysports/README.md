@@ -71,6 +71,20 @@ POLYSPORTS_WALLETS=[{"label":"示例","wallet_address":"0x1111111111111111111111
 
 官方参考：[Gamma 事件游标分页](https://docs.polymarket.com/api-reference/events/list-events-keyset-pagination)、[市场字段](https://docs.polymarket.com/api-reference/markets/list-markets)、[Protocol V2 迁移](https://docs.polymarket.com/migrate/polymarket-v2/api-integrations)。
 
+## 交易限额
+
+在「系统管理 → 交易限额」设置单笔可用余额比例、单笔上限最低值和每钱包每日上限。设为 **6%** 和 **1 pUSD** 时，单笔上限为 `min(可用余额, max(可用余额 × 6%, 1 pUSD))`。留空的比例或每日上限不启用对应校验。保存后下一次下单使用新设置，服务器环境配置可提供首次默认值。
+
+单场按限价乘份额、组合按提交预算预占。两类买入共用每钱包的日额度，按 UTC+8 午夜重置。已明确拒绝的提交释放预占，结果未知继续计入当天额度。每日额度统计从此版本启用时开始。
+
+## 钱包诊断与充值
+
+钱包状态页可通过 Polymarket Bridge 查询所选钱包的 Polygon 充值地址、支持资产、合约及最低金额。页面显示返回地址和入账钱包，只提供地址复制。下单页的「检查钱包余额与授权」会重新建立诊断会话，逐步显示地区、凭据、会话和余额授权读取状态。实际市场授权按下单资产与合约检查。
+
+## 只读 Agent
+
+从 `polysports/` 运行 `uv run --locked --extra agent python -m backend.agent_tools`，以 stdio 接入 MCP 客户端。工具提供公开盘口查询和公开持仓估值。设置 `POLYSPORTS_AGENT_WALLETS`（逗号分隔的钱包地址）可允许查询指定钱包的公开组合资产。Agent 进程只需要公开钱包地址，交易提交继续使用网页界面。
+
 ## 单场订单与凭据
 
 真实资金单场交易需要使用独立的受限 `.env` 或环境变量配置 `POLYSPORTS_WALLET_CREDENTIALS` JSON 对象，其键对应钱包的 `credential_ref`。每项包含 `private_key`；CLOB 的 `clob_api_key`、`clob_api_secret`、`clob_api_passphrase` 必须全部提供或全部省略，省略时由官方 SDK 获取。智能钱包还须配置 `POLYSPORTS_POLYGON_RPC_URL`，且钱包必须已部署在 Polygon 主网。智能钱包执行赎回时还必须提供完整 Builder 凭证，或 `relayer_api_key` + `relayer_api_key_address`；Relayer API Key 可在 Polymarket 账户 Settings → API Keys 创建，address 使用该 key 对应地址。**不要把真实私钥、凭证或带密钥的 RPC 地址提交到 Git，也不要在浏览器页面输入私钥。**

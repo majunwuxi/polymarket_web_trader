@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, time
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -479,6 +480,29 @@ class MarketRefresh(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(80))
+
+
+class TradeLimitSettingsRow(Base):
+    __tablename__ = 'trade_limit_settings'
+    __table_args__ = (CheckConstraint('id = 1', name='ck_trade_limit_settings_singleton'),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_limit_percent: Mapped[Decimal | None] = mapped_column(Numeric)
+    order_limit_floor_usd: Mapped[Decimal] = mapped_column(Numeric)
+    max_daily_usd: Mapped[Decimal | None] = mapped_column(Numeric)
+
+
+class TradeBudgetReservation(Base):
+    __tablename__ = 'trade_budget_reservations'
+    __table_args__ = (
+        CheckConstraint('amount > 0', name='ck_trade_budget_positive'),
+        Index('ix_trade_budget_wallet_day', 'wallet_id', 'day'),
+    )
+
+    order_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    wallet_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    day: Mapped[date] = mapped_column(Date)
+    amount: Mapped[Decimal] = mapped_column(Numeric)
 
 
 class TradeIntent(Base):

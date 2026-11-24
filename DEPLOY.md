@@ -165,6 +165,8 @@ sudo journalctl -u polysports-api.service -u polysports-worker.service --since '
 sudo systemctl status polysports-api.service polysports-worker.service polysports-backup.timer --no-pager
 ```
 
+旧版仓库根目录的 Dashboard 入口默认只监听 127.0.0.1。若仍通过 HTTPS 反向代理使用旧版，在其运行环境中设置 `DASHBOARD_PUBLIC_ORIGIN=https://实际域名`，并在代理中透传原始 Host。旧版登录限流按 Flask 收到的连接地址计数。PolySports 使用独立的 `POLYSPORTS_PUBLIC_ORIGIN` 配置。
+
 升级前确认备份与恢复演练可用，记录当前 Git 提交并停止 API、worker。然后在 `/opt/polysports-src` 使用 `git pull --ff-only` 获取已审核版本，在项目目录重新运行 `uv sync --locked --no-dev`，在 `frontend/` 重新运行 `npm ci --include=dev` 和 `npm run build`。用 `systemctl restart polysports-migrate.service`（**不是 `start`**）重新执行迁移后，再启动 API 和 worker，检查健康状态、日志及未到期任务。迁移可能不可逆；不要把 `git checkout` 当作数据库回滚，必要时恢复到新的空库并按上节核对后切换。
 
 **关键：`frontend/dist/` 被 `.gitignore` 排除，`git pull` 只更新源码，不会更新浏览器实际加载的静态文件。** 每次拉取后都必须在 `frontend/` 重新执行 `npm run build`；否则页面仍是旧版本，看起来像「更新没生效」。`npm run build` 由 `vue-tsc --noEmit && vite build` 组成，两者以及 TypeScript 都在 `devDependencies` 中，所以 `npm ci --include=dev` 不能省略；Node 24 安装在 `/opt/polysports-node/bin`，新 SSH 会话必须先设置 PATH，否则 `npm: command not found` 且旧 `dist` 会被原样保留。完整升级命令：

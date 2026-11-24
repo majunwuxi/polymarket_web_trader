@@ -2896,7 +2896,10 @@
     "name_zh": "布拉迪斯拉发斯洛万",
     "country": "Slovakia",
     "logo": "https://media.api-sports.io/football/teams/656.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "ŠK Slovan Bratislava"
+    ]
   },
   "667": {
     "name_en": "Lincoln Red Imps FC",

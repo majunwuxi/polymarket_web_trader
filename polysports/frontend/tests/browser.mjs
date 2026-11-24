@@ -25,6 +25,7 @@ try {
     let mockCombos = []
     let mockLiveCalls = 0
     let mockProvider = 'mock-test-provider'
+    let prepared = 0
     await context.route('**/*', async route => {
       const url = new URL(route.request().url())
       if (url.origin !== base) return route.abort()
@@ -35,7 +36,13 @@ try {
       if (endpoint === 'statistics') return route.fulfill({status:200,json:{data:{games_total:0,finished_total:0,trade_count:0,confirmed_fill_count:0,confirmed_combo_count:0,realized_pnl:null,scope:'模拟统计口径'}}})
       if (url.pathname==='/api/v1/system/status') return route.fulfill({status:200,json:{data:{database:{status:'ok',checked_at:'2026-01-01T00:00:00Z'},configuration:{football_key_configured:false,nba_key_configured:false,wallet_count:0,combo_enabled:false}}}})
       if (endpoint === 'audit-events') return route.fulfill({status:200,json:{data:{items:[]}}})
-      if (endpoint === 'book') return route.fulfill({status:200,json:{data:{tick_size:'0.01',min_order_size:'5',observed_at:'2026-01-01T00:00:00Z',bids:[],asks:[]}}})
+      if (endpoint === 'trade-intents') return route.fulfill({status:200,json:{data:{items:[],next_cursor:null}}})
+      if (url.pathname.includes('/combo-legs/')) return route.fulfill({status:200,json:{data:{accepting_orders:true}}})
+      if (endpoint === 'prepare-selection') {
+        const id=++prepared%2===1?'1':'2'
+        return route.fulfill({status:200,json:{data:{market_link_id:'link-'+id,outcome_id:'o'+id}}})
+      }
+      if (endpoint === 'book') return route.fulfill({status:200,json:{data:{tick_size:'0.01',min_order_size:'5',observed_at:'2026-01-01T00:00:00Z',bids:[{price:'0.40',size:'10'}],asks:[{price:'0.42',size:'15'}]}}})
       if (url.pathname.includes('/order-context/')) return route.fulfill({status:200,json:{data:{home:'Mock Home',away:'Mock Away',market_question:'模拟市场问题',outcome_label:'Yes',starts_at:'2026-01-01T18:00:00Z',asset_id:'1'.repeat(77),protocol_version:'v1'}}})
       if (endpoint === 'single-orders' && route.request().method()==='POST') return route.fulfill({status:201,json:{data:{intent:{id:'mock-order',state:'pending',matched_size:null,retry_after_seconds:null}}}})
       if (endpoint === 'combo-rfqs' && route.request().method()==='POST') {mockCombos=[{id:'mock-combo',state:'executing',direction:'BUY',quantity:'10',wallet_address:'mock-wallet',external_rfq_id:'mock-rfq',error_code:null,legs:[{outcome_id:'o1',home:'Mock Home',away:'Mock Away',market_question:'模拟市场问题',outcome_label:'Yes',starts_at:'2026-01-01T18:00:00Z'}],quote:{id:'mock-quote',price:'0.5',total_required:'10',net_receive:'18',expires_at:'2099-01-01T00:00:00Z'}}];return route.fulfill({status:200,json:{data:mockCombos[0]}})}
@@ -43,7 +50,7 @@ try {
       if (endpoint === 'accept' && url.pathname.includes('/combo-rfqs/')) {mockCombos[0].state='executing';return route.fulfill({status:200,json:{data:mockCombos[0]}})}
       if (endpoint === 'wallets') return route.fulfill({status:200,json:{data:{items:[{id:'mock-wallet',label:'模拟钱包',wallet_address:'0x'+'1'.repeat(40),signer_address:'0x'+'2'.repeat(40),wallet_type:'EOA'}]}}})
       if (endpoint === 'status' && url.pathname.includes('/wallets/')) return route.fulfill({status:200,json:{data:{wallet:{id:'mock-wallet'},collateral_balance:null,allowance_status:'unknown',availability:'allowed',diagnostic:{code:'signer_mismatch',message:'签名私钥与配置的签名地址不一致。'}}}})
-      if (endpoint === 'live-markets') {const call=++mockLiveCalls;if(call===1)await new Promise(resolve=>setTimeout(resolve,1000));return route.fulfill({status:200,json:{data:{match_status:'candidate',observed_at:'2026-01-01T18:00:00Z',events:[{id:'mock-event',title:'模拟赛事市场',slug:'mock-event',markets:[{id:'mock-market',question:'模拟胜负问题',group:null,type:'moneyline',closed:false,accepting_orders:true,outcomes:[{label:'Yes',price:call===1?'0.17':'0.42'},{label:'No',price:null}]}]}]}}})}
+      if (endpoint === 'live-markets') {const call=++mockLiveCalls;if(call===1)await new Promise(resolve=>setTimeout(resolve,1000));return route.fulfill({status:200,json:{data:{match_status:mockProvider==='polymarket'?'source_identity':'candidate',observed_at:'2026-01-01T18:00:00Z',events:[{id:'mock-event',title:'模拟赛事市场',slug:'mock-event',markets:[{id:'mock-market',question:'模拟胜负问题',group:null,type:'moneyline',closed:false,accepting_orders:true,outcomes:[{label:'Yes',price:call===1?'0.17':'0.42'},{label:'No',price:null}]}]}]}}})}
       if (endpoint === 'markets') return route.fulfill({status:200,json:{data:{refresh:{status:'succeeded'},items:[{link:{id:'mock-link',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟市场问题',gamma_market_id:'101',condition_id:'0x'+'a'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o1',label:'Yes',asset_kind:'ctf_token',asset_id:'1'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}},{link:{id:'mock-link-2',state:mockMappingState,can_confirm:mockMappingState==='candidate',evidence:{ordered:true}},market:{question:'模拟第二市场',gamma_market_id:'102',condition_id:'0x'+'b'.repeat(64),protocol_version:'v1',accepting_orders:true,combo_enabled:null,outcomes:[{id:'o2',label:'No',asset_kind:'ctf_token',asset_id:'2'.repeat(77)}]},event:{home:'Mock Home',away:'Mock Away',starts_at:'2026-01-01T18:00:00Z'}}]}}})
       if (endpoint === 'confirm' && url.pathname.includes('/market-links/')) {mockMappingState='confirmed';return route.fulfill({status:200,json:{data:{}}})}
       if (endpoint === 'sync-schedules') return route.fulfill({status:200,json:{data:{revision:1,items:[{sport:'football',provider:'polymarket',utc_time:'00:00:00',enabled:true},{sport:'nba',provider:'balldontlie',utc_time:'08:00:00',enabled:true}]}}})
@@ -69,15 +76,15 @@ try {
     await page.getByLabel('用户名').fill('mock-admin')
     await page.getByLabel('密码', { exact: true }).fill('mock-password')
     await page.getByRole('button', { name: /登录工作台/ }).click()
-    await page.getByRole('heading', { name: '赛事总览' }).waitFor()
+    await page.getByRole('heading', { name: '赛事工作台' }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 横向溢出`)
-    assert.equal(await page.getByText('总览页面不显示赛事、报价或交易数据。').count(), 1)
+    await page.getByRole('heading', { name: /即将开赛的关注赛事/ }).waitFor()
     if (viewport.width < 600) {
       const menu = page.getByRole('button', { name: '菜单' })
       await menu.click()
       assert.equal(await menu.getAttribute('aria-expanded'), 'true')
     }
-    await page.getByRole('link', { name: '足球赛事', exact: true }).click()
+    await page.getByRole('navigation', {name:'赛事与交易入口'}).getByRole('link', {name:'足球赛事',exact:true}).click()
     await page.getByRole('heading', { name: '足球赛事中心' }).waitFor()
     await page.getByRole('heading', { name: '足球赛果绑定状态' }).waitFor()
     await page.getByText('Mock Home').waitFor()
@@ -91,39 +98,43 @@ try {
     await page.getByText('正在查询市场…').waitFor()
     await page.keyboard.press('Escape')
     assert.equal(await page.getByRole('dialog', {name:'赛事详情'}).count(),0)
-    mockProvider='polymarket'
+    mockProvider='mock-test-provider'
     await page.getByRole('button', {name:'查看详情'}).click()
-    await page.getByText('站内暂不可下单').waitFor()
+    await page.locator('.outcome-button').first().waitFor()
+    assert.equal(await page.locator('.outcome-button').first().isDisabled(), true)
     assert.equal(await page.getByRole('link',{name:'订单预览'}).count(),0)
     assert.equal(await page.getByRole('link',{name:/在 Polymarket 查看/}).count(),1)
     await page.getByRole('button',{name:'关闭详情'}).click()
-    mockProvider='mock-test-provider'
+    mockProvider='polymarket'
     await page.getByRole('button', {name:'查看详情'}).click()
     await page.getByText('模拟胜负问题').waitFor()
     await page.locator('.market-tile').getByText('42.0%').waitFor()
     await page.locator('.market-tile').getByText('未知').waitFor()
     await page.waitForTimeout(1100)
     assert.equal(await page.locator('.market-tile').getByText('17.0%').count(),0)
-    await page.getByText('来源：mock-test-provider · 来源 ID：mock-id').waitFor()
-    await page.getByText('模拟市场问题').waitFor()
-    await page.getByRole('button',{name:'核对并确认'}).first().click()
-    await page.getByRole('button',{name:'我已核对，确认映射'}).click()
-    await page.getByText('映射已确认，可进行订单预览。').waitFor()
-    await page.getByRole('button',{name:'加入组合'}).nth(0).click()
-    await page.getByRole('button',{name:'加入组合'}).nth(1).click()
-    await page.getByText('已加入组合，请在组合交易页面核对。').waitFor()
-    await page.getByRole('link',{name:'订单预览'}).first().click()
+    await page.getByText('来源：polymarket · 来源 ID：mock-id').waitFor()
+    await page.getByRole('button',{name:'将Yes加入组合'}).click()
+    await page.getByRole('button',{name:'查看已选 1 腿'}).waitFor()
+    await page.getByRole('button',{name:'将No加入组合'}).click()
+    await page.getByRole('button',{name:'查看已选 2 腿'}).waitFor()
+    await page.locator('.outcome-button').first().click()
     await page.getByRole('heading',{name:'单场订单',exact:true}).waitFor()
     await page.getByLabel('限价').fill('0.50')
+    await page.getByLabel('输入方式').selectOption('shares')
     await page.getByLabel('份额').fill('5')
+    await page.getByRole('button',{name:'刷新盘口'}).click()
+    await page.getByText(/限价内可见深度 15 份/).waitFor()
+    assert.equal(await page.getByLabel('份额').inputValue(),'5')
+    assert.equal(new URL(page.url()).pathname,'/sports/football')
     await page.getByRole('button',{name:'按当前价直接下单'}).click()
     await page.getByText('订单已记录；挂单中，请查看状态。接受不代表成交。').waitFor()
     assert.equal(await page.getByRole('heading',{name:'确认真实资金订单'}).count(),0)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 订单页横向溢出`)
-    if (viewport.width < 600) await page.getByRole('button', {name:'菜单'}).click()
-    await page.getByRole('link', {name:'组合交易'}).click()
+    await page.getByRole('button',{name:'关闭单场交易'}).click()
+    await page.getByRole('button',{name:'查看已选 2 腿'}).click()
+    await page.getByRole('link',{name:'查看组合交易'}).click()
     await page.getByRole('heading', {name:'组合交易'}).waitFor()
-    await page.getByText('Mock Home 对 Mock Away · 模拟市场问题 · Yes').waitFor()
+    await page.getByText('Mock Home 对 Mock Away · 模拟胜负问题 · Yes').waitFor()
     await page.getByLabel('最高预算（含费用）').fill('10')
     await page.getByRole('button',{name:'按当前市价直接下单'}).click()
     await page.getByText('已按当前市场价提交，执行中不代表成交。').waitFor()

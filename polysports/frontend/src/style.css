@@ -177,3 +177,45 @@
 .combo-record-actions{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
 @media(prefers-reduced-motion:reduce){.combo-record{transition:none}}
 .day-divider{grid-column:1/-1;display:flex;align-items:center;gap:12px;margin:4px 0;color:#53675c;font-size:13px;font-weight:700}.day-divider::after{content:"";flex:1;border-top:1px solid #d9e5de}
+
+.trade-drawer {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0 0 0 auto;
+  margin: 0;
+  width: min(36rem, 100%);
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  padding: 1.25rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #dce1e8;
+  background: #f7f8fb;
+  color: #172033;
+}
+.trade-drawer::backdrop { background: rgb(14 22 35 / 45%); }
+.trade-drawer-close { position: sticky; top: 0; float: right; z-index: 1; }
+.order-book-summary, .combo-tray-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.order-book-levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; font-variant-numeric: tabular-nums; }
+.order-book-levels p { margin: .35rem 0; }
+.combo-tray {
+  position: sticky;
+  bottom: .75rem;
+  z-index: 2;
+  margin: 1rem 0;
+  padding: .75rem 1rem;
+  border: 1px solid #dce1e8;
+  border-radius: .75rem;
+  background: #fff;
+  box-shadow: 0 .25rem 1rem rgb(14 22 35 / 12%);
+}
+.combo-tray ul { max-height: 12rem; overflow: auto; padding-left: 1.25rem; }
+.combo-tray li { margin: .5rem 0; }
+.combo-tray small { display: block; }
+.dashboard-tasks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem,100%),1fr)); gap: 1rem; }
+.dashboard-tasks .welcome-card { min-width: 0; margin: 0; }
+.dashboard-tasks ul { padding-left: 1.25rem; }
+@media (max-width: 680px) {
+  .trade-drawer { width: 100%; padding: 1rem; }
+}

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, onActivated } from 'vue'
+import OrderEntry from './OrderEntry.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { session, logout, clearSession, ApiError } from '../auth'
 import AppSidebar from '../components/AppSidebar.vue'
@@ -12,6 +13,49 @@ import { gameStatusName, orderStateName, resultBadge } from '../utils/labels'
 type Team = { id: string; source_name: string; name_zh: string | null; translation_status: string; name_zh_source?: string | null; logo_url: string | null }
 type Game = { id: string; provider: string; starts_at: string; status: string; home_team: Team; away_team: Team; home_score: number | null; away_score: number | null; league: {name:string} | null; last_synced_at:string | null; result_binding_state:string | null; result_detected_at:string | null; result_check_at:string | null; has_matched_order:boolean }
 const route=useRoute(), router=useRouter()
+const comboKey='polysports_combo_legs'
+type DraftLeg={market_link_id:string;outcome_id:string;label:string}
+function readComboDraft():DraftLeg[]{
+  try{
+    const stored=JSON.parse(localStorage.getItem(comboKey)||'[]')
+    return Array.isArray(stored)?stored:[]
+  }catch{return []}
+}
+const comboDraft=ref(readComboDraft())
+const draftOpen=ref(false)
+const draftIssues=ref<Record<string,string>>({})
+let draftCheck=0
+async function checkDraft(){
+  const revision=++draftCheck
+  const legs=[...comboDraft.value]
+  draftIssues.value=Object.fromEntries(legs.map(leg=>[leg.outcome_id,'正在核验…']))
+  await Promise.all(legs.map(async leg=>{
+    let issue=''
+    try{
+      const status=await api('/combo-legs/'+leg.market_link_id+'/'+leg.outcome_id)
+      if(status?.accepting_orders===false)issue='该市场已停止接单'
+    }
+    catch(e){issue=e instanceof Error?e.message:'暂时无法核验'}
+    if(revision===draftCheck)draftIssues.value[leg.outcome_id]=issue
+  }))
+}
+function toggleDraft(){
+  draftOpen.value=!draftOpen.value
+  if(draftOpen.value)void checkDraft()
+}
+function removeDraftLeg(id:string){
+  try{
+    const remaining=readComboDraft().filter(leg=>leg.outcome_id!==id)
+    localStorage.setItem(comboKey,JSON.stringify(remaining))
+    comboDraft.value=remaining
+  }catch{message.value='无法保存组合草稿。'}
+}
+const orderDialog=ref<HTMLDialogElement|null>(null)
+const orderSelection=ref<{link:string;outcome:string;reference?:string;marketUrl?:string}|null>(null)
+function closeOrder(){
+  orderDialog.value?.close()
+  orderSelection.value=null
+}
 const games=ref<Game[]>([]), next=ref<string|null>(null), message=ref(''), loading=ref(false), menuOpen=ref(false)
 const lastSync=ref<{status:string;error_code:string|null;started_at:string|null;scheduled_for:string}|null>(null)
 const mappingBusy=ref(false)
@@ -57,11 +101,17 @@ async function load(append=false) {
   loading.value=true; message.value=''
   try {
     const query=new URLSearchParams({sport:sport(),limit:'20'})
+    if(route.query.watched==='1')query.set('watched','true')
     if(selectedRange.value==='history') { const now=new Date(); query.set('from','2000-01-01T00:00:00Z'); query.set('to',now.toISOString()) }
     if(append && next.value) query.set('cursor',next.value)
     const [result, runs]=await Promise.all([api('/games?'+query),api('/sync-runs?sport='+sport()+'&limit=1')])
     lastSync.value=runs.items[0] || null
     games.value=append?[...games.value,...result.items]:result.items; next.value=result.next_cursor
+    if(!append && typeof route.query.game==='string' && detail.value?.id!==route.query.game){
+      const target=games.value.find(game=>game.id===route.query.game) ?? await api('/games/'+encodeURIComponent(route.query.game)).catch(()=>null)
+      if(target && route.query.game===target.id && String(route.params.sport)===query.get('sport'))void showDetail(target)
+    }
+    if(route.hash==='#binding-summary')void nextTick(()=>document.getElementById('binding-summary')?.scrollIntoView?.())
   } catch { message.value='赛事加载失败，请检查服务状态。'; if(!append) games.value=[] }
   finally { loading.value=false }
 }
@@ -152,7 +202,31 @@ async function showDetail(game:Game) {
   liveLoading.value=false
 }
 async function confirmBinding(id:string){if(!detail.value)return;try{binding.value=await api('/games/'+detail.value.id+'/result-binding/confirm',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({fixture_id:id})});await load();message.value='已确认赛果来源，将按计划查询。'}catch(e){message.value=e instanceof Error?e.message:'绑定失败'}}
-async function selectOutcome(event:any,market:any,outcome:any,index:string|number){if(!detail.value||mappingBusy.value)return;const selectionRequest=detailRequest;mappingBusy.value=true;message.value='正在核验市场和选项…';try{const data=await api('/games/'+detail.value.id+'/prepare-selection',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({event_id:event.id,market_id:market.id,outcome_index:Number(index),outcome_label:outcome.label})});if(selectionRequest!==detailRequest)return;await router.push({path:'/orders/new/'+data.market_link_id+'/'+data.outcome_id,query:outcome.price!==null?{reference:outcome.price}:{}})}catch(e){message.value=e instanceof Error?e.message:'市场核验失败，请刷新后重试。'}finally{mappingBusy.value=false}}
+async function selectOutcome(event:any,market:any,outcome:any,index:string|number){
+  if(!detail.value||mappingBusy.value)return
+  const selectionRequest=detailRequest
+  mappingBusy.value=true
+  message.value='正在核验市场和选项…'
+  try{
+    const data=await api('/games/'+detail.value.id+'/prepare-selection',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},
+      body:JSON.stringify({event_id:event.id,market_id:market.id,outcome_index:Number(index),outcome_label:outcome.label}),
+    })
+    if(selectionRequest!==detailRequest)return
+    message.value=''
+    orderSelection.value={
+      link:data.market_link_id,
+      outcome:data.outcome_id,
+      reference:outcome.price==null?undefined:String(outcome.price),
+      marketUrl:event.slug?'https://polymarket.com/event/'+encodeURIComponent(event.slug):undefined,
+    }
+    await nextTick()
+    if(orderSelection.value && !orderDialog.value?.open)orderDialog.value?.showModal()
+  }catch(e){
+    if(selectionRequest===detailRequest)message.value=e instanceof Error?e.message:'市场核验失败，请刷新后重试。'
+  }finally{mappingBusy.value=false}
+}
 
 async function addComboOutcome(event:any,market:any,outcome:any,index:string|number){
   if(!detail.value||mappingBusy.value)return
@@ -165,7 +239,7 @@ async function addComboOutcome(event:any,market:any,outcome:any,index:string|num
     if(!Array.isArray(legs))throw new Error('组合单数据无法读取，请先清理组合单。')
     if(legs.some((leg:any)=>leg.market_link_id===chosen.market_link_id)){message.value='该市场已有选项在组合单中，请先移除原选项。';return}
     legs.push({...chosen,label:name(game.home_team)+' 对 '+name(game.away_team)+' · '+(market.group||market.question||'市场')+' · '+outcome.label})
-    localStorage.setItem(key,JSON.stringify(legs));message.value='已加入组合，可继续选择其他比赛，或打开'
+    localStorage.setItem(key,JSON.stringify(legs));comboDraft.value=legs;if(draftOpen.value)void checkDraft();message.value='已加入组合，可继续选择其他比赛，或打开'
   }catch(e){message.value=e instanceof Error?e.message:'无法验证组合市场，请稍后重试。'}finally{mappingBusy.value=false}
 }
 function edit(team:Team){editor.value=team; chinese.value=team.name_zh || ''; alias.value=''; teamError.value=''; void nextTick().then(()=>{if(teamDialog.value&&!teamDialog.value.open)teamDialog.value.showModal()})}
@@ -190,9 +264,9 @@ async function saveTeam() {
   finally {savingTeam.value=false}
 }
 async function signOut() {try {await logout(); await router.replace('/login')} catch(e) {if(e instanceof ApiError && e.status===401) {clearSession(); await router.replace('/login')} else message.value='退出请求未确认，请重试。'}}
-watch(()=>route.params.sport,()=>{menuOpen.value=false;closeDetail();selectedRange.value='upcoming';load();loadBindingSummary()},{immediate:true})
+watch(()=>[route.params.sport,route.query.watched,route.query.game],()=>{if(!['football','nba'].includes(sport()))return;menuOpen.value=false;closeOrder();closeDetail();selectedRange.value='upcoming';load();loadBindingSummary()},{immediate:true})
 let activated=false
-onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;closeDetail();load();loadBindingSummary()})
+onActivated(()=>{if(!activated){activated=true;return}comboDraft.value=readComboDraft();if(draftOpen.value)void checkDraft();menuOpen.value=false;closeOrder();closeDetail();load();loadBindingSummary()})
 
 </script>
 <template>
@@ -200,8 +274,8 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
   <AppSidebar :open="menuOpen" @toggle="menuOpen=!menuOpen" />
   <main class="workspace"><AppTopbar :breadcrumb="'工作台 / '+title()" :username="session.username" @sign-out="signOut" />
     <div class="page-heading"><div><p class="eyebrow">MATCH CENTER · UTC+8</p><h1>{{title()}}</h1><p class="muted">时间显示为北京时间；赛事由配置的数据源提供。</p></div></div>
-    <ResultBindingSummary v-if="sport()==='football'" :summary="bindingSummary" :loading="bindingSummaryLoading" :error="bindingSummaryError" :action-error="bindingActionError" :busy="bindingBusy" :expanded="expandedBinding" @refresh="loadBindingSummary" @open="openSummaryBinding" @confirm="confirmSummaryBinding" />
-<div class="game-tools"><label for="range">赛事范围</label><select id="range" v-model="selectedRange" @change="load()"><option value="upcoming">{{sport()==='football'?'过去 2 小时 30 分至未来 18 小时':'过去 3 小时至未来 18 小时'}}</option><option value="history">历史赛事</option></select><button class="text-button" @click="load()">刷新</button></div>
+    <ResultBindingSummary id="binding-summary" v-if="sport()==='football'" :summary="bindingSummary" :loading="bindingSummaryLoading" :error="bindingSummaryError" :action-error="bindingActionError" :busy="bindingBusy" :expanded="expandedBinding" @refresh="loadBindingSummary" @open="openSummaryBinding" @confirm="confirmSummaryBinding" />
+<div class="game-tools"><RouterLink :to="{query:route.query.watched==='1'?{}:{watched:'1'}}">{{route.query.watched==='1'?'查看全部赛事':'只看关注'}}</RouterLink><label for="range">赛事范围</label><select id="range" v-model="selectedRange" @change="load()"><option value="upcoming">{{sport()==='football'?'过去 2 小时 30 分至未来 18 小时':'过去 3 小时至未来 18 小时'}}</option><option value="history">历史赛事</option></select><button class="text-button" @click="load()">刷新</button></div>
     <p class="muted" v-if="lastSync">{{lastSync.started_at ? '最近同步' : '计划同步'}}：{{formatDateTime(lastSync.started_at || lastSync.scheduled_for)}} UTC+8 · {{lastSync.status === 'succeeded' ? '成功' : lastSync.status === 'failed' ? '失败' : lastSync.status === 'queued' ? '排队中' : lastSync.status === 'running' ? '进行中' : '未知'}}<span v-if="lastSync.error_code">（{{lastSync.error_code}}）</span></p><p class="muted" v-else>尚无同步记录。</p><p v-if="!detail" role="status" class="form-message">{{message}}</p><p v-if="loading && !games.length">正在加载…</p><p v-else-if="!games.length && !message" class="muted">暂无已保存赛事。若尚未同步，请先配置数据源并运行同步命令。</p>
     <div class="games-list">
       <template v-for="group in dayGroups" :key="group.key">
@@ -214,6 +288,7 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
       <div v-if="detail" class="dialog-content">
         <div class="detail-sticky">
         <header class="dialog-heading"><div><p class="eyebrow">MATCH CENTRE <span> / </span> UTC+8</p><h2 id="game-dialog-title">赛事详情</h2></div><button class="dialog-close" autofocus aria-label="关闭详情" @click="closeDetail">×</button></header>
+        <button v-if="comboDraft.length" type="button" class="text-button" @click="closeDetail();draftOpen=true;checkDraft()">查看已选 {{comboDraft.length}} 腿</button>
         <p v-if="message" role="status" class="form-message">{{message}}<RouterLink v-if="comboPrompt" to="/combos" @click="closeDetail">组合交易</RouterLink><template v-if="comboPrompt">。</template></p>
         <section class="match-summary" aria-label="比赛信息">
           <div class="summary-meta"><span>{{detail.league?.name || (sport()==='nba'?'NBA':'足球')}}</span><span>·</span><span>{{detail.starts_at ? formatDateTime(detail.starts_at)+' UTC+8' : '开赛时间未知'}}</span><span class="summary-status">{{gameStatusName(detail.status)}}</span></div>
@@ -257,6 +332,23 @@ onActivated(()=>{if(!activated){activated=true;return}menuOpen.value=false;close
         </section>
 <details class="match-history"><summary>赛事来源与变更记录</summary><p v-if="detail.watch">关注状态：{{detail.watch.state}}<span v-if="detail.watch.next_due_at"> · 下次查询：{{formatDateTime(detail.watch.next_due_at)}} UTC+8</span></p><p v-if="!detail.recent_revisions.length">暂无变更记录</p><p v-for="(revision,index) in detail.recent_revisions" :key="index">{{formatDateTime(revision.observed_at)}} · {{revision.old_status}} → {{revision.new_status}}<span v-if="revision.old_starts_at !== revision.new_starts_at"> · 时间已调整</span></p></details>
 </div></dialog>
+    <dialog ref="orderDialog" class="trade-drawer" aria-label="单场交易" @cancel.prevent="closeOrder" @close="orderSelection=null">
+      <button type="button" class="dialog-close trade-drawer-close" aria-label="关闭单场交易" @click="closeOrder">×</button>
+      <OrderEntry v-if="orderSelection" :selection="orderSelection" />
+    </dialog>
+    <aside v-if="comboDraft.length" class="combo-tray" aria-label="组合草稿">
+      <div class="combo-tray-actions">
+        <button type="button" class="text-button" :aria-expanded="draftOpen" @click="toggleDraft">已选 {{comboDraft.length}} 腿</button>
+        <RouterLink to="/combos">查看组合交易</RouterLink>
+      </div>
+      <ul v-if="draftOpen">
+        <li v-for="leg in comboDraft" :key="leg.outcome_id">
+          <span>{{leg.label}}</span>
+          <small v-if="draftIssues[leg.outcome_id]" role="status">{{draftIssues[leg.outcome_id]}}</small>
+          <button type="button" class="text-button" :aria-label="'移除 '+leg.label" @click="removeDraftLeg(leg.outcome_id)">移除</button>
+        </li>
+      </ul>
+    </aside>
     <dialog ref="teamDialog" class="team-dialog" aria-labelledby="team-dialog-title" @cancel.prevent="closeTeamEditor" @close="editor=null">
       <form v-if="editor" class="team-dialog-body" @submit.prevent="saveTeam">
         <header class="dialog-heading"><div><p class="eyebrow">TEAM DIRECTORY</p><h2 id="team-dialog-title">维护球队：{{editor.name_zh || editor.source_name}}</h2></div><button type="button" class="dialog-close" aria-label="关闭球队维护" @click="closeTeamEditor">×</button></header>

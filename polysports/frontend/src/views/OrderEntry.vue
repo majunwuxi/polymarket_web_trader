@@ -10,12 +10,40 @@ import OpenOrderForm from '../components/OpenOrderForm.vue'
 import OrderResultPanel from '../components/OrderResultPanel.vue'
 
 const route=useRoute(),router=useRouter()
+const props=defineProps<{ selection?: { link:string; outcome:string; reference?:string; marketUrl?:string } }>()
+const linkId=computed(()=>props.selection?.link ?? route.params.link)
+const outcomeId=computed(()=>props.selection?.outcome ?? route.params.outcome)
+const refreshing=ref(false)
+const priceChange=ref('')
+async function refreshBook(){
+  if(refreshing.value||busy.value)return
+  refreshing.value=true
+  try{
+    book.value=await api('/outcomes/'+outcomeId.value+'/book')
+    message.value=''
+  }catch(e){
+    book.value=null
+    message.value=e instanceof Error?e.message:'盘口刷新失败'
+  }finally{refreshing.value=false}
+}
 const menuOpen=ref(false),wallets=ref<any[]>([]),wallet=ref('')
 const side=ref('BUY'),price=ref(''),size=ref(''),budget=ref(''),inputMode=ref<'amount'|'shares'>('amount')
 const book=ref<any>(null),context=ref<any>(null),closeContext=ref<any>(null)
 const message=ref(''),busy=ref(false),result=ref<any>(null),pending=ref<any>(null),clearAcknowledged=ref(false)
+const walletCheck=ref<{ id:string; loading:boolean; data?:any; error?:string }>()
+async function checkWallet(){
+  const id=wallet.value
+  if(!id)return
+  const check={id,loading:true} as NonNullable<typeof walletCheck.value>
+  walletCheck.value=check
+  try{check.data=await api('/wallets/'+encodeURIComponent(id)+'/status')}
+  catch(e){check.error=e instanceof Error?e.message:'钱包状态不可用'}
+  finally{
+    if(walletCheck.value?.id===id)walletCheck.value={...check,loading:false}
+  }
+}
 const lookupBusy=ref(false),lookupNote=ref('')
-const closing=computed(()=>typeof route.query.close==='string' && !!route.query.close)
+const closing=computed(()=>!props.selection && typeof route.query.close==='string' && !!route.query.close)
 const pendingKey='polysports_pending_order'
 // 404 查无后的自动清除冷却期：已中断的下单请求在服务端最多再处理数十秒，
 // 标记创建超过该时间后仍查无此键，即为确定未创建，可安全自动清除。
@@ -92,7 +120,7 @@ async function load(){
     }
     return
   }
-  const link=route.params.link,outcome=route.params.outcome
+  const link=linkId.value,outcome=outcomeId.value
   try{
     const [w,b,c]=await Promise.all([api('/wallets'),api('/outcomes/'+outcome+'/book'),api('/order-context/'+link+'/'+outcome)])
     if(generation!==loadRevision)return
@@ -105,12 +133,12 @@ async function load(){
 
 // 一步式下单：与组合订单相同，前端只发一次幂等请求，服务端在本次请求内核对实时盘口、签名并提交。
 async function submit(){
-  if(busy.value||pending.value)return
+  if(busy.value||pending.value||refreshing.value)return
   const draft=closing.value
-    ?{wallet_id:closeContext.value?.wallet_id,market_link_id:route.params.link,outcome_id:route.params.outcome,
+    ?{wallet_id:closeContext.value?.wallet_id,market_link_id:linkId.value,outcome_id:outcomeId.value,
       side:'SELL',limit_price:closeContext.value?.market_price,size:closeContext.value?.candidate_shares,
       order_type:'FOK',parent_trade_id:String(route.query.close)}
-    :{wallet_id:wallet.value,market_link_id:route.params.link,outcome_id:route.params.outcome,
+    :{wallet_id:wallet.value,market_link_id:linkId.value,outcome_id:outcomeId.value,
       side:side.value,limit_price:price.value,size:orderSize.value}
   if(!draft.wallet_id||!draft.limit_price||!draft.size){message.value='请核对钱包、限价与份额后再下单。';return}
   busy.value=true;message.value='';lookupNote.value=''
@@ -127,6 +155,10 @@ async function submit(){
     const error=e as Error & {code?:string,status?:number}
     const known=SAFE_CODES.includes(error.code||'')
     if(known){localStorage.removeItem(pendingKey);pending.value=null}
+    if(!closing.value && error.code==='PREVIEW_STALE'){
+      priceChange.value=price.value
+      book.value=null
+    }
     // 未知失败必须带出服务端返回的错误码与原因，否则用户只能看到"结果未核实"而无法定位。
     message.value=known
       ?(error.message||'下单前检查未通过')+'（本次未发送下单请求）'
@@ -185,18 +217,18 @@ async function signOut(){
   catch(e){if(e instanceof ApiError&&e.status===401){clearSession();await router.replace('/login')}else message.value='退出请求未确认，请重试。'}
 }
 onMounted(()=>{
-  const reference=route.query.reference
+  const reference=props.selection?.reference ?? route.query.reference
   if(!closing.value&&typeof reference==='string'&&/^(?:0?\.\d{1,18})$/.test(reference)&&Number(reference)>0&&Number(reference)<1)price.value=reference
   void restorePending()
 })
-watch(()=>[route.params.link,route.params.outcome,route.query.close],()=>{context.value=null;book.value=null;result.value=null;load()},{immediate:true})
+watch(()=>[linkId.value,outcomeId.value,closing.value],()=>{context.value=null;book.value=null;result.value=null;load()},{immediate:true})
 </script>
 
 <template>
-<div class="app-layout">
-  <AppSidebar :open="menuOpen" @toggle="menuOpen=!menuOpen" />
-  <main class="workspace">
-    <AppTopbar :breadcrumb="'工作台 / '+(closing?'立即平仓':'单场订单')" :username="session.username" @sign-out="signOut" />
+<div :class="selection ? 'embedded-order' : 'app-layout'">
+  <AppSidebar v-if="!selection" :open="menuOpen" @toggle="menuOpen=!menuOpen" />
+  <div :class="selection ? 'embedded-order-body' : 'workspace'">
+    <AppTopbar v-if="!selection" :breadcrumb="'工作台 / '+(closing?'立即平仓':'单场订单')" :username="session.username" @sign-out="signOut" />
     <div class="page-heading">
       <div>
         <p class="eyebrow">REAL FUNDS</p>
@@ -215,11 +247,12 @@ watch(()=>[route.params.link,route.params.outcome,route.query.close],()=>{contex
       :market-close-ready="marketCloseReady" :busy="busy" :pending="pending" @refresh="load()" @submit="submit" />
 
     <OpenOrderForm v-else :wallets="wallets" :book="book" :context="context" :order-size="orderSize"
-      :busy="busy" :pending="pending" :estimated-notional="orderNotional"
+      :busy="busy || refreshing" :pending="pending" :estimated-notional="orderNotional" :previous-price="priceChange" :market-url="selection?.marketUrl"
+      :wallet-check="walletCheck?.id===wallet ? walletCheck : undefined" @check-wallet="checkWallet" @refresh="refreshBook"
       v-model:wallet="wallet" v-model:side="side" v-model:price="price" v-model:size="size"
       v-model:budget="budget" v-model:input-mode="inputMode" @submit="submit" />
 
     <OrderResultPanel v-if="result" :result="result" />
-  </main>
+  </div>
 </div>
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {onActivated,onMounted,ref} from 'vue'
-import {useRouter} from 'vue-router'
+import {useRoute,useRouter} from 'vue-router'
 import {formatDateTimeSeconds} from '../utils/format'
 import {session,logout,clearSession,ApiError} from '../auth'
 import AppSidebar from '../components/AppSidebar.vue'
@@ -9,6 +9,7 @@ import SingleResolution from '../components/SingleResolution.vue'
 import ComboLegDetails from '../components/ComboLegDetails.vue'
 import ComboResolution from '../components/ComboResolution.vue'
 import {cancelStateName,comboResult,comboStateName,orderStateName,resultBadge} from '../utils/labels'
+const route=useRoute()
 const router=useRouter(),menuOpen=ref(false),orders=ref<any[]>([]),nextCursor=ref<string|null>(null),loaded=ref(false),message=ref(''),pendingCancel=ref<string|null>(null),recoveryId=ref<string|null>(null),candidates=ref<any[]>([]),fillOrder=ref<string|null>(null),fills=ref<any[]>([]),fillsTruncated=ref(false),attachId=ref(''),ack=ref(false)
 const combos=ref<any[]>([]),comboCursor=ref<string|null>(null),comboLoaded=ref(false),comboError=ref(''),comboBusy=ref(false)
 const fullId=ref<string|null>(null)
@@ -46,6 +47,7 @@ async function loadCombos(append = false): Promise<string[] | undefined> {
   comboError.value = ''
   try {
     const query = new URLSearchParams({limit: '20', state: 'confirmed', hide_settled: 'true'})
+    if(route.query.state==='unknown'){query.set('state','unknown');query.delete('hide_settled')}
     if (append && comboCursor.value) query.set('cursor', comboCursor.value)
     const data = await api('/combo-rfqs?' + query)
     combos.value = append ? [...combos.value, ...data.items] : data.items
@@ -64,6 +66,7 @@ async function load(append = false): Promise<string[] | undefined> {
   ordersBusy.value = true
   try {
     const query = new URLSearchParams({limit: '20', hide_settled: 'true'})
+    if(route.query.state==='unknown'){query.set('state','unknown');query.delete('hide_settled')}
     if (append && nextCursor.value) query.set('cursor', nextCursor.value)
     const data = await api('/trade-intents?' + query)
     orders.value = append ? [...orders.value, ...data.items] : data.items
@@ -186,9 +189,13 @@ const buyMetrics=(c:any)=>{
   ]
 }
 const buyNote=(c:any)=>({quote_rebuilt:'金额按签名报价重建，标「约」为估算值。',quote_partial:'报价字段不完整，金额待核实。',unavailable:'缺少可核实数据，金额不做猜测。'} as Record<string,string>)[c?.buy_summary?.basis]||''
-onMounted(refreshAll)
+async function loadAndFocus(){
+  await refreshAll()
+  if(route.hash.startsWith('#trade-'))document.getElementById(route.hash.slice(1))?.scrollIntoView?.()
+}
+onMounted(loadAndFocus)
 let activated=false
-onActivated(()=>{if(!activated){activated=true;return}void refreshAll()})
+onActivated(()=>{if(!activated){activated=true;return}void loadAndFocus()})
 </script>
 
 <template>
@@ -205,7 +212,7 @@ onActivated(()=>{if(!activated){activated=true;return}void refreshAll()})
       <h2>单场订单</h2>
       <p class="scope-note">金额以赛果判断与 Polymarket 终态结算一致为准；粉色卡片可整仓赎回。</p>
       <p v-if="loaded && !orders.length">暂无已记录订单。</p>
-      <article v-for="order in orders" :key="order.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('single',order.id)}]">
+      <article v-for="order in orders" :key="order.id" :id="'trade-'+order.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('single',order.id)}]">
         <h2 class="card-title"><span>{{order.side==='BUY'?'买入':'卖出'}} · {{orderStateName(order.state)}}<span v-if="resultBadge(order.result_won)" class="result-badge" :class="resultBadge(order.result_won)?.cls">{{resultBadge(order.result_won)?.text}}</span></span><span class="pnl-badge" :class="pnlBadge(order).cls" :title="pnlBadge(order).hint">{{pnlBadge(order).text}}</span></h2>
         <p>{{order.home}} 对 {{order.away}} · {{shortQuestion(order.market_question)}} · {{order.outcome_label}}</p>
         <div class="order-times">
@@ -263,13 +270,14 @@ onActivated(()=>{if(!activated){activated=true;return}void refreshAll()})
       <button class="text-button" :disabled="comboBusy" @click="refreshCombos()">刷新组合记录</button>
       <p v-if="comboError" role="alert">{{comboError}}</p>
       <p v-else-if="comboLoaded && !combos.length">暂无已确认组合交易。</p>
-      <article v-for="combo in combos" :key="combo.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('combo',combo.id)}]">
+      <article v-for="combo in combos" :key="combo.id" :id="'trade-'+combo.id" :class="['market-card','order-card',{'is-redeemable':canRedeem('combo',combo.id)}]">
         <h3 class="card-title"><span>组合{{combo.direction==='BUY'?'买入':'卖出'}} · {{comboStateName(combo.state)}}</span><span class="pnl-badge" :class="pnlBadge(combo).cls" :title="pnlBadge(combo).hint">{{pnlBadge(combo).text}}</span></h3>
         <div v-if="combo.direction==='BUY'" class="buy-metrics" aria-label="组合买入摘要">
           <div v-for="m in buyMetrics(combo)" :key="m.label" class="buy-metric"><span class="buy-metric-label">{{m.label}}</span><strong class="buy-metric-value">{{m.value}}</strong></div>
         </div>
         <p class="order-times">成交确认时间 {{orderTime(combo.fill_confirmed_at)}}</p>
         <p v-if="buyNote(combo)" class="buy-note">{{buyNote(combo)}}</p>
+        <RouterLink v-if="combo.state==='unknown'" :to="{path:'/combos',hash:'#combo-'+combo.id}">打开组合记录核对</RouterLink>
         <div v-for="leg in combo.legs" :key="leg.outcome_id" class="leg-chip" :title="leg.result_basis ?? ''">{{leg.home}} 对 {{leg.away}} · {{shortQuestion(leg.market_question)}} · {{leg.outcome_label}}<span v-if="leg.home_score != null && leg.away_score != null"> · {{leg.home_score}} : {{leg.away_score}}</span><span v-if="resultBadge(leg.result_won)" class="result-badge" :class="resultBadge(leg.result_won)?.cls">{{resultBadge(leg.result_won)?.text}}</span><span v-else> · 无法判断</span>
           <div class="order-times">
             <span>比赛开始 {{orderTime(leg.starts_at)}}</span>

@@ -61,7 +61,7 @@ describe('管理员页面（模拟接口）', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('mock network error')))
     const view = mount(Dashboard, { global: { plugins: [router] } })
     expect(view.findAll('[aria-disabled="true"]')).toHaveLength(0)
-    expect(view.text()).toContain('不显示赛事')
+    expect(view.text()).toContain('赛事工作台')
     await view.get('.menu-button').trigger('click')
     expect(view.get('.menu-button').attributes('aria-expanded')).toBe('true')
     await view.get('.text-button').trigger('click'); await flushPromises()

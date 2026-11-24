@@ -2855,6 +2855,9 @@
     "name_zh": "加拉塔萨雷",
     "country": "Turkey",
     "logo": "https://media.api-sports.io/football/teams/645.png",
+    "aliases": [
+      "Galatasaray SK"
+    ],
     "leagues": "UCL"
   },
   "649": {

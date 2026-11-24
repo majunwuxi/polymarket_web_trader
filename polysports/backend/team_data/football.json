@@ -2801,6 +2801,16 @@
     "logo": "https://media.api-sports.io/football/teams/598.png",
     "leagues": "UCL"
   },
+  "575": {
+    "name_en": "AEK Athens FC",
+    "name_zh": "雅典AEK",
+    "country": "Greece",
+    "logo": "https://media.api-sports.io/football/teams/575.png",
+    "leagues": "UCL",
+    "aliases": [
+      "AEK"
+    ]
+  },
   "604": {
     "name_en": "Maccabi Tel Aviv",
     "name_zh": "特拉维夫马卡比",

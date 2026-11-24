@@ -30,16 +30,22 @@ def test_binding_summary_serialization(monkeypatch):
         def __exit__(self,*args): pass
         def execute(self,statement):
             type(self).calls+=1
-            if type(self).calls==1:return Rows([('needs_review',1),('bound',1)])
+            if type(self).calls==1:return Rows([('needs_review',1),('bound',1),('pending',1)])
+            if type(self).calls==3:
+                pending=SimpleNamespace(**{**vars(binding),'state':'pending','candidates':[],'last_error_code':'no_matching_fixture'})
+                return Rows([(pending,game,home,away,league)])
             return Rows([(binding,game,home,away,league)])
         def scalar(self,statement): return 1
     monkeypatch.setattr(api,'Session',lambda engine:FakeSession())
     monkeypatch.setattr(api,'db_now',lambda db:now)
     data=api.binding_summary(object(),'football',20)
-    assert data['totals']=={'total':2,'bound':1,'pending':0,'needs_review':1,
-                           'unbound':1,'ready_to_confirm':1}
+    assert data['totals']=={'total':3,'bound':1,'pending':1,'needs_review':1,
+                           'unbound':2,'ready_to_confirm':1}
     assert data['items'][0]['home']=='瑞士'
     assert data['items'][0]['can_quick_confirm'] is True
+    assert data['pending_items'][0]['error_code']=='no_matching_fixture'
+    assert data['pending_items'][0]['next_attempt_at']==now.isoformat()
+    assert data['pending_items'][0]['can_quick_confirm'] is False
     assert data['has_more'] is False
 
 

@@ -9,6 +9,11 @@ defineProps<{
   busy: string | null
   expanded: string | null
 }>()
+const pendingReason = (code: string | null) => {
+  if (code === 'no_matching_fixture') return '未找到匹配赛程'
+  if (code) return '上次查询未成功（' + code + '）'
+  return '等待自动查询'
+}
 const emit = defineEmits<{
   refresh: []
   open: [item: any]
@@ -41,9 +46,18 @@ const emit = defineEmits<{
           </button>
         </div>
       </div>
+      <section v-if="summary.pending_items?.length" class="binding-queue" aria-label="自动匹配中的赛事">
+        <h3>自动匹配中的赛事</h3>
+        <article v-for="item in summary.pending_items" :key="item.game_id" class="binding-row">
+          <div class="binding-row-head">
+            <RouterLink :to="{path:'/sports/football',query:{game:item.game_id}}">{{ item.home }} 对 {{ item.away }}</RouterLink>
+            <span>{{ item.league || '联赛未知' }} · {{ formatDateTime(item.starts_at) }} UTC+8</span>
+          </div>
+          <p class="muted">{{ pendingReason(item.error_code) }} · 下次查询 {{ formatDateTime(item.next_attempt_at) }} UTC+8</p>
+        </article>
+      </section>
       <p v-if="!summary.totals.total" class="muted">暂无需要绑定赛果的足球赛事。</p>
-      <p v-else-if="!summary.items.length && summary.totals.pending" class="muted">当前没有可直接绑定的未绑定球队；自动匹配中的赛事找到候选后会显示为链接。</p>
-      <p v-else-if="!summary.items.length" class="muted">当前没有可直接绑定的未绑定球队。</p>
+      <p v-else-if="!summary.items.length && !summary.totals.pending" class="muted">当前没有可直接绑定的未绑定球队。</p>
       <div v-if="summary.items.length" class="binding-queue">
         <template v-for="item in summary.items" :key="item.game_id">
           <article v-if="expanded === item.game_id" class="binding-row">

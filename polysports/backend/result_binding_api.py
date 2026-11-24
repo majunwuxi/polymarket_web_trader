@@ -51,21 +51,27 @@ def binding_summary(engine, sport: str, limit: int):
             or 0
         )
         home_team, away_team = aliased(Team), aliased(Team)
-        rows = db.execute(
+        query = (
             select(ResultBindingRequest, Game, home_team, away_team, League)
             .join(Game, Game.id == ResultBindingRequest.game_id)
             .join(home_team, home_team.id == Game.home_team_id)
             .join(away_team, away_team.id == Game.away_team_id)
             .outerjoin(League, League.id == Game.league_id)
-            .where(Game.sport == sport, Game.provider == 'polymarket', ResultBindingRequest.state == 'needs_review')
+            .where(Game.sport == sport, Game.provider == 'polymarket')
             .order_by(Game.starts_at, Game.id)
-            .limit(limit + 1)
-        ).all()
-        more = len(rows) > limit
+        )
+        rows = db.execute(query.where(ResultBindingRequest.state == 'needs_review').limit(limit + 1)).all()
+        pending_rows = (
+            db.execute(query.where(ResultBindingRequest.state == 'pending')).all()
+            if grouped.get('pending')
+            else []
+        )
         items = []
-        for binding, game, home, away, league in rows[:limit]:
+        pending_items = []
+        for binding, game, home, away, league in [*rows[:limit], *pending_rows]:
             candidates = binding.candidates if isinstance(binding.candidates, list) else []
-            items.append(
+            target = pending_items if binding.state == 'pending' else items
+            target.append(
                 {
                     'game_id': str(game.id),
                     'external_id': game.external_id,
@@ -81,7 +87,7 @@ def binding_summary(engine, sport: str, limit: int):
                     'error_code': binding.last_error_code,
                     'updated_at': binding.updated_at.isoformat(),
                     'next_attempt_at': binding.next_attempt_at.isoformat(),
-                    'can_quick_confirm': bool(candidates),
+                    'can_quick_confirm': binding.state == 'needs_review' and bool(candidates),
                 }
             )
         bound = grouped.get('bound', 0)
@@ -99,7 +105,8 @@ def binding_summary(engine, sport: str, limit: int):
                 'ready_to_confirm': ready,
             },
             'items': items,
-            'has_more': more,
+            'pending_items': pending_items,
+            'has_more': len(rows) > limit,
         }
 
 

@@ -127,10 +127,14 @@ it('NBA 赛事中心不请求也不显示赛果绑定统计',async()=>{
   view.unmount()
 })
 
-it('自动匹配中的赛事只显示数量，不提供确认按钮',async()=>{
-  const pending={...summary,totals:{total:1,bound:0,pending:1,needs_review:0,unbound:1,ready_to_confirm:0},items:[]}
+it('自动匹配中的赛事显示比赛、原因和重试时间，不提供确认按钮',async()=>{
+  const pending={...summary,totals:{total:1,bound:0,pending:1,needs_review:0,unbound:1,ready_to_confirm:0},items:[],pending_items:[{...summary.items[0],state:'pending',candidates:[],error_code:'no_matching_fixture'}]}
   const {view}=setup(()=>Promise.resolve(json(pending)));await flushPromises()
-  expect(view.text()).toContain('自动匹配中的赛事找到候选后会显示为链接')
+  const queue=view.get('[aria-label="自动匹配中的赛事"]')
+  expect(queue.get('a').text()).toBe('瑞士 对 苏格兰')
+  expect(queue.get('a').attributes('href')).toContain('game=g1')
+  expect(queue.text()).toContain('未找到匹配赛程')
+  expect(queue.text()).toContain('下次查询')
   expect(view.findAll('button').some(item=>item.text()==='确认绑定')).toBe(false)
   expect(view.findAll('button').some(item=>item.classes().includes('binding-team-link'))).toBe(false)
   expect(view.findAll('.binding-metrics strong').map(item=>item.text())).toEqual(['0','1','0'])

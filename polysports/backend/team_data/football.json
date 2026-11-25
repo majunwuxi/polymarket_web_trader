@@ -5118,6 +5118,16 @@
     "logo": "https://media.api-sports.io/football/teams/9569.png",
     "leagues": "MLS"
   },
+  "13976": {
+    "name_en": "Sabah FA",
+    "name_zh": "萨巴赫",
+    "country": "Azerbaijan",
+    "logo": "https://media.api-sports.io/football/teams/13976.png",
+    "leagues": "UCL",
+    "aliases": [
+      "Sabah FK"
+    ]
+  },
   "16489": {
     "name_en": "Austin",
     "name_zh": "奥斯汀FC",

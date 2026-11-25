@@ -65,6 +65,8 @@ def evidence_for(game, event, market, ordered, home_ambiguous=False, away_ambigu
     }
     if game.provider == 'polymarket':
         evidence['source_game_id'] = event.game_id
+        if event.supplemental:
+            evidence['combo_only'] = True
     return evidence
 
 

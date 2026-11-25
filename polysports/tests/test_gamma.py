@@ -18,6 +18,29 @@ def mock_event(ident='10',market=None,reverse=False):
     return {'id':ident,'tags':[{'slug':'nba'}],'title':'Mock Home vs Mock Away','slug':'mock-match','startTime':START.isoformat(),'teams':[{'name':'Mock Home','ordering':'away' if reverse else 'home'},{'name':'Mock Away','ordering':'home' if reverse else 'away'}],'markets':[market or mock_market()]}
 
 
+@pytest.mark.parametrize('reverse, expected', [(False, True), (True, False)])
+def test_discover_links_supplemental_totals_to_verified_parent(reverse, expected):
+    main = mock_event(market={**mock_market(), 'sportsMarketType': 'moneyline'})
+    main.update(gameId=123, tags=[{'slug': 'soccer'}])
+    extra = mock_event('11', {**mock_market('101'), 'sportsMarketType': 'totals'}, reverse=reverse)
+    extra.update(slug='mock-match-more-markets', closed=False, tags=main['tags'])
+    extra['markets'].append({**mock_market('102'), 'sportsMarketType': 'first_half_totals'})
+
+    def handler(req):
+        if req.url.path == '/events/slug/mock-match-more-markets':
+            return httpx.Response(200, json=extra)
+        assert req.url.params['game_id'] == '123'
+        return httpx.Response(200, json={'events': [main]})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        found = discover(client, 'football', START, ['Mock Home'], ['Mock Away'], source_id='123')
+    assert [event.gamma_id for event, _ in found] == (['10', '11'] if expected else ['10'])
+    if expected:
+        event, ordered = found[1]
+        assert ordered and event.supplemental and event.game_id == '123'
+        assert [market.gamma_id for market in event.markets] == ['101']
+
+
 def test_protocol_identifiers_and_no_precision_loss():
     v1=parse_market(mock_market())
     assert v1.outcomes[0].asset_id==MOCK_BIG and v1.outcomes[0].kind=='ctf_token'

@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 
 import httpx
 
-from .gamma import normal
+from .gamma import fetch_supplemental_event, normal
 from .sports_sources import SourceError, retry_delay, timestamp
 
 SUPPORTED_MARKET_TYPES = frozenset({'moneyline', 'spreads', 'totals'})
@@ -130,21 +130,10 @@ def _extra_football_events(client, events, game_id, starts_at, home, away, seen)
         if slug in slugs or not _EVENT_SLUG.fullmatch(slug):
             continue
         slugs.add(slug)
-        try:
-            response = client.get(
-                'https://gamma-api.polymarket.com/events/slug/' + slug, timeout=5, follow_redirects=False
-            )
-            if response.status_code != 200:
-                continue
-            raw = response.json()
-        except (httpx.RequestError, ValueError):
-            continue
+        raw = fetch_supplemental_event(client, parent, game_id)
         if (
-            not isinstance(raw, dict)
-            or raw.get('slug') != slug
-            or raw.get('closed') is not False
-            or not re.fullmatch(r'[0-9]{1,255}', str(raw.get('id', '')))
-            or str(raw['id']) in seen
+            not raw
+            or raw['id'] in seen
             or not _event_matches(raw, game_id, 'football', starts_at, home, away, allow_missing_game_id=True)
         ):
             continue

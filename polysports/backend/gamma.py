@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -44,6 +44,35 @@ class GammaEvent:
     slug: str | None
     markets: tuple[GammaMarket, ...]
     game_id: str | None = None
+    supplemental: bool = False
+
+
+def fetch_supplemental_event(client, parent_slug, source_id):
+    suffix = '-more-markets'
+    if not parent_slug or parent_slug.endswith(suffix):
+        return None
+    slug = parent_slug + suffix
+    if not re.fullmatch(r'[A-Za-z0-9-]{1,250}', slug):
+        return None
+    try:
+        response = client.get(
+            'https://gamma-api.polymarket.com/events/slug/' + slug, timeout=5, follow_redirects=False
+        )
+        if response.status_code != 200:
+            return None
+        raw = response.json()
+    except (httpx.RequestError, ValueError):
+        return None
+    if (
+        isinstance(raw, dict)
+        and raw.get('slug') == slug
+        and raw.get('closed') is False
+        and (raw.get('gameId') is None or str(raw['gameId']) == source_id)
+        and isinstance(raw.get('id'), str)
+        and re.fullmatch(r'[0-9]{1,255}', raw['id'])
+    ):
+        return raw
+    return None
 
 
 def normal(value: str) -> str:
@@ -214,6 +243,7 @@ def discover(
     if sport not in ('football', 'nba') or start.tzinfo is None:
         raise ValueError('invalid game')
     found = []
+    football_parents = {}
     seen = set()
     cursors = set()
     cursor = None
@@ -263,10 +293,45 @@ def discover(
             matched = parse_event(raw, sport, start, home_names, away_names, source_id=source_id)
             if matched:
                 found.append(matched)
+                if source_id and sport == 'football' and matched[1] and any(
+                    isinstance(market, dict) and market.get('sportsMarketType') == 'moneyline'
+                    for market in raw['markets']
+                ):
+                    parent = matched[0]
+                    if parent.slug and abs((parent.starts_at - start).total_seconds()) <= 60:
+                        football_parents[parent.slug] = parent
         if not next_cursor:
+            for parent in football_parents.values():
+                extra = discover_supplemental(client, parent, seen)
+                if extra:
+                    seen.add(extra[0].gamma_id)
+                    found.append(extra)
             return found
         if next_cursor in cursors or not rows:
             raise SourceError('pagination_loop')
         cursors.add(next_cursor)
         cursor = next_cursor
     raise SourceError('pagination_limit')
+
+
+def discover_supplemental(client, parent, seen):
+    from .live_markets import supported_full_game_market
+
+    raw = fetch_supplemental_event(client, parent.slug, parent.game_id)
+    if not raw or raw['id'] in seen or not isinstance(raw.get('markets'), list):
+        return None
+    rows = [market for market in raw['markets'] if isinstance(market, dict) and supported_full_game_market(market)]
+    matched = parse_event(
+        {**raw, 'gameId': parent.game_id, 'markets': rows},
+        'football', parent.starts_at, [parent.home], [parent.away], source_id=parent.game_id,
+    )
+    if not matched:
+        return None
+    event, ordered = matched
+    if not ordered or not event.markets or (
+        normal(event.home) != normal(parent.home)
+        or normal(event.away) != normal(parent.away)
+        or event.starts_at != parent.starts_at
+    ):
+        return None
+    return replace(event, supplemental=raw.get('gameId') is None), True

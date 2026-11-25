@@ -166,8 +166,11 @@ def resolve(db, body, closing=False):
     if closing:
         # 已结算或赛果已确认的持仓不能平仓；界面按钮之外再做一次硬校验。
         assert_close_allowed(db, db.get(Game, link.game_id), market)
-    elif not valid_link(db, link):
-        raise TradingError('mapping_invalid', '赛事映射未确认或已过期')
+    else:
+        if not valid_link(db, link):
+            raise TradingError('mapping_invalid', '赛事映射未确认或已过期')
+        if link.evidence.get('combo_only'):
+            raise TradingError('market_unavailable', '该附加市场仅支持加入组合')
     return link, market, outcome
 
 

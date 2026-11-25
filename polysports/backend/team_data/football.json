@@ -135,14 +135,20 @@
     "name_zh": "沃特福德",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/38.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Watford FC"
+    ]
   },
   "39": {
     "name_en": "Wolves",
     "name_zh": "狼队",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/39.png",
-    "leagues": "EPL"
+    "leagues": "EPL",
+    "aliases": [
+      "Wolverhampton Wanderers FC"
+    ]
   },
   "40": {
     "name_en": "Liverpool",
@@ -159,7 +165,10 @@
     "name_zh": "南安普顿",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/41.png",
-    "leagues": "EPL"
+    "leagues": "EPL",
+    "aliases": [
+      "Southampton FC"
+    ]
   },
   "42": {
     "name_en": "Arsenal",
@@ -176,14 +185,20 @@
     "name_zh": "卡迪夫城",
     "country": "Wales",
     "logo": "https://media.api-sports.io/football/teams/43.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Cardiff City FC"
+    ]
   },
   "44": {
     "name_en": "Burnley",
     "name_zh": "伯恩利",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/44.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Burnley FC"
+    ]
   },
   "45": {
     "name_en": "Everton",
@@ -200,7 +215,10 @@
     "name_zh": "莱斯特城",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/46.png",
-    "leagues": "EPL"
+    "leagues": "EPL",
+    "aliases": [
+      "Leicester City FC"
+    ]
   },
   "47": {
     "name_en": "Tottenham",
@@ -217,7 +235,10 @@
     "name_zh": "西汉姆联",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/48.png",
-    "leagues": "EPL"
+    "leagues": "EPL",
+    "aliases": [
+      "West Ham United FC"
+    ]
   },
   "49": {
     "name_en": "Chelsea",
@@ -274,7 +295,10 @@
     "name_zh": "布里斯托尔城",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/56.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Bristol City FC"
+    ]
   },
   "57": {
     "name_en": "Ipswich",
@@ -291,28 +315,40 @@
     "name_zh": "米尔沃尔",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/58.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Millwall FC"
+    ]
   },
   "59": {
     "name_en": "Preston",
     "name_zh": "普雷斯顿",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/59.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Preston North End FC"
+    ]
   },
   "60": {
     "name_en": "West Brom",
     "name_zh": "西布罗姆维奇",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/60.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "West Bromwich Albion FC"
+    ]
   },
   "62": {
     "name_en": "Sheffield Utd",
     "name_zh": "谢菲尔德联",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/62.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Sheffield United FC"
+    ]
   },
   "63": {
     "name_en": "Leeds",
@@ -359,56 +395,80 @@
     "name_zh": "布莱克本",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/67.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Blackburn Rovers FC"
+    ]
   },
   "69": {
     "name_en": "Derby",
     "name_zh": "德比郡",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/69.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Derby County FC"
+    ]
   },
   "70": {
     "name_en": "Middlesbrough",
     "name_zh": "米德尔斯堡",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/70.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Middlesbrough FC"
+    ]
   },
   "71": {
     "name_en": "Norwich",
     "name_zh": "诺维奇",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/71.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Norwich City FC"
+    ]
   },
   "72": {
     "name_en": "QPR",
     "name_zh": "女王公园巡游者",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/72.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Queens Park Rangers FC"
+    ]
   },
   "74": {
     "name_en": "Sheffield Wednesday",
     "name_zh": "谢周三",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/74.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Sheffield Wednesday FC"
+    ]
   },
   "75": {
     "name_en": "Stoke City",
     "name_zh": "斯托克城",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/75.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Stoke City FC"
+    ]
   },
   "76": {
     "name_en": "Swansea",
     "name_zh": "斯旺西",
     "country": "Wales",
     "logo": "https://media.api-sports.io/football/teams/76.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Swansea City AFC"
+    ]
   },
   "77": {
     "name_en": "Angers",
@@ -455,14 +515,20 @@
     "name_zh": "蒙彼利埃",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/82.png",
-    "leagues": "LIGUE1"
+    "leagues": "LIGUE1",
+    "aliases": [
+      "Montpellier HSC"
+    ]
   },
   "83": {
     "name_en": "Nantes",
     "name_zh": "南特",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/83.png",
-    "leagues": "LIGUE1"
+    "leagues": "LIGUE1",
+    "aliases": [
+      "FC Nantes"
+    ]
   },
   "84": {
     "name_en": "Nice",
@@ -489,21 +555,30 @@
     "name_zh": "亚眠",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/87.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "Amiens SC"
+    ]
   },
   "88": {
     "name_en": "Caen",
     "name_zh": "卡昂",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/88.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "SM Caen"
+    ]
   },
   "90": {
     "name_en": "Guingamp",
     "name_zh": "甘冈",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/90.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "En Avant Guingamp"
+    ]
   },
   "91": {
     "name_en": "Monaco",
@@ -520,7 +595,10 @@
     "name_zh": "兰斯",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/93.png",
-    "leagues": "LIGUE1"
+    "leagues": "LIGUE1",
+    "aliases": [
+      "Stade de Reims"
+    ]
   },
   "94": {
     "name_en": "Rennes",
@@ -567,28 +645,40 @@
     "name_zh": "阿雅克肖",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/98.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "AC Ajaccio"
+    ]
   },
   "99": {
     "name_en": "Clermont Foot",
     "name_zh": "克莱蒙",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/99.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "Clermont Foot 63"
+    ]
   },
   "101": {
     "name_en": "Grenoble",
     "name_zh": "格勒诺布尔",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/101.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "Grenoble Foot 38"
+    ]
   },
   "104": {
     "name_en": "RED Star FC 93",
     "name_zh": "红星93",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/104.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "Red Star FC"
+    ]
   },
   "106": {
     "name_en": "Stade Brestois 29",
@@ -632,7 +722,10 @@
     "name_zh": "梅斯",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/112.png",
-    "leagues": "LIGUE1,LIGUE2"
+    "leagues": "LIGUE1,LIGUE2",
+    "aliases": [
+      "FC Metz"
+    ]
   },
   "114": {
     "name_en": "Paris FC",
@@ -861,7 +954,10 @@
     "name_zh": "庞特普雷塔",
     "country": "Brazil",
     "logo": "https://media.api-sports.io/football/teams/139.png",
-    "leagues": "BRA_SERIEB"
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "AA Ponte Preta"
+    ]
   },
   "140": {
     "name_en": "Criciuma",
@@ -879,7 +975,10 @@
     "name_zh": "维拉诺瓦",
     "country": "Brazil",
     "logo": "https://media.api-sports.io/football/teams/142.png",
-    "leagues": "BRA_SERIEB"
+    "leagues": "BRA_SERIEB",
+    "aliases": [
+      "Vila Nova FC"
+    ]
   },
   "144": {
     "name_en": "Atletico Goianiense",
@@ -1010,7 +1109,10 @@
     "name_zh": "杜塞尔多夫",
     "country": "Germany",
     "logo": "https://media.api-sports.io/football/teams/158.png",
-    "leagues": "BUND2"
+    "leagues": "BUND2",
+    "aliases": [
+      "TSV Fortuna 95 Düsseldorf"
+    ]
   },
   "159": {
     "name_en": "Hertha BSC",
@@ -1210,7 +1312,10 @@
     "name_zh": "圣保利",
     "country": "Germany",
     "logo": "https://media.api-sports.io/football/teams/186.png",
-    "leagues": "BUND"
+    "leagues": "BUND",
+    "aliases": [
+      "FC St. Pauli 1910"
+    ]
   },
   "191": {
     "name_en": "Holstein Kiel",
@@ -1292,7 +1397,10 @@
     "name_zh": "维特斯",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/200.png",
-    "leagues": "EERSTE"
+    "leagues": "EERSTE",
+    "aliases": [
+      "SBV Vitesse"
+    ]
   },
   "201": {
     "name_en": "AZ Alkmaar",
@@ -1340,7 +1448,10 @@
     "name_zh": "赫拉克勒斯",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/206.png",
-    "leagues": "ERED"
+    "leagues": "ERED",
+    "aliases": [
+      "Heracles Almelo"
+    ]
   },
   "207": {
     "name_en": "Utrecht",
@@ -1357,7 +1468,10 @@
     "name_zh": "埃门",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/208.png",
-    "leagues": "EERSTE"
+    "leagues": "EERSTE",
+    "aliases": [
+      "FC Emmen"
+    ]
   },
   "209": {
     "name_en": "Feyenoord",
@@ -1489,7 +1603,10 @@
     "name_zh": "法鲁人",
     "country": "Portugal",
     "logo": "https://media.api-sports.io/football/teams/231.png",
-    "leagues": "PRIMEIRA"
+    "leagues": "PRIMEIRA",
+    "aliases": [
+      "SC Farense"
+    ]
   },
   "238": {
     "name_en": "Academico Viseu",
@@ -1526,35 +1643,50 @@
     "name_zh": "凯尔特人",
     "country": "Scotland",
     "logo": "https://media.api-sports.io/football/teams/247.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Celtic FC"
+    ]
   },
   "257": {
     "name_en": "Rangers",
     "name_zh": "格拉斯哥流浪者",
     "country": "Scotland",
     "logo": "https://media.api-sports.io/football/teams/257.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Rangers FC"
+    ]
   },
   "278": {
     "name_en": "Vikingur Reykjavik",
     "name_zh": "雷克雅未克维京古尔",
     "country": "Iceland",
     "logo": "https://media.api-sports.io/football/teams/278.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Víkingur"
+    ]
   },
   "279": {
     "name_en": "Consadole Sapporo",
     "name_zh": "北海道札幌冈萨多",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/279.png",
-    "leagues": "J1"
+    "leagues": "J1",
+    "aliases": [
+      "Hokkaidō Consadole Sapporo"
+    ]
   },
   "280": {
     "name_en": "Jubilo Iwata",
     "name_zh": "磐田喜悦",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/280.png",
-    "leagues": "J1"
+    "leagues": "J1",
+    "aliases": [
+      "Júbilo Iwata"
+    ]
   },
   "281": {
     "name_en": "Kashiwa Reysol",
@@ -1575,14 +1707,20 @@
     "name_zh": "湘南海洋",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/284.png",
-    "leagues": "J1"
+    "leagues": "J1",
+    "aliases": [
+      "Shōnan Bellmāre"
+    ]
   },
   "287": {
     "name_en": "Urawa",
     "name_zh": "浦和红钻",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/287.png",
-    "leagues": "J1"
+    "leagues": "J1",
+    "aliases": [
+      "Urawa Red Diamonds"
+    ]
   },
   "288": {
     "name_en": "Nagoya Grampus",
@@ -1613,14 +1751,20 @@
     "name_zh": "大阪樱花",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/291.png",
-    "leagues": "J1"
+    "leagues": "J1",
+    "aliases": [
+      "Cerezo Ōsaka"
+    ]
   },
   "292": {
     "name_en": "FC Tokyo",
     "name_zh": "FC东京",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/292.png",
-    "leagues": "J1"
+    "leagues": "J1",
+    "aliases": [
+      "FC Tōkyō"
+    ]
   },
   "293": {
     "name_en": "Gamba Osaka",
@@ -1648,7 +1792,10 @@
     "name_zh": "横滨水手",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/296.png",
-    "leagues": "J1"
+    "leagues": "J1",
+    "aliases": [
+      "Yokohama F·Marinos"
+    ]
   },
   "302": {
     "name_en": "Kyoto Sanga",
@@ -1672,7 +1819,10 @@
     "name_zh": "东京绿茵",
     "country": "Japan",
     "logo": "https://media.api-sports.io/football/teams/306.png",
-    "leagues": "J1"
+    "leagues": "J1",
+    "aliases": [
+      "Tōkyō Verdy"
+    ]
   },
   "310": {
     "name_en": "Fagiano Okayama",
@@ -1727,7 +1877,10 @@
     "name_zh": "斯托姆加斯特",
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/324.png",
-    "leagues": "ELITES"
+    "leagues": "ELITES",
+    "aliases": [
+      "Strømsgodset IF"
+    ]
   },
   "325": {
     "name_en": "Tromso",
@@ -1764,7 +1917,10 @@
     "name_zh": "海于格松",
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/328.png",
-    "leagues": "ELITES"
+    "leagues": "ELITES",
+    "aliases": [
+      "FK Haugesund"
+    ]
   },
   "329": {
     "name_en": "Molde",
@@ -1781,7 +1937,10 @@
     "name_zh": "奥德",
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/330.png",
-    "leagues": "ELITES"
+    "leagues": "ELITES",
+    "aliases": [
+      "Odds BK"
+    ]
   },
   "331": {
     "name_en": "Rosenborg",
@@ -1825,14 +1984,20 @@
     "name_zh": "乔治罗尼亚",
     "country": "Poland",
     "logo": "https://media.api-sports.io/football/teams/336.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Jagiellonia Białystok"
+    ]
   },
   "354": {
     "name_en": "The New Saints",
     "name_zh": "新圣徒",
     "country": "Wales",
     "logo": "https://media.api-sports.io/football/teams/354.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "The New Saints FC"
+    ]
   },
   "363": {
     "name_en": "Hammarby FF",
@@ -1918,14 +2083,20 @@
     "name_zh": "北雪平",
     "country": "Sweden",
     "logo": "https://media.api-sports.io/football/teams/378.png",
-    "leagues": "ALLSV"
+    "leagues": "ALLSV",
+    "aliases": [
+      "IFK Norrköping FK"
+    ]
   },
   "394": {
     "name_en": "Dinamo Minsk",
     "name_zh": "明斯克迪纳摩",
     "country": "Belarus",
     "logo": "https://media.api-sports.io/football/teams/394.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FK Dynama-Minsk"
+    ]
   },
   "397": {
     "name_en": "FC Midtjylland",
@@ -1939,28 +2110,40 @@
     "name_zh": "多德勒支",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/409.png",
-    "leagues": "ERED,EERSTE"
+    "leagues": "ERED,EERSTE",
+    "aliases": [
+      "FC Dordrecht"
+    ]
   },
   "410": {
     "name_en": "GO Ahead Eagles",
     "name_zh": "前进之鹰",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/410.png",
-    "leagues": "ERED"
+    "leagues": "ERED",
+    "aliases": [
+      "Go Ahead Eagles"
+    ]
   },
   "411": {
     "name_en": "Jong PSV U21",
     "name_zh": "埃因霍温青年队",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/411.png",
-    "leagues": "EERSTE"
+    "leagues": "EERSTE",
+    "aliases": [
+      "Jong PSV Eindhoven"
+    ]
   },
   "412": {
     "name_en": "MVV",
     "name_zh": "马斯特里赫特",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/412.png",
-    "leagues": "EERSTE"
+    "leagues": "EERSTE",
+    "aliases": [
+      "MVV Maastricht"
+    ]
   },
   "413": {
     "name_en": "NEC Nijmegen",
@@ -1977,7 +2160,10 @@
     "name_zh": "罗达JC",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/414.png",
-    "leagues": "EERSTE"
+    "leagues": "EERSTE",
+    "aliases": [
+      "Roda JC Kerkrade"
+    ]
   },
   "415": {
     "name_en": "Twente",
@@ -2001,14 +2187,20 @@
     "name_zh": "瓦尔韦克",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/417.png",
-    "leagues": "ERED"
+    "leagues": "ERED",
+    "aliases": [
+      "RKC Waalwijk"
+    ]
   },
   "418": {
     "name_en": "Jong AZ",
     "name_zh": "阿尔克马尔青年队",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/418.png",
-    "leagues": "EERSTE"
+    "leagues": "EERSTE",
+    "aliases": [
+      "Jong AZ Alkmaar"
+    ]
   },
   "419": {
     "name_en": "Almere City FC",
@@ -2032,7 +2224,10 @@
     "name_zh": "登博思",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/421.png",
-    "leagues": "ERED,EERSTE"
+    "leagues": "ERED,EERSTE",
+    "aliases": [
+      "FC Den Bosch"
+    ]
   },
   "422": {
     "name_en": "FC Eindhoven",
@@ -2046,7 +2241,10 @@
     "name_zh": "奥斯",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/423.png",
-    "leagues": "EERSTE"
+    "leagues": "EERSTE",
+    "aliases": [
+      "TOP Oss"
+    ]
   },
   "424": {
     "name_en": "Helmond Sport",
@@ -2060,7 +2258,10 @@
     "name_zh": "阿贾克斯青年队",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/425.png",
-    "leagues": "EERSTE"
+    "leagues": "EERSTE",
+    "aliases": [
+      "Jong Ajax Amsterdam"
+    ]
   },
   "426": {
     "name_en": "Sparta Rotterdam",
@@ -2084,14 +2285,20 @@
     "name_zh": "乌得勒支青年队",
     "country": "Netherlands",
     "logo": "https://media.api-sports.io/football/teams/428.png",
-    "leagues": "EERSTE"
+    "leagues": "EERSTE",
+    "aliases": [
+      "Jong FC Utrecht"
+    ]
   },
   "433": {
     "name_en": "Laval",
     "name_zh": "拉瓦勒",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/433.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "Stade Lavallois Mayenne FC"
+    ]
   },
   "434": {
     "name_en": "Gimnasia L.P.",
@@ -2145,7 +2352,10 @@
     "name_zh": "戈多伊克鲁斯",
     "country": "Argentina",
     "logo": "https://media.api-sports.io/football/teams/439.png",
-    "leagues": "ARG_A"
+    "leagues": "ARG_A",
+    "aliases": [
+      "CD Godoy Cruz Antonio Tomba"
+    ]
   },
   "440": {
     "name_en": "Belgrano Cordoba",
@@ -2477,7 +2687,10 @@
     "name_zh": "维罗纳",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/504.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Hellas Verona FC"
+    ]
   },
   "505": {
     "name_en": "Inter",
@@ -2494,7 +2707,10 @@
     "name_zh": "恩波利",
     "country": "Italy",
     "logo": "https://media.api-sports.io/football/teams/511.png",
-    "leagues": "SERIEA"
+    "leagues": "SERIEA",
+    "aliases": [
+      "Empoli FC"
+    ]
   },
   "512": {
     "name_en": "Frosinone",
@@ -2578,7 +2794,10 @@
     "name_zh": "拉斯帕尔马斯",
     "country": "Spain",
     "logo": "https://media.api-sports.io/football/teams/534.png",
-    "leagues": "LALIGA"
+    "leagues": "LALIGA",
+    "aliases": [
+      "UD Las Palmas"
+    ]
   },
   "535": {
     "name_en": "Malaga",
@@ -2606,7 +2825,10 @@
     "name_zh": "莱加内斯",
     "country": "Spain",
     "logo": "https://media.api-sports.io/football/teams/537.png",
-    "leagues": "LALIGA"
+    "leagues": "LALIGA",
+    "aliases": [
+      "CD Leganés"
+    ]
   },
   "538": {
     "name_en": "Celta Vigo",
@@ -2695,7 +2917,10 @@
     "name_zh": "赫罗纳",
     "country": "Spain",
     "logo": "https://media.api-sports.io/football/teams/547.png",
-    "leagues": "UCL,LALIGA"
+    "leagues": "UCL,LALIGA",
+    "aliases": [
+      "Girona FC"
+    ]
   },
   "548": {
     "name_en": "Real Sociedad",
@@ -2712,21 +2937,30 @@
     "name_zh": "贝西克塔斯",
     "country": "Turkey",
     "logo": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/da/BesiktasJK-Logo.svg/960px-BesiktasJK-Logo.svg.png",
-    "leagues": ""
+    "leagues": "",
+    "aliases": [
+      "Beşiktaş JK"
+    ]
   },
   "550": {
     "name_en": "Shakhtar Donetsk",
     "name_zh": "顿涅茨克矿工",
     "country": "Ukraine",
     "logo": "https://media.api-sports.io/football/teams/550.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FK Shakhtar Donetsk"
+    ]
   },
   "556": {
     "name_en": "Qarabag",
     "name_zh": "卡拉巴赫",
     "country": "Azerbaijan",
     "logo": "https://media.api-sports.io/football/teams/556.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Qarabağ Ağdam FK"
+    ]
   },
   "559": {
     "name_en": "FCSB",
@@ -2740,7 +2974,10 @@
     "name_zh": "布拉格斯拉维亚",
     "country": "Czech-Republic",
     "logo": "https://media.api-sports.io/football/teams/560.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "SK Slavia Praha"
+    ]
   },
   "565": {
     "name_en": "BSC Young Boys",
@@ -2754,7 +2991,10 @@
     "name_zh": "卢多戈雷茨",
     "country": "Bulgaria",
     "logo": "https://media.api-sports.io/football/teams/566.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "PFK Ludogorets 1945 Razgrad"
+    ]
   },
   "569": {
     "name_en": "Club Brugge KV",
@@ -2768,21 +3008,30 @@
     "name_zh": "萨尔茨堡红牛",
     "country": "Austria",
     "logo": "https://media.api-sports.io/football/teams/571.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FC Red Bull Salzburg"
+    ]
   },
   "572": {
     "name_en": "Dynamo Kyiv",
     "name_zh": "基辅迪纳摩",
     "country": "Ukraine",
     "logo": "https://media.api-sports.io/football/teams/572.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FK Dynamo Kyiv"
+    ]
   },
   "573": {
     "name_en": "FK Partizan",
     "name_zh": "贝尔格莱德游击",
     "country": "Serbia",
     "logo": "https://media.api-sports.io/football/teams/573.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FK Partizan Beograd"
+    ]
   },
   "587": {
     "name_en": "Mariehamn",
@@ -2799,7 +3048,10 @@
     "name_zh": "贝尔格莱德红星",
     "country": "Serbia",
     "logo": "https://media.api-sports.io/football/teams/598.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FK Crvena zvezda"
+    ]
   },
   "575": {
     "name_en": "AEK Athens FC",
@@ -2816,7 +3068,10 @@
     "name_zh": "特拉维夫马卡比",
     "country": "Israel",
     "logo": "https://media.api-sports.io/football/teams/604.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "MH Maccabi Tel Aviv"
+    ]
   },
   "606": {
     "name_en": "FC Lugano",
@@ -2830,7 +3085,10 @@
     "name_zh": "费内巴切",
     "country": "Turkey",
     "logo": "https://media.api-sports.io/football/teams/611.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Fenerbahçe SK"
+    ]
   },
   "619": {
     "name_en": "PAOK",
@@ -2844,21 +3102,30 @@
     "name_zh": "萨格勒布迪纳摩",
     "country": "Croatia",
     "logo": "https://media.api-sports.io/football/teams/620.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "GNK Dinamo Zagreb"
+    ]
   },
   "628": {
     "name_en": "Sparta Praha",
     "name_zh": "布拉格斯巴达",
     "country": "Czech-Republic",
     "logo": "https://media.api-sports.io/football/teams/628.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "AC Sparta Praha"
+    ]
   },
   "637": {
     "name_en": "Sturm Graz",
     "name_zh": "格拉茨风暴",
     "country": "Austria",
     "logo": "https://media.api-sports.io/football/teams/637.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "SK Puntigamer Sturm Graz"
+    ]
   },
   "645": {
     "name_en": "Galatasaray",
@@ -2892,14 +3159,20 @@
     "name_zh": "费伦茨瓦罗斯",
     "country": "Hungary",
     "logo": "https://media.api-sports.io/football/teams/651.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Ferencvárosi TC"
+    ]
   },
   "652": {
     "name_en": "Shamrock Rovers",
     "name_zh": "沙姆洛克流浪",
     "country": "Ireland",
     "logo": "https://media.api-sports.io/football/teams/652.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Shamrock Rovers FC"
+    ]
   },
   "656": {
     "name_en": "Slovan Bratislava",
@@ -2923,14 +3196,20 @@
     "name_zh": "迪弗当日03",
     "country": "Luxembourg",
     "logo": "https://media.api-sports.io/football/teams/684.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FC Déifferdeng 03"
+    ]
   },
   "687": {
     "name_en": "Flora Tallinn",
     "name_zh": "塔林弗洛拉",
     "country": "Estonia",
     "logo": "https://media.api-sports.io/football/teams/687.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FC Flora"
+    ]
   },
   "689": {
     "name_en": "SJK",
@@ -2947,14 +3226,20 @@
     "name_zh": "奥达巴斯",
     "country": "Kazakhstan",
     "logo": "https://media.api-sports.io/football/teams/692.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Ordabasy FK"
+    ]
   },
   "701": {
     "name_en": "KI Klaksvik",
     "name_zh": "克拉克斯维克",
     "country": "Faroe-Islands",
     "logo": "https://media.api-sports.io/football/teams/701.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "KÍ"
+    ]
   },
   "703": {
     "name_en": "UE Santa Coloma",
@@ -2968,21 +3253,30 @@
     "name_zh": "巴统迪纳摩",
     "country": "Georgia",
     "logo": "https://media.api-sports.io/football/teams/705.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "SK Dinamo Batumi"
+    ]
   },
   "709": {
     "name_en": "Pyunik Yerevan",
     "name_zh": "埃里温凤凰",
     "country": "Armenia",
     "logo": "https://media.api-sports.io/football/teams/709.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Pyunik FA"
+    ]
   },
   "720": {
     "name_en": "Valladolid",
     "name_zh": "巴拉多利德",
     "country": "Spain",
     "logo": "https://media.api-sports.io/football/teams/720.png",
-    "leagues": "LALIGA"
+    "leagues": "LALIGA",
+    "aliases": [
+      "Real Valladolid CF"
+    ]
   },
   "727": {
     "name_en": "Osasuna",
@@ -3218,14 +3512,20 @@
     "name_zh": "马略卡",
     "country": "Spain",
     "logo": "https://media.api-sports.io/football/teams/798.png",
-    "leagues": "LALIGA"
+    "leagues": "LALIGA",
+    "aliases": [
+      "RCD Mallorca"
+    ]
   },
   "810": {
     "name_en": "Vizela",
     "name_zh": "维泽拉",
     "country": "Portugal",
     "logo": "https://media.api-sports.io/football/teams/810.png",
-    "leagues": "PRIMEIRA"
+    "leagues": "PRIMEIRA",
+    "aliases": [
+      "FC Vizela"
+    ]
   },
   "830": {
     "name_en": "Beijing Guoan",
@@ -3239,7 +3539,10 @@
     "name_zh": "上海申花",
     "country": "China",
     "logo": "https://upload.wikimedia.org/wikipedia/en/thumb/d/d3/Shanghai_Shenhua_F.C.svg/1280px-Shanghai_Shenhua_F.C.svg.png",
-    "leagues": "ACLE,CSL"
+    "leagues": "ACLE,CSL",
+    "aliases": [
+      "Shanghai Shenhua FC"
+    ]
   },
   "836": {
     "name_en": "SHANGHAI SIPG",
@@ -3307,7 +3610,10 @@
     "name_zh": "圣埃蒂安",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/1063.png",
-    "leagues": "LIGUE1"
+    "leagues": "LIGUE1",
+    "aliases": [
+      "AS Saint-Étienne"
+    ]
   },
   "1064": {
     "name_en": "Platense",
@@ -3666,7 +3972,10 @@
     "name_zh": "波城",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/1297.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "Pau FC"
+    ]
   },
   "1298": {
     "name_en": "Le Mans",
@@ -3683,42 +3992,60 @@
     "name_zh": "布洛涅",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/1299.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "US Boulogne Côte d'Opale"
+    ]
   },
   "1301": {
     "name_en": "Rodez",
     "name_zh": "罗德兹",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/1301.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "Rodez Aveyron Football"
+    ]
   },
   "1304": {
     "name_en": "Dunkerque",
     "name_zh": "敦刻尔克",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/1304.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "USL Dunkerque"
+    ]
   },
   "1305": {
     "name_en": "Bastia",
     "name_zh": "巴斯蒂亚",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/1305.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "SC Bastia"
+    ]
   },
   "1313": {
     "name_en": "Preußen Münster",
     "name_zh": "普鲁士明斯特",
     "country": "Germany",
     "logo": "https://media.api-sports.io/football/teams/1313.png",
-    "leagues": "BUND2"
+    "leagues": "BUND2",
+    "aliases": [
+      "SC Preußen Münster"
+    ]
   },
   "1338": {
     "name_en": "Oxford United",
     "name_zh": "牛津联",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/1338.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Oxford United FC"
+    ]
   },
   "1346": {
     "name_en": "Coventry",
@@ -3735,28 +4062,40 @@
     "name_zh": "朴茨茅斯",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/1355.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Portsmouth FC"
+    ]
   },
   "1357": {
     "name_en": "Plymouth",
     "name_zh": "普利茅斯",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/1357.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Plymouth Argyle FC"
+    ]
   },
   "1359": {
     "name_en": "Luton",
     "name_zh": "卢顿",
     "country": "England",
     "logo": "https://media.api-sports.io/football/teams/1359.png",
-    "leagues": "EFL_CH"
+    "leagues": "EFL_CH",
+    "aliases": [
+      "Luton Town FC"
+    ]
   },
   "1393": {
     "name_en": "Union St. Gilloise",
     "name_zh": "圣吉罗斯联合",
     "country": "Belgium",
     "logo": "https://media.api-sports.io/football/teams/1393.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "RU Saint-Gilloise"
+    ]
   },
   "1579": {
     "name_en": "Monza",
@@ -3773,7 +4112,10 @@
     "name_zh": "萨尔布吕肯",
     "country": "Germany",
     "logo": "https://media.api-sports.io/football/teams/1639.png",
-    "leagues": "BUND2"
+    "leagues": "BUND2",
+    "aliases": [
+      "1. FC Saarbrucken"
+    ]
   },
   "1652": {
     "name_en": "SSV Ulm 1846",
@@ -3818,7 +4160,10 @@
     "name_zh": "哈卡",
     "country": "Finland",
     "logo": "https://media.api-sports.io/football/teams/2080.png",
-    "leagues": "VEIK"
+    "leagues": "VEIK",
+    "aliases": [
+      "FC Haka"
+    ]
   },
   "2082": {
     "name_en": "Gnistan",
@@ -3882,7 +4227,10 @@
     "name_zh": "哥德堡盖斯",
     "country": "Sweden",
     "logo": "https://media.api-sports.io/football/teams/2170.png",
-    "leagues": "ALLSV"
+    "leagues": "ALLSV",
+    "aliases": [
+      "GAIS"
+    ]
   },
   "2172": {
     "name_en": "Degerfors IF",
@@ -3930,14 +4278,20 @@
     "name_zh": "希腊人竞技",
     "country": "Cyprus",
     "logo": "https://media.api-sports.io/football/teams/2247.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "APÓEL"
+    ]
   },
   "2271": {
     "name_en": "Petrocub",
     "name_zh": "佩特罗库布",
     "country": "Moldova",
     "logo": "https://media.api-sports.io/football/teams/2271.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FC Petrocub Hînceşti"
+    ]
   },
   "2432": {
     "name_en": "Barracas Central",
@@ -4029,14 +4383,20 @@
     "name_zh": "牙山木槿花",
     "country": "South-Korea",
     "logo": "https://media.api-sports.io/football/teams/2753.png",
-    "leagues": "K1"
+    "leagues": "K1",
+    "aliases": [
+      "Chungnam Asan FC"
+    ]
   },
   "2756": {
     "name_en": "Suwon City FC",
     "name_zh": "水原FC",
     "country": "South-Korea",
     "logo": "https://media.api-sports.io/football/teams/2756.png",
-    "leagues": "K1"
+    "leagues": "K1",
+    "aliases": [
+      "Suwon FC"
+    ]
   },
   "2759": {
     "name_en": "Gwangju FC",
@@ -4050,7 +4410,10 @@
     "name_zh": "济州联",
     "country": "South-Korea",
     "logo": "https://media.api-sports.io/football/teams/2761.png",
-    "leagues": "K1"
+    "leagues": "K1",
+    "aliases": [
+      "Jeju SK FC"
+    ]
   },
   "2762": {
     "name_en": "Jeonbuk Motors",
@@ -4068,7 +4431,10 @@
     "name_zh": "仁川联",
     "country": "South-Korea",
     "logo": "https://media.api-sports.io/football/teams/2763.png",
-    "leagues": "K1"
+    "leagues": "K1",
+    "aliases": [
+      "Incheon United FC"
+    ]
   },
   "2764": {
     "name_en": "Pohang Steelers",
@@ -4092,7 +4458,10 @@
     "name_zh": "蔚山HD",
     "country": "South-Korea",
     "logo": "https://media.api-sports.io/football/teams/2767.png",
-    "leagues": "K1"
+    "leagues": "K1",
+    "aliases": [
+      "Ulsan HD FC"
+    ]
   },
   "2768": {
     "name_en": "Gimcheon Sangmu FC",
@@ -4267,7 +4636,10 @@
     "name_zh": "阿讷西",
     "country": "France",
     "logo": "https://media.api-sports.io/football/teams/3012.png",
-    "leagues": "LIGUE2"
+    "leagues": "LIGUE2",
+    "aliases": [
+      "FC Annecy"
+    ]
   },
   "3200": {
     "name_en": "Martigues",
@@ -4281,35 +4653,50 @@
     "name_zh": "埃格纳蒂亚",
     "country": "Albania",
     "logo": "https://media.api-sports.io/football/teams/3327.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "KF Egnatia Rrogozhinë"
+    ]
   },
   "3364": {
     "name_en": "Borac Banja Luka",
     "name_zh": "巴尼亚卢卡战士",
     "country": "Bosnia",
     "logo": "https://media.api-sports.io/football/teams/3364.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FK Borac Banja Luka"
+    ]
   },
   "3745": {
     "name_en": "Dečić",
     "name_zh": "德契奇",
     "country": "Montenegro",
     "logo": "https://media.api-sports.io/football/teams/3745.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FK Dečić Tuzi"
+    ]
   },
   "3874": {
     "name_en": "Panevėžys",
     "name_zh": "帕内韦日斯",
     "country": "Lithuania",
     "logo": "https://media.api-sports.io/football/teams/3874.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FK Panevėžys"
+    ]
   },
   "4160": {
     "name_en": "Rīgas FS",
     "name_zh": "里加足球学校",
     "country": "Latvia",
     "logo": "https://media.api-sports.io/football/teams/4160.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FK Rīgas Futbola Skola"
+    ]
   },
   "4217": {
     "name_en": "Neftchi",
@@ -4337,14 +4724,20 @@
     "name_zh": "斯特鲁加",
     "country": "Macedonia",
     "logo": "https://media.api-sports.io/football/teams/4346.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FC Struga Trim & Lum"
+    ]
   },
   "4360": {
     "name_en": "Celje",
     "name_zh": "采列",
     "country": "Slovenia",
     "logo": "https://media.api-sports.io/football/teams/4360.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "NK Celje"
+    ]
   },
   "4532": {
     "name_en": "Al Hussein",
@@ -4363,7 +4756,10 @@
     "name_zh": "哈姆伦斯巴达人",
     "country": "Malta",
     "logo": "https://media.api-sports.io/football/teams/4626.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Ħamrun Spartans FC"
+    ]
   },
   "4665": {
     "name_en": "Racing Santander",
@@ -4403,21 +4799,30 @@
     "name_zh": "维尔图斯",
     "country": "San-Marino",
     "logo": "https://media.api-sports.io/football/teams/5308.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "AC Virtus"
+    ]
   },
   "5354": {
     "name_en": "Larne",
     "name_zh": "拉恩",
     "country": "Northern-Ireland",
     "logo": "https://media.api-sports.io/football/teams/5354.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "Larne FC"
+    ]
   },
   "7012": {
     "name_en": "Moss",
     "name_zh": "莫斯",
     "country": "Norway",
     "logo": "https://media.api-sports.io/football/teams/7012.png",
-    "leagues": "ELITES"
+    "leagues": "ELITES",
+    "aliases": [
+      "Moss FK"
+    ]
   },
   "7779": {
     "name_en": "Ituano",
@@ -4474,7 +4879,10 @@
     "name_zh": "巴尔卡尼",
     "country": "Kosovo",
     "logo": "https://media.api-sports.io/football/teams/12733.png",
-    "leagues": "UCL"
+    "leagues": "UCL",
+    "aliases": [
+      "FC Ballkani"
+    ]
   },
   "15130": {
     "name_en": "Estrela",
@@ -4502,7 +4910,10 @@
     "name_zh": "阿维什镇",
     "country": "Portugal",
     "logo": "https://media.api-sports.io/football/teams/21595.png",
-    "leagues": "PRIMEIRA"
+    "leagues": "PRIMEIRA",
+    "aliases": [
+      "AVS Futebol"
+    ]
   },
   "1595": {
     "name_en": "Seattle Sounders",

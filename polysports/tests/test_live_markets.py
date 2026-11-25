@@ -25,12 +25,40 @@ def request(client,source_id='100',sport='football'):
 def test_mock_identity_prices_and_unknown():
     raw=event(); raw['markets'][0]['outcomePrices']='["0.42","not-a-price"]'
     def handler(req):
+        if '/events/slug/' in req.url.path:
+            return httpx.Response(404)
         assert req.url.params['game_id']=='100'
         return httpx.Response(200,json={'events':[raw]})
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         data=request(client)
     assert data['match_status']=='source_identity' and data['observed_at']
     assert data['events'][0]['markets'][0]['outcomes']==[{'label':'Yes','price':'0.42'},{'label':'No','price':None}]
+
+
+@pytest.mark.parametrize('game_id, delta, expected', [(None, 0, True), (101, 0, False), (None, 61, False)])
+def test_extra_football_totals_require_verified_parent_and_matching_fixture(game_id, delta, expected):
+    from datetime import timedelta
+
+    main = event()
+    extra = event('2', game_id)
+    extra.update(slug='mock-event-more-markets', closed=False, startTime=(NOW + timedelta(seconds=delta)).isoformat())
+    extra['markets'] += [
+        {'id':'21','sportsMarketType':'totals','question':'O/U 2.5','outcomes':['Over','Under']},
+        {'id':'22','sportsMarketType':'first_half_totals','question':'First half O/U 2.5'},
+    ]
+
+    def handler(req):
+        if req.url.path == '/events/slug/mock-event-more-markets':
+            return httpx.Response(200, json=extra)
+        assert req.url.path == '/events/keyset'
+        return httpx.Response(200, json={'events':[main]})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        events = request(client)['events']
+    assert [row['id'] for row in events] == (['1','2'] if expected else ['1'])
+    if expected:
+        assert events[1]['read_only'] is True
+        assert [market['id'] for market in events[1]['markets']] == ['21']
 
 
 def test_mock_mismatched_identity_does_not_show_market():

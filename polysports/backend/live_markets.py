@@ -13,6 +13,7 @@ from .gamma import normal
 from .sports_sources import SourceError, retry_delay, timestamp
 
 SUPPORTED_MARKET_TYPES = frozenset({'moneyline', 'spreads', 'totals'})
+_EVENT_SLUG = re.compile(r'[A-Za-z0-9-]{1,250}')
 _PARTIAL_MARKET = re.compile(r'\b(?:first|second|1st|2nd|1h|2h|half|quarter|period|q[1-4]|team\s+total)\b', re.IGNORECASE)
 
 
@@ -48,10 +49,12 @@ def _price(value):
     return str(number) if number.is_finite() and 0 <= number <= 1 else None
 
 
-def _event_matches(raw, game_id, sport, starts_at, home, away):
+def _event_matches(raw, game_id, sport, starts_at, home, away, *, allow_missing_game_id=False):
     if not isinstance(raw, dict):
         raise SourceError('invalid_event')
-    if game_id is not None and str(raw.get('gameId')) != game_id:
+    if game_id is not None and str(raw.get('gameId')) != game_id and not (
+        allow_missing_game_id and raw.get('gameId') is None
+    ):
         return False
     tags = raw.get('tags')
     if not isinstance(tags, list) or not any(
@@ -99,6 +102,62 @@ def _market(raw):
         'closed': raw.get('closed') if type(raw.get('closed')) is bool else None,
         'outcomes': outcomes,
     }
+
+
+def _event_markets(raw):
+    markets = raw.get('markets')
+    if not isinstance(markets, list):
+        raise SourceError('invalid_event_markets')
+    slug = raw.get('slug')
+    return {
+        'id': str(raw['id']),
+        'title': raw.get('title') if isinstance(raw.get('title'), str) else None,
+        'slug': slug if isinstance(slug, str) and _EVENT_SLUG.fullmatch(slug) else None,
+        'markets': [_market(x) for x in markets if supported_full_game_market(x)],
+    }
+
+
+def _extra_football_events(client, events, game_id, starts_at, home, away, seen):
+    slugs = {event['slug'] for event in events}
+    market_ids = {market['id'] for event in events for market in event['markets']}
+    for event in events:
+        parent = event['slug']
+        if not parent or parent.endswith('-more-markets') or not any(
+            market['type'] == 'moneyline' for market in event['markets']
+        ):
+            continue
+        slug = parent + '-more-markets'
+        if slug in slugs or not _EVENT_SLUG.fullmatch(slug):
+            continue
+        slugs.add(slug)
+        try:
+            response = client.get(
+                'https://gamma-api.polymarket.com/events/slug/' + slug, timeout=5, follow_redirects=False
+            )
+            if response.status_code != 200:
+                continue
+            raw = response.json()
+        except (httpx.RequestError, ValueError):
+            continue
+        if (
+            not isinstance(raw, dict)
+            or raw.get('slug') != slug
+            or raw.get('closed') is not False
+            or not re.fullmatch(r'[0-9]{1,255}', str(raw.get('id', '')))
+            or str(raw['id']) in seen
+            or not _event_matches(raw, game_id, 'football', starts_at, home, away, allow_missing_game_id=True)
+        ):
+            continue
+        try:
+            extra = _event_markets(raw)
+        except SourceError:
+            continue
+        extra['read_only'] = raw.get('gameId') is None
+        extra['markets'] = [market for market in extra['markets'] if market['id'] not in market_ids]
+        if extra['markets']:
+            seen.add(extra['id'])
+            market_ids.update(market['id'] for market in extra['markets'])
+            yield extra
 
 
 def fetch_live_markets(
@@ -166,24 +225,14 @@ def fetch_live_markets(
             if not re.fullmatch(r'[0-9]{1,255}', game_id):
                 continue
             game_ids.add(game_id)
-            markets = raw.get('markets')
-            if not isinstance(markets, list):
-                raise SourceError('invalid_event_markets')
-            slug = raw.get('slug')
-            slug = slug if isinstance(slug, str) and re.fullmatch(r'[A-Za-z0-9-]{1,250}', slug) else None
-            selected = [_market(x) for x in markets if supported_full_game_market(x)]
-            if selected:
-                events.append(
-                    {
-                        'id': event_id,
-                        'title': raw.get('title') if isinstance(raw.get('title'), str) else None,
-                        'slug': slug,
-                        'markets': selected,
-                    }
-                )
+            event = _event_markets(raw)
+            if event['markets']:
+                events.append(event)
         if not cursor:
             if source_id is None and len(game_ids) > 1:
                 raise SourceError('ambiguous_game')
+            if source_id is not None and sport == 'football':
+                events.extend(_extra_football_events(client, tuple(events), source_id, starts_at, home, away, seen))
             return {
                 'events': events,
                 'match_status': 'source_identity' if source_id else 'candidate',

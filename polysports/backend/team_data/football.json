@@ -3888,7 +3888,8 @@
     "logo": "https://media.api-sports.io/football/teams/1165.png",
     "leagues": "VEIK",
     "aliases": [
-      "Kuopion Palloseura"
+      "Kuopion Palloseura",
+      "Kuopion PS"
     ]
   },
   "1166": {
@@ -4261,7 +4262,10 @@
     "name_zh": "米亚尔比",
     "country": "Sweden",
     "logo": "https://media.api-sports.io/football/teams/2240.png",
-    "leagues": "ALLSV"
+    "leagues": "ALLSV",
+    "aliases": [
+      "Mjällby AIF"
+    ]
   },
   "2241": {
     "name_en": "Vasteras SK FK",

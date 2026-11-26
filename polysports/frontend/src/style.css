@@ -266,3 +266,37 @@ button.calendar-cell:hover { border-color: #b9cdc1; }
   .calendar-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .calendar-weekday { display: none; }
 }
+
+.back-to-top {
+  position: fixed;
+  right: 24px;
+  /* 赛事中心有组合草稿条时由组件传入避让高度，避免压住草稿内容。 */
+  bottom: calc(24px + var(--tray-clearance, 0px));
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid #d8e3da;
+  border-radius: 999px;
+  background: #fff;
+  color: #176348;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(16 31 25 / 16%);
+  transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.back-to-top:hover { background: #e4f2eb; box-shadow: 0 6px 18px rgb(16 31 25 / 22%); transform: translateY(-2px); }
+.back-to-top:active { transform: translateY(0); }
+.back-to-top:focus-visible { outline: 2px solid #2d8367; outline-offset: 2px; }
+@media (max-width: 760px) {
+  .back-to-top { right: 16px; bottom: calc(16px + var(--tray-clearance, 0px)); width: 40px; height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .back-to-top { transition: none; }
+  .back-to-top:hover, .back-to-top:active { transform: none; }
+}

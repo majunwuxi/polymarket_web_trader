@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BackToTop from './components/BackToTop.vue'
 const cachedViews = ['Dashboard', 'SportsCenter', 'Orders', 'History', 'PnlCalendar', 'Combos', 'Wallets', 'SystemPage']
 </script>
 
@@ -8,4 +9,5 @@ const cachedViews = ['Dashboard', 'SportsCenter', 'Orders', 'History', 'PnlCalen
       <component :is="Component" :key="route.path" />
     </KeepAlive>
   </RouterView>
+  <BackToTop />
 </template>

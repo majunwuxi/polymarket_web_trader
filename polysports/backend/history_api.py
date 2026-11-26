@@ -66,6 +66,19 @@ class StatisticsResponse(BaseModel):
     request_id: str
 
 
+class CalendarResponse(BaseModel):
+    data: dict
+    request_id: str
+
+
+CALENDAR_SCOPE = (
+    '归日按下单时间、北京时间 12:00 至次日 11:59 记为同一天；投入合计当日全部下单成本（含未结算），'
+    '返奖与盈亏只统计已结算部分，未结算投注单独计数。盈亏口径与交易记录卡片一致，'
+    '为按市场规则推算的应结算金额，不含未记录费用，不等于链上赎回或实际到账；'
+    '成交明细缺失时的成本为估算值，已用 has_estimate 标出。'
+)
+
+
 def envelope(request, data):
     return {'data': data, 'request_id': request.state.request_id}
 
@@ -315,6 +328,29 @@ def statistics(
                 'scope': '成交仅计已保存的 CONFIRMED 证据；组合已确认单独计数。结算金额须在交易记录页按赛果判断与市场终态两结果交叉核对后逐笔确认，本系统未持久化结算结果，故不汇总收益。',
             },
         )
+
+
+@router.get('/pnl-calendar', response_model=CalendarResponse)
+def pnl_calendar(
+    request: Request,
+    month: str | None = None,
+    start: datetime | None = Query(None, alias='from'),
+    end: datetime | None = Query(None, alias='to'),
+):
+    """每日期盈亏日历：归日按下单时间的北京时间 12:00 起算。"""
+    from .pnl_calendar import CalendarError, calendar
+
+    if not month and not valid_range(start, end):
+        return auth.error(request, 422, 'VALIDATION_ERROR', '时间范围无效')
+    with Session(request.app.state.engine) as db:
+        try:
+            data = calendar(db, month=month, start=start, end=end)
+        except CalendarError as exc:
+            return auth.error(request, 422, 'VALIDATION_ERROR', str(exc))
+        data['scope'] = CALENDAR_SCOPE
+        data['currency'] = 'pUSD'
+        data['as_of'] = db_now(db).isoformat()
+        return envelope(request, data)
 
 
 def spreadsheet_text(value):

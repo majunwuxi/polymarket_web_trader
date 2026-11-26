@@ -14,7 +14,7 @@ const emit = defineEmits<{ toggle: [] }>()
     <nav aria-label="主导航">
       <RouterLink to="/">总览</RouterLink><RouterLink to="/sports/football">足球赛事</RouterLink>
       <RouterLink to="/sports/nba">NBA 赛事</RouterLink><RouterLink to="/combos">组合交易</RouterLink>
-      <RouterLink to="/orders">交易记录</RouterLink><RouterLink to="/history">历史与导出</RouterLink>
+      <RouterLink to="/orders">交易记录</RouterLink><RouterLink to="/pnl-calendar">每日盈亏</RouterLink><RouterLink to="/history">历史与导出</RouterLink>
       <RouterLink to="/wallets">钱包状态</RouterLink><RouterLink to="/system">系统管理</RouterLink>
     </nav>
   </aside>

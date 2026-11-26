@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const cachedViews = ['Dashboard', 'SportsCenter', 'Orders', 'History', 'Combos', 'Wallets', 'SystemPage']
+const cachedViews = ['Dashboard', 'SportsCenter', 'Orders', 'History', 'PnlCalendar', 'Combos', 'Wallets', 'SystemPage']
 </script>
 
 <template>

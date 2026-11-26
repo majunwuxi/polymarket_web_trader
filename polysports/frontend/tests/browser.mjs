@@ -36,6 +36,11 @@ try {
       if (url.pathname.startsWith('/api/v1/exports/')) return route.fulfill({status:200,contentType:'text/csv',body:'模拟导出\n'})
       if (url.pathname.startsWith('/api/v1/history/')) return route.fulfill({status:200,json:{data:{items:[],next_cursor:null}}})
       if (endpoint === 'statistics') return route.fulfill({status:200,json:{data:{games_total:0,finished_total:0,trade_count:0,confirmed_fill_count:0,confirmed_combo_count:0,realized_pnl:null,scope:'模拟统计口径'}}})
+      if (endpoint === 'pnl-calendar') return route.fulfill({status:200,json:{data:{month:'2026-11',first_day:'2026-11-01',last_day:'2026-11-30',days:[
+        {day:'2026-11-01',empty:false,invested:'116',settled_invested:'116',returned:'133.7',pnl:'17.7',tone:'profit',settled_count:1,pending_count:0,has_estimate:false,by_sport:[{sport:'football',name:'足球',invested:'116',settled_invested:'116',returned:'133.7',pnl:'17.7',tone:'profit',settled_count:1,pending_count:0,has_estimate:false}]},
+        {day:'2026-11-02',empty:false,invested:'136',settled_invested:'0',returned:'0',pnl:'0',tone:'pending',settled_count:0,pending_count:1,has_estimate:false,by_sport:[{sport:'nba',name:'篮球',invested:'136',settled_invested:'0',returned:'0',pnl:'0',tone:'pending',settled_count:0,pending_count:1,has_estimate:false}]},
+        {day:'2026-11-03',empty:true,invested:'0',settled_invested:'0',returned:'0',pnl:'0',tone:'empty',settled_count:0,pending_count:0,has_estimate:false,by_sport:[]},
+      ],summary:{invested:'252',settled_invested:'116',returned:'133.7',pnl:'17.7',tone:'profit',settled_count:1,pending_count:1,has_estimate:false},scope:'模拟盈亏日历口径',currency:'pUSD'}}})
       if (url.pathname==='/api/v1/system/status') return route.fulfill({status:200,json:{data:{database:{status:'ok',checked_at:'2026-01-01T00:00:00Z'},configuration:{football_key_configured:false,nba_key_configured:false,wallet_count:0,combo_enabled:false}}}})
       if (endpoint === 'audit-events') return route.fulfill({status:200,json:{data:{items:[]}}})
       if (url.pathname==='/api/v1/system/football-display') {
@@ -197,6 +202,18 @@ try {
     const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'导出赛事 CSV'}).click()])
     assert.equal(download.suggestedFilename(),'polysports-games.csv')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),true)
+    if (viewport.width < 600) await page.getByRole('button', {name:'菜单'}).click()
+    await page.getByRole('link', {name:'每日盈亏'}).click()
+    await page.getByRole('heading',{name:'每日盈亏日历'}).waitFor()
+    await page.getByText(/归日按下单时间/).waitFor()
+    await page.getByText(/本月投入 252 pUSD/).waitFor()
+    const profitCell=page.locator('.calendar-cell.calendar-profit').first()
+    await profitCell.waitFor()
+    assert.match(await profitCell.innerText(),/投入 116/)
+    await profitCell.click()
+    await page.getByRole('heading',{name:/明细/}).waitFor()
+    await page.getByText('足球',{exact:true}).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `viewport ${viewport.width} 盈亏日历横向溢出`)
     if (viewport.width < 600) await page.getByRole('button', {name:'菜单'}).click()
     await page.getByRole('link', {name:'钱包状态'}).click()
     await page.getByRole('heading', {name:'钱包状态'}).waitFor()

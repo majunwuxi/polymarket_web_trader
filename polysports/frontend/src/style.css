@@ -219,3 +219,48 @@
 @media (max-width: 680px) {
   .trade-drawer { width: 100%; padding: 1rem; }
 }
+
+.calendar-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.calendar-header h2 { flex: 1; margin: 0; text-align: center; font-size: 17px; color: #19342c; }
+.calendar-summary { margin: 4px 0; font-size: 13px; font-weight: 700; color: #19342c; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.calendar-weekday { text-align: center; font-size: 12px; font-weight: 700; color: #7d9085; }
+.calendar-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 92px;
+  padding: 8px 9px;
+  border: 1px solid #e5ebe7;
+  border-radius: 10px;
+  background: #fff;
+  color: #1c2d29;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  line-height: 1.45;
+}
+button.calendar-cell { cursor: pointer; }
+button.calendar-cell:hover { border-color: #b9cdc1; }
+.calendar-cell.selected { outline: 2px solid #2d8367; outline-offset: -1px; }
+.calendar-cell:disabled { cursor: default; }
+.calendar-day { font-size: 13px; font-weight: 800; }
+.calendar-line { display: block; }
+.calendar-pnl { font-weight: 800; }
+.calendar-state { display: block; margin-top: 2px; font-size: 11px; opacity: .85; }
+.calendar-empty { background: #fbfcfb; border-style: dashed; }
+.calendar-profit { background: #c62828; border-color: #c62828; color: #fff; }
+.calendar-loss { background: #000; border-color: #000; color: #fff; }
+.calendar-flat { background: #4b5563; border-color: #4b5563; color: #fff; }
+.calendar-pending { background: #eef2ee; border-color: #d8e3da; color: #53675c; }
+.calendar-profit:hover, .calendar-loss:hover, .calendar-flat:hover { border-color: #fff; }
+.calendar-detail { margin-top: 16px; }
+.calendar-sport-rows { display: grid; gap: 12px; }
+.calendar-sport-row { padding: 14px 16px; }
+.calendar-sport-row header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.calendar-sport-row h3 { margin: 0; font-size: 14px; color: #19342c; }
+.calendar-sport-row p { margin: 6px 0 0; font-size: 13px; color: #53675c; }
+@media (max-width: 680px) {
+  .calendar-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .calendar-weekday { display: none; }
+}

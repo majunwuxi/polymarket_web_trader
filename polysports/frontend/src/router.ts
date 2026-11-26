@@ -10,6 +10,7 @@ const Orders = () => import('./views/Orders.vue')
 const OrderEntry = () => import('./views/OrderEntry.vue')
 const Combos = () => import('./views/Combos.vue')
 const History = () => import('./views/History.vue')
+const PnlCalendar = () => import('./views/PnlCalendar.vue')
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -21,6 +22,7 @@ export const router = createRouter({
     { path: '/wallets', component: Wallets, meta: { requiresAuth: true } },
     { path: '/combos', component: Combos, meta: { requiresAuth: true } },
     { path: '/history', component: History, meta: { requiresAuth: true } },
+    { path: '/pnl-calendar', component: PnlCalendar, meta: { requiresAuth: true } },
     { path: '/orders', component: Orders, meta: { requiresAuth: true } },
     { path: '/orders/new/:link/:outcome', component: OrderEntry, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },

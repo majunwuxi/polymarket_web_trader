@@ -5,7 +5,10 @@ from decimal import Decimal
 import pytest
 
 from backend.pnl_calendar import (
+    PENDING,
+    SETTLED,
     TZ8,
+    UNPRICED,
     CalendarError,
     build_month,
     calendar_day,
@@ -62,11 +65,11 @@ def test_month_bounds_parses_and_rejects():
             month_bounds(bad)
 
 
-def item(day, sport, cost, payout=None, settled=False, estimated=False):
+def item(day, sport, cost, payout=None, state=SETTLED, estimated=False):
     return {
         'day': day,
         'sport': sport,
-        'settled': settled,
+        'state': state,
         'cost': Decimal(cost),
         'payout': Decimal(payout) if payout is not None else None,
         'estimated': estimated,
@@ -75,7 +78,7 @@ def item(day, sport, cost, payout=None, settled=False, estimated=False):
 
 def test_build_month_covers_every_day_and_merges_same_day():
     day = date(2026, 11, 1)
-    items = [item(day, 'football', '100', '133', settled=True), item(day, 'nba', '36')]
+    items = [item(day, 'football', '100', '133'), item(day, 'nba', '36', state=PENDING)]
     days = build_month(items, date(2026, 11, 1), date(2026, 11, 4))
     assert [d['day'] for d in days] == ['2026-11-01', '2026-11-02', '2026-11-03']
     first = days[0]
@@ -88,18 +91,19 @@ def test_build_month_covers_every_day_and_merges_same_day():
     assert first['tone'] == 'profit'
     assert first['settled_count'] == 1
     assert first['pending_count'] == 1
+    assert first['unpriced_count'] == 0
     # 空日不计盈亏，也不给出 profit/loss 语气。
     assert days[1] == {
         'day': '2026-11-02', 'empty': True, 'invested': '0', 'settled_invested': '0',
-        'returned': '0', 'pnl': '0', 'tone': 'empty', 'settled_count': 0,
-        'pending_count': 0, 'has_estimate': False, 'by_sport': [],
+        'unpriced_invested': '0', 'returned': '0', 'pnl': '0', 'tone': 'empty', 'settled_count': 0,
+        'unpriced_count': 0, 'pending_count': 0, 'has_estimate': False, 'by_sport': [],
     }
 
 
 def test_build_month_splits_by_sport_without_double_counting():
     day = date(2026, 11, 5)
-    items = [item(day, 'football', '50', '20', settled=True), item(day, 'nba', '30', '60', settled=True),
-             item(day, 'mixed', '10', '0', settled=True)]
+    items = [item(day, 'football', '50', '20'), item(day, 'nba', '30', '60'),
+             item(day, 'mixed', '10', '0')]
     entry = build_month(items, day, date(2026, 11, 6))[0]
     rows = {row['sport']: row for row in entry['by_sport']}
     assert set(rows) == {'football', 'nba', 'mixed'}
@@ -116,7 +120,9 @@ def test_build_month_splits_by_sport_without_double_counting():
 
 def test_build_month_pending_day_has_no_amount_tone():
     day = date(2026, 11, 7)
-    entry = build_month([item(day, 'football', '20', estimated=True)], day, date(2026, 11, 8))[0]
+    entry = build_month(
+        [item(day, 'football', '20', state=PENDING, estimated=True)], day, date(2026, 11, 8)
+    )[0]
     assert entry['invested'] == '20'
     assert entry['returned'] == '0'
     assert entry['pnl'] == '0'
@@ -125,8 +131,43 @@ def test_build_month_pending_day_has_no_amount_tone():
     assert entry['has_estimate'] is True
 
 
+def test_build_month_unpriced_day_is_settled_but_excluded_from_pnl():
+    """赛果已确认但盘口口径无法推断：标为已结算、盈亏待核实，不计入返奖与盈亏合计。"""
+    day = date(2026, 11, 14)
+    entry = build_month(
+        [item(day, 'football', '6.4974', state=UNPRICED, estimated=True)], day, date(2026, 11, 15)
+    )[0]
+    assert entry['invested'] == '6.4974'
+    # 盈亏待核实的投入单独统计，绝不并入已结算投入，否则盈亏会被算成全额亏损。
+    assert entry['unpriced_invested'] == '6.4974'
+    assert entry['settled_invested'] == '0'
+    assert entry['returned'] == '0'
+    assert entry['pnl'] == '0'
+    assert entry['settled_count'] == 0
+    assert entry['unpriced_count'] == 1
+    assert entry['pending_count'] == 0
+    # 不能因为盈亏待核实就标成待结算，也不能凭空给 profit/loss。
+    assert entry['tone'] == 'unpriced'
+    rows = {row['sport']: row for row in entry['by_sport']}
+    assert rows['football']['tone'] == 'unpriced'
+    assert rows['football']['unpriced_count'] == 1
+
+
+def test_build_month_unpriced_alongside_settled_keeps_amount_tone():
+    day = date(2026, 11, 14)
+    items = [
+        item(day, 'football', '10', '15'),
+        item(day, 'football', '6', state=UNPRICED),
+    ]
+    entry = build_month(items, day, date(2026, 11, 15))[0]
+    assert entry['settled_count'] == 1
+    assert entry['unpriced_count'] == 1
+    assert entry['pnl'] == '5'
+    assert entry['tone'] == 'profit'
+
+
 def test_build_month_flat_when_settled_break_even():
     day = date(2026, 11, 9)
-    entry = build_month([item(day, 'nba', '25', '25', settled=True)], day, date(2026, 11, 10))[0]
+    entry = build_month([item(day, 'nba', '25', '25')], day, date(2026, 11, 10))[0]
     assert entry['pnl'] == '0'
     assert entry['tone'] == 'flat'

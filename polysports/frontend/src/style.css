@@ -253,6 +253,8 @@ button.calendar-cell:hover { border-color: #b9cdc1; }
 .calendar-loss { background: #000; border-color: #000; color: #fff; }
 .calendar-flat { background: #4b5563; border-color: #4b5563; color: #fff; }
 .calendar-pending { background: #eef2ee; border-color: #d8e3da; color: #53675c; }
+.calendar-unpriced { background: #f5f3e8; border-color: #ded7bd; color: #6b6242; }
+.pnl-unpriced { background: #f5f3e8; color: #6b6242; border: 1px solid #ded7bd; font-weight: 600; }
 .calendar-profit:hover, .calendar-loss:hover, .calendar-flat:hover { border-color: #fff; }
 .calendar-detail { margin-top: 16px; }
 .calendar-sport-rows { display: grid; gap: 12px; }

@@ -14,8 +14,9 @@ afterEach(() => vi.unstubAllGlobals())
 
 function day(day: string, extra: Record<string, unknown> = {}) {
   return {
-    day, empty: true, invested: '0', settled_invested: '0', returned: '0', pnl: '0',
-    tone: 'empty', settled_count: 0, pending_count: 0, has_estimate: false, by_sport: [], ...extra,
+    day, empty: true, invested: '0', settled_invested: '0', unpriced_invested: '0', returned: '0',
+    pnl: '0', tone: 'empty', settled_count: 0, unpriced_count: 0, pending_count: 0,
+    has_estimate: false, by_sport: [], ...extra,
   }
 }
 
@@ -30,20 +31,26 @@ function payload() {
           empty: false, invested: '136', settled_invested: '100', returned: '133', pnl: '33',
           tone: 'profit', settled_count: 1, pending_count: 1,
           by_sport: [
-            { sport: 'football', name: '足球', invested: '136', settled_invested: '100', returned: '133', pnl: '33', tone: 'profit', settled_count: 1, pending_count: 1, has_estimate: false },
+            { sport: 'football', name: '足球', invested: '136', settled_invested: '100', unpriced_invested: '0', returned: '133', pnl: '33', tone: 'profit', settled_count: 1, unpriced_count: 0, pending_count: 1, has_estimate: false },
           ],
         }),
         day('2026-11-02', {
           empty: false, invested: '50', settled_invested: '50', returned: '20', pnl: '-30',
           tone: 'loss', settled_count: 1,
           by_sport: [
-            { sport: 'nba', name: '篮球', invested: '50', settled_invested: '50', returned: '20', pnl: '-30', tone: 'loss', settled_count: 1, pending_count: 0, has_estimate: false },
-            { sport: 'mixed', name: '跨运动组合', invested: '0', settled_invested: '0', returned: '0', pnl: '0', tone: 'flat', settled_count: 0, pending_count: 0, has_estimate: false },
+            { sport: 'nba', name: '篮球', invested: '50', settled_invested: '50', unpriced_invested: '0', returned: '20', pnl: '-30', tone: 'loss', settled_count: 1, unpriced_count: 0, pending_count: 0, has_estimate: false },
+            { sport: 'mixed', name: '跨运动组合', invested: '0', settled_invested: '0', unpriced_invested: '0', returned: '0', pnl: '0', tone: 'flat', settled_count: 0, unpriced_count: 0, pending_count: 0, has_estimate: false },
           ],
         }),
-        day('2026-11-03'),
+        day('2026-11-03', {
+          // 赛果已确认但盘口口径无法推断：已结算、盈亏待核实，不计入盈亏合计
+          empty: false, invested: '6.4974', settled_invested: '0', unpriced_invested: '6.4974',
+          returned: '0', pnl: '0', tone: 'unpriced', settled_count: 0, unpriced_count: 1,
+          has_estimate: true,
+          by_sport: [{ sport: 'football', name: '足球', invested: '6.4974', settled_invested: '0', unpriced_invested: '6.4974', returned: '0', pnl: '0', tone: 'unpriced', settled_count: 0, unpriced_count: 1, pending_count: 0, has_estimate: true }],
+        }),
       ],
-      summary: { invested: '186', settled_invested: '150', returned: '153', pnl: '3', tone: 'profit', settled_count: 2, pending_count: 1, has_estimate: false },
+      summary: { invested: '192.4974', settled_invested: '150', unpriced_invested: '6.4974', returned: '153', pnl: '3', tone: 'profit', settled_count: 2, unpriced_count: 1, pending_count: 1, has_estimate: false },
       scope: '归日按下单时间、北京时间 12:00 至次日 11:59 记为同一天；',
     },
   }
@@ -66,8 +73,27 @@ describe('每日盈亏日历（模拟接口）', () => {
     expect(cells[0].text()).toContain('返奖 133')
     expect(cells[0].text()).toContain('待结算 1 笔')
     expect(cells[1].classes()).toContain('calendar-loss')
-    // 无投注日期仍是禁用格，不显示金额。
-    expect(view.findAll('.calendar-cell.calendar-empty').length).toBeGreaterThan(0)
+    // 已结算但盈亏待核实：不能用红/黑冒充盈亏，也不能标成待结算。
+    expect(cells[2].classes()).toContain('calendar-unpriced')
+    expect(cells[2].text()).toContain('盈亏待核实 1 笔')
+    expect(cells[2].text()).not.toContain('待结算')
+    expect(view.get('.calendar-summary').text()).toContain('盈亏待核实 1 笔')
+    view.unmount()
+  })
+
+  it('盈亏待核实计入已结算笔数，但不计入盈亏合计', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(json(payload()))))
+    const view = mount(PnlCalendar, { global: { plugins: [router] } })
+    await flushPromises()
+    await view.findAll('button.calendar-cell')[2].trigger('click')
+    await flushPromises()
+    const detail = view.get('.calendar-detail')
+    expect(detail.text()).toContain('1 笔已结算但盈亏待核实')
+    expect(detail.text()).toContain('不计入盈亏合计')
+    const row = detail.findAll('.calendar-sport-row')[0]
+    expect(row.text()).toContain('盈亏待核实 1 笔')
+    // 金额没有凭空计算，仍显示 0。
+    expect(row.get('.pnl-badge').text()).toContain('0 pUSD')
     view.unmount()
   })
 

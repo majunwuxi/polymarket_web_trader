@@ -31,6 +31,15 @@ SPORT_ORDER = ('football', 'nba', 'mixed')
 SPORT_NAMES = {'football': '足球', 'nba': '篮球', 'mixed': '跨运动组合'}
 SETTLED_TONES = ('profit', 'loss', 'flat')
 
+# 一笔投注在日历里的结算状态，三档互斥、不可混用：
+# - settled   已结算且盈亏可严格核实，计入返奖与盈亏；
+# - unpriced  已结算（比赛结束且赛果已核实），但盘口口径无法按比分严格推断，
+#             盈亏待核实，只计投入、不计入返奖与盈亏合计，绝不猜测金额；
+# - pending   赛果尚未核实，仍在等待结算。
+SETTLED = 'settled'
+UNPRICED = 'unpriced'
+PENDING = 'pending'
+
 
 class CalendarError(ValueError):
     """月份或时间范围参数无效。"""
@@ -130,6 +139,11 @@ def single_item(intent, related, fills) -> dict | None:
         score_verified=verified,
     )
     settled = _settled(pnl)
+    # 赛果已核实、但盘口口径无法按比分严格推断时，single_pnl 停在 pending。
+    # 这笔投注其实已经结算，只是盈亏待核实；必须与「赛果未核实」分开，
+    # 否则同一天既显示盈亏又标待结算，自相矛盾。
+    unpriced = verified and won is None
+    state = SETTLED if settled else UNPRICED if unpriced else PENDING
     cost = _dec(pnl.get('cost'))
     estimated = bool(pnl.get('estimated'))
     if cost is None:
@@ -141,7 +155,7 @@ def single_item(intent, related, fills) -> dict | None:
     return {
         'kind': 'single',
         'sport': game.sport,
-        'settled': settled,
+        'state': state,
         'cost': cost,
         'payout': _dec(pnl.get('payout')) if settled else None,
         'estimated': estimated,
@@ -155,6 +169,11 @@ def combo_item(row, data) -> dict | None:
         return None
     pnl = data.get('pnl') or {}
     settled = _settled(pnl)
+    # 各腿赛果已核实但汇总口径仍无法确认胜负时，同单场一样视为已结算、盈亏待核实。
+    legs = data.get('legs') or []
+    judged = [leg for leg in legs if leg.get('result_won') is not None]
+    unpriced = bool(judged and not settled and pnl.get('tone') != 'na')
+    state = SETTLED if settled else UNPRICED if unpriced else PENDING
     summary = data.get('buy_summary') or {}
     cost = _dec(summary.get('cost'))
     estimated = bool(summary.get('estimated'))
@@ -165,7 +184,7 @@ def combo_item(row, data) -> dict | None:
     return {
         'kind': 'combo',
         'sport': sport,
-        'settled': settled,
+        'state': state,
         'cost': cost,
         'payout': _dec(pnl.get('payout')) if settled else None,
         'estimated': estimated,
@@ -219,8 +238,10 @@ def _bucket() -> dict:
     return {
         'invested': Decimal(0),
         'settled_invested': Decimal(0),
+        'unpriced_invested': Decimal(0),
         'returned': Decimal(0),
         'settled_count': 0,
+        'unpriced_count': 0,
         'pending_count': 0,
         'has_estimate': False,
     }
@@ -229,34 +250,41 @@ def _bucket() -> dict:
 def _add(bucket: dict, item: dict) -> None:
     bucket['invested'] += item['cost']
     bucket['has_estimate'] = bucket['has_estimate'] or item['estimated']
-    if item['settled']:
+    state = item['state']
+    if state == SETTLED:
         bucket['settled_invested'] += item['cost']
         bucket['returned'] += item['payout'] or Decimal(0)
         bucket['settled_count'] += 1
+    elif state == UNPRICED:
+        # 已结算但盈亏待核实：单独记投入，绝不并入 settled_invested，
+        # 否则盈亏会被算成全额亏损，等于凭空编造金额。
+        bucket['unpriced_invested'] += item['cost']
+        bucket['unpriced_count'] += 1
     else:
         bucket['pending_count'] += 1
 
 
-def _tone(pnl: Decimal, settled_count: int) -> str:
-    if not settled_count:
-        return 'pending'
-    if pnl > 0:
-        return 'profit'
-    if pnl < 0:
-        return 'loss'
-    return 'flat'
+def _tone(pnl: Decimal, settled_count: int, unpriced_count: int, pending_count: int) -> str:
+    # 盈亏只反映能严格核实的部分；其余用独立语气词表达，不用 profit/loss 掩盖未知金额。
+    if settled_count:
+        return 'profit' if pnl > 0 else 'loss' if pnl < 0 else 'flat'
+    if unpriced_count:
+        return 'unpriced'
+    return 'pending' if pending_count else 'empty'
 
 
 def _public(bucket: dict) -> dict:
-    # 盈亏只来自已结算部分：返奖 − 已结算投入，与卡片口径同源，不让估算成本冒充结算金额。
+    # 盈亏只来自已结算且已核实盈亏的部分：返奖 − 已结算投入。
     pnl = bucket['returned'] - bucket['settled_invested']
     return {
         'invested': _money(bucket['invested']),
         'settled_invested': _money(bucket['settled_invested']),
+        'unpriced_invested': _money(bucket['unpriced_invested']),
         'returned': _money(bucket['returned']),
         'pnl': _money(pnl),
-        'tone': _tone(pnl, bucket['settled_count']),
+        'tone': _tone(pnl, bucket['settled_count'], bucket['unpriced_count'], bucket['pending_count']),
         'settled_count': bucket['settled_count'],
+        'unpriced_count': bucket['unpriced_count'],
         'pending_count': bucket['pending_count'],
         'has_estimate': bucket['has_estimate'],
     }
@@ -281,10 +309,12 @@ def build_month(items: list[dict], first: date, following: date) -> list[dict]:
                     'empty': True,
                     'invested': '0',
                     'settled_invested': '0',
+                    'unpriced_invested': '0',
                     'returned': '0',
                     'pnl': '0',
                     'tone': 'empty',
                     'settled_count': 0,
+                    'unpriced_count': 0,
                     'pending_count': 0,
                     'has_estimate': False,
                     'by_sport': [],

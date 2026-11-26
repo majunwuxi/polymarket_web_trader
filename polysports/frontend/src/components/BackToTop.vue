@@ -50,6 +50,10 @@ watch(()=>route.fullPath,()=>requestAnimationFrame(update))
     title="回到页面顶部"
     @click="toTop"
   >
-    <span aria-hidden="true">↑</span>
+    <svg class="back-to-top-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 4.5 5 11.5m7-7 7 7M12 4.5v15" fill="none" stroke="currentColor" stroke-width="2.4"
+            stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+    <span class="back-to-top-label">顶部</span>
   </button>
 </template>

@@ -271,30 +271,48 @@ button.calendar-cell:hover { border-color: #b9cdc1; }
   position: fixed;
   right: 24px;
   /* 赛事中心有组合草稿条时由组件传入避让高度，避免压住草稿内容。 */
-  bottom: calc(24px + var(--tray-clearance, 0px));
+  bottom: calc(28px + var(--tray-clearance, 0px));
   z-index: 30;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 1px solid #d8e3da;
+  gap: 7px;
+  min-width: 104px;
+  height: 46px;
+  padding: 0 18px;
+  border: 1px solid #176348;
   border-radius: 999px;
-  background: #fff;
-  color: #176348;
-  font-size: 18px;
+  background: #176348;
+  color: #fff;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1;
+  letter-spacing: .01em;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgb(16 31 25 / 16%);
+  box-shadow: 0 6px 18px rgb(16 31 25 / 32%), 0 2px 6px rgb(16 31 25 / 20%);
   transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
 }
-.back-to-top:hover { background: #e4f2eb; box-shadow: 0 6px 18px rgb(16 31 25 / 22%); transform: translateY(-2px); }
+.back-to-top-icon { width: 17px; height: 17px; flex: 0 0 auto; }
+.back-to-top:hover {
+  background: #1e7d59;
+  border-color: #1e7d59;
+  box-shadow: 0 10px 24px rgb(16 31 25 / 38%), 0 3px 8px rgb(16 31 25 / 22%);
+  transform: translateY(-3px);
+}
 .back-to-top:active { transform: translateY(0); }
-.back-to-top:focus-visible { outline: 2px solid #2d8367; outline-offset: 2px; }
+.back-to-top:focus-visible { outline: 2px solid #2d8367; outline-offset: 3px; }
 @media (max-width: 760px) {
-  .back-to-top { right: 16px; bottom: calc(16px + var(--tray-clearance, 0px)); width: 40px; height: 40px; }
+  /* 窄屏只留箭头图标，仍保持足够点击面积。 */
+  .back-to-top {
+    right: 16px;
+    bottom: calc(16px + var(--tray-clearance, 0px));
+    min-width: 0;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+  }
+  .back-to-top-icon { width: 19px; height: 19px; }
+  .back-to-top-label { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .back-to-top { transition: none; }

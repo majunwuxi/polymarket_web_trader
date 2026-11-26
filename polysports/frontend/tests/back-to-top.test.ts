@@ -40,6 +40,9 @@ describe('回到顶部浮动按钮（模拟滚动）', () => {
     const button = view.get('.back-to-top')
     expect(button.attributes('aria-label')).toBe('回到页面顶部')
     expect(button.attributes('title')).toBe('回到页面顶部')
+    // 要有可见的箭头图标与文字，不能只是一个不显眼的小圆点。
+    expect(button.find('.back-to-top-icon').exists()).toBe(true)
+    expect(button.get('.back-to-top-label').text()).toBe('顶部')
     view.unmount()
   })
 

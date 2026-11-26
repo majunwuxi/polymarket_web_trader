@@ -5161,5 +5161,285 @@
     "aliases": [
       "St. Louis City SC"
     ]
+  },
+  "254": {
+    "name_en": "Heart Of Midlothian",
+    "name_zh": "哈茨",
+    "country": "Scotland",
+    "logo": "https://media.api-sports.io/football/teams/254.png",
+    "leagues": "UECL",
+    "aliases": [
+      "Heart of Midlothian FC"
+    ]
+  },
+  "347": {
+    "name_en": "Lech Poznan",
+    "name_zh": "波兹南莱赫",
+    "country": "Poland",
+    "logo": "https://media.api-sports.io/football/teams/347.png",
+    "leagues": "UEL",
+    "aliases": [
+      "KKS Lech Poznań"
+    ]
+  },
+  "398": {
+    "name_en": "FC Nordsjaelland",
+    "name_zh": "北西兰",
+    "country": "Denmark",
+    "logo": "https://media.api-sports.io/football/teams/398.png",
+    "leagues": "UECL",
+    "aliases": [
+      "FC Nordsjælland"
+    ]
+  },
+  "400": {
+    "name_en": "FC Copenhagen",
+    "name_zh": "哥本哈根",
+    "country": "Denmark",
+    "logo": "https://media.api-sports.io/football/teams/400.png",
+    "leagues": "UECL",
+    "aliases": [
+      "FC København"
+    ]
+  },
+  "406": {
+    "name_en": "Aarhus",
+    "name_zh": "奥胡斯",
+    "country": "Denmark",
+    "logo": "https://media.api-sports.io/football/teams/406.png",
+    "leagues": "UECL",
+    "aliases": [
+      "Aarhus GF"
+    ]
+  },
+  "553": {
+    "name_en": "Olympiakos Piraeus",
+    "name_zh": "奥林匹亚科斯",
+    "country": "Greece",
+    "logo": "https://media.api-sports.io/football/teams/553.png",
+    "leagues": "UEL",
+    "aliases": [
+      "Olympiakós SFP"
+    ]
+  },
+  "554": {
+    "name_en": "Anderlecht",
+    "name_zh": "安德莱赫特",
+    "country": "Belgium",
+    "logo": "https://media.api-sports.io/football/teams/554.png",
+    "leagues": "UEL",
+    "aliases": [
+      "RSC Anderlecht"
+    ]
+  },
+  "563": {
+    "name_en": "Hapoel Beer Sheva",
+    "name_zh": "贝尔谢巴工人",
+    "country": "Israel",
+    "logo": "https://media.api-sports.io/football/teams/563.png",
+    "leagues": "UEL",
+    "aliases": [
+      "MH Hapoel Be'er Sheva"
+    ]
+  },
+  "567": {
+    "name_en": "Plzen",
+    "name_zh": "比尔森胜利",
+    "country": "Czech-Republic",
+    "logo": "https://media.api-sports.io/football/teams/567.png",
+    "leagues": "UEL",
+    "aliases": [
+      "FC Viktoria Plzeň"
+    ]
+  },
+  "608": {
+    "name_en": "HNK Hajduk Split",
+    "name_zh": "哈伊杜克斯普利特",
+    "country": "Croatia",
+    "logo": "https://media.api-sports.io/football/teams/608.png",
+    "leagues": "UECL",
+    "aliases": [
+      "HNK Hajduk Split"
+    ]
+  },
+  "617": {
+    "name_en": "Panathinaikos",
+    "name_zh": "帕纳辛奈科斯",
+    "country": "Greece",
+    "logo": "https://media.api-sports.io/football/teams/617.png",
+    "leagues": "UECL",
+    "aliases": [
+      "Panathinaikós AO"
+    ]
+  },
+  "631": {
+    "name_en": "Gent",
+    "name_zh": "根特",
+    "country": "Belgium",
+    "logo": "https://media.api-sports.io/football/teams/631.png",
+    "leagues": "UECL",
+    "aliases": [
+      "KAA Gent"
+    ]
+  },
+  "632": {
+    "name_en": "Universitatea Craiova",
+    "name_zh": "克拉约瓦大学",
+    "country": "Romania",
+    "logo": "https://media.api-sports.io/football/teams/632.png",
+    "leagues": "UECL",
+    "aliases": [
+      "Universitatea Craiova CS"
+    ]
+  },
+  "646": {
+    "name_en": "Levski Sofia",
+    "name_zh": "索菲亚列夫斯基",
+    "country": "Bulgaria",
+    "logo": "https://media.api-sports.io/football/teams/646.png",
+    "leagues": "UEL",
+    "aliases": [
+      "PFK Levski Sofia"
+    ]
+  },
+  "664": {
+    "name_en": "Kairat Almaty",
+    "name_zh": "阿拉木图凯拉特",
+    "country": "Kazakhstan",
+    "logo": "https://media.api-sports.io/football/teams/664.png",
+    "leagues": "UECL",
+    "aliases": [
+      "Qairat FK"
+    ]
+  },
+  "735": {
+    "name_en": "St. Truiden",
+    "name_zh": "圣图尔登",
+    "country": "Belgium",
+    "logo": "https://media.api-sports.io/football/teams/735.png",
+    "leagues": "UECL",
+    "aliases": [
+      "K. Sint-Truidense VV"
+    ]
+  },
+  "853": {
+    "name_en": "CSKA Sofia",
+    "name_zh": "索菲亚中央陆军",
+    "country": "Bulgaria",
+    "logo": "https://media.api-sports.io/football/teams/853.png",
+    "leagues": "UECL",
+    "aliases": [
+      "PFK CSKA Sofia"
+    ]
+  },
+  "1012": {
+    "name_en": "FC Thun",
+    "name_zh": "图恩",
+    "country": "Switzerland",
+    "logo": "https://media.api-sports.io/football/teams/1012.png",
+    "leagues": "UECL",
+    "aliases": [
+      "FC Thun"
+    ]
+  },
+  "1122": {
+    "name_en": "FK Jablonec",
+    "name_zh": "亚布洛内茨",
+    "country": "Czech-Republic",
+    "logo": "https://media.api-sports.io/football/teams/1122.png",
+    "leagues": "UECL",
+    "aliases": [
+      "FK Jablonec"
+    ]
+  },
+  "1124": {
+    "name_en": "OFI",
+    "name_zh": "OFI克里特",
+    "country": "Greece",
+    "logo": "https://media.api-sports.io/football/teams/1124.png",
+    "leagues": "UEL",
+    "aliases": [
+      "OFI"
+    ]
+  },
+  "3342": {
+    "name_en": "Inter Club d'Escaldes",
+    "name_zh": "伊斯卡尔德斯国际",
+    "country": "Andorra",
+    "logo": "https://media.api-sports.io/football/teams/3342.png",
+    "leagues": "UECL",
+    "aliases": [
+      "Inter Club d'Escaldes"
+    ]
+  },
+  "3402": {
+    "name_en": "Omonia Nicosia",
+    "name_zh": "奥莫尼亚",
+    "country": "Cyprus",
+    "logo": "https://media.api-sports.io/football/teams/3402.png",
+    "leagues": "UEL",
+    "aliases": [
+      "AS Omónoia Leukosías"
+    ]
+  },
+  "3403": {
+    "name_en": "Pafos",
+    "name_zh": "帕福斯",
+    "country": "Cyprus",
+    "logo": "https://media.api-sports.io/football/teams/3403.png",
+    "leagues": "UECL",
+    "aliases": [
+      "Páfos FC"
+    ]
+  },
+  "3502": {
+    "name_en": "FC Iberia 1999",
+    "name_zh": "第比利斯伊比利亚1999",
+    "country": "Georgia",
+    "logo": "https://media.api-sports.io/football/teams/3502.png",
+    "leagues": "UECL",
+    "aliases": [
+      "SK Iberia 1999"
+    ]
+  },
+  "3683": {
+    "name_en": "Ararat-Armenia",
+    "name_zh": "阿拉拉特亚美尼亚",
+    "country": "Armenia",
+    "logo": "https://media.api-sports.io/football/teams/3683.png",
+    "leagues": "UEL",
+    "aliases": [
+      "Ararat-Armenia FA"
+    ]
+  },
+  "3872": {
+    "name_en": "Kauno Žalgiris",
+    "name_zh": "考纳斯扎尔吉里斯",
+    "country": "Lithuania",
+    "logo": "https://media.api-sports.io/football/teams/3872.png",
+    "leagues": "UECL",
+    "aliases": [
+      "FK Kauno Žalgiris"
+    ]
+  },
+  "4799": {
+    "name_en": "Torreense",
+    "name_zh": "托伦斯",
+    "country": "Portugal",
+    "logo": "https://media.api-sports.io/football/teams/4799.png",
+    "leagues": "UEL",
+    "aliases": [
+      "SC União Torreense"
+    ]
+  },
+  "10124": {
+    "name_en": "Riga",
+    "name_zh": "里加FC",
+    "country": "Latvia",
+    "logo": "https://media.api-sports.io/football/teams/10124.png",
+    "leagues": "UECL",
+    "aliases": [
+      "Rīga FC"
+    ]
   }
 }

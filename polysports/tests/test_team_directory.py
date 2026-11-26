@@ -120,6 +120,63 @@ def test_football_directory_backfilled_teams_share_polymarket_aliases():
         assert football_name_variants(api_name), api_name
 
 
+def test_football_directory_uecl_polymarket_names_show_chinese():
+    # 欧协联：Polymarket 队名必须都能显示中文名与 API-Football 队徽。
+    expected={
+        'Aarhus GF':'奥胡斯', 'FC København':'哥本哈根', 'FC Nordsjælland':'北西兰',
+        'FC Thun':'图恩', 'FK Jablonec':'亚布洛内茨', 'FK Kauno Žalgiris':'考纳斯扎尔吉里斯',
+        'HNK Hajduk Split':'哈伊杜克斯普利特', 'Heart of Midlothian FC':'哈茨',
+        "Inter Club d'Escaldes":'伊斯卡尔德斯国际', 'K. Sint-Truidense VV':'圣图尔登',
+        'KAA Gent':'根特', 'PFK CSKA Sofia':'索菲亚中央陆军', 'Panathinaikós AO':'帕纳辛奈科斯',
+        'Páfos FC':'帕福斯', 'Qairat FK':'阿拉木图凯拉特', 'Rīga FC':'里加FC',
+        'SK Iberia 1999':'第比利斯伊比利亚1999', 'Universitatea Craiova CS':'克拉约瓦大学',
+    }
+    assert len(expected)==18
+    for source,name_zh in expected.items():
+        result=display_team(team(source))
+        assert result['name_zh']==name_zh and result['name_zh_source']=='sportsmatch', source
+        assert result['logo_url'] and result['logo_url'].startswith('https://media.api-sports.io/'), source
+
+
+def test_football_directory_uel_polymarket_names_show_chinese():
+    # 欧罗巴：Polymarket 队名必须都能显示中文名与 API-Football 队徽。
+    expected={
+        'AS Omónoia Leukosías':'奥莫尼亚', 'Ararat-Armenia FA':'阿拉拉特亚美尼亚',
+        'FC Viktoria Plzeň':'比尔森胜利', 'KKS Lech Poznań':'波兹南莱赫',
+        "MH Hapoel Be'er Sheva":'贝尔谢巴工人', 'OFI':'OFI克里特',
+        'Olympiakós SFP':'奥林匹亚科斯', 'PFK Levski Sofia':'索菲亚列夫斯基',
+        'RSC Anderlecht':'安德莱赫特', 'SC União Torreense':'托伦斯',
+    }
+    assert len(expected)==10
+    for source,name_zh in expected.items():
+        result=display_team(team(source))
+        assert result['name_zh']==name_zh and result['name_zh_source']=='sportsmatch', source
+        assert result['logo_url'] and result['logo_url'].startswith('https://media.api-sports.io/'), source
+
+
+def test_football_directory_uecl_uel_api_names_share_polymarket_aliases():
+    # 赛果绑定用 API-Football 名，赛事中心显示用 Polymarket 名；两者必须解析到同一组别名。
+    pairs={
+        'Aarhus':'Aarhus GF', 'FC Copenhagen':'FC København',
+        'FC Nordsjaelland':'FC Nordsjælland', 'FC Thun':'FC Thun', 'FK Jablonec':'FK Jablonec',
+        'Kauno Žalgiris':'FK Kauno Žalgiris', 'HNK Hajduk Split':'HNK Hajduk Split',
+        'Heart Of Midlothian':'Heart of Midlothian FC',
+        "Inter Club d'Escaldes":"Inter Club d'Escaldes", 'St. Truiden':'K. Sint-Truidense VV',
+        'Gent':'KAA Gent', 'CSKA Sofia':'PFK CSKA Sofia', 'Panathinaikos':'Panathinaikós AO',
+        'Pafos':'Páfos FC', 'Kairat Almaty':'Qairat FK', 'Riga':'Rīga FC',
+        'FC Iberia 1999':'SK Iberia 1999', 'Universitatea Craiova':'Universitatea Craiova CS',
+        'Omonia Nicosia':'AS Omónoia Leukosías', 'Ararat-Armenia':'Ararat-Armenia FA',
+        'Plzen':'FC Viktoria Plzeň', 'Lech Poznan':'KKS Lech Poznań',
+        'Hapoel Beer Sheva':"MH Hapoel Be'er Sheva", 'OFI':'OFI',
+        'Olympiakos Piraeus':'Olympiakós SFP', 'Levski Sofia':'PFK Levski Sofia',
+        'Anderlecht':'RSC Anderlecht', 'Torreense':'SC União Torreense',
+    }
+    assert len(pairs)==28
+    for api_name,polymarket_name in pairs.items():
+        assert football_name_variants(api_name)==football_name_variants(polymarket_name), api_name
+        assert football_name_variants(api_name), api_name
+
+
 def test_football_alias_collisions_stay_conservative():
     # 别名与另一支球队的键冲突时，冲突键回退为不匹配，不猜测归属。
     alpha={'name_en':'Alpha FC','name_zh':'甲队','aliases':['Shared Name']}

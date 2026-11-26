@@ -9,6 +9,8 @@
 
 亚冠精英联赛：`acle_teams.md` 是 API-Football（`league=17`）、Polymarket（Gamma `league=acle`）与中文名的三方对照表，共 35 支现役球队，`team_id` 均经 `GET /teams?id=` 逐条核实。注意 Polymarket 的 `providerId` 不是 API-Football `team_id`，不能互相替代。35 支已全部补录进 `football.json`：`name_en`/`name_zh` 用 API-Football 名与国内媒体通行译名，`aliases` 写入 Polymarket 队名，`leagues` 标注 `ACLE`。
 
+欧协联与欧罗巴：`uecl_uel_teams.md` 是 API-Football（欧协联 `league=848`、欧罗巴 `league=3`，2023/2024 赛季）、Polymarket 与中文名的三方对照表，共 28 支球队（欧协联 18、欧罗巴 10），`team_id` 均经 `GET /teams?id=` 逐条核实。28 支已全部补录进 `football.json`：`name_en` 用 API-Football 原名，`name_zh` 用国内媒体通行译名，`aliases` 写入 Polymarket 队名，`leagues` 标注 `UECL`/`UEL`。
+
 Polymarket 别名：赛事中心展示的是 Polymarket 的球队名（如 `FC Bayern München`、`Manchester United FC`、`CA River Plate`），与 API-Football 简称不同；已按真实 Gamma 数据把 12 个联赛的 Polymarket 队名写入对应条目的 `aliases`（Football 名称精确匹配与赛果绑定的别名扩展都会使用），并补入两支此前缺失的挪超球队（326 Vålerenga、334 IK Start，ID 经官方队徽核对）。2026-11 补齐意甲 20 支球队的 Polymarket 别名，例如 `FC Internazionale Milano`→国际米兰、`SSC Napoli`→那不勒斯、`US Sassuolo Calcio`→萨索洛。原缺条目的 Aalesunds FK、Málaga、Deportivo A Coruña、Marítimo、Académico de Viseu、Degerfors IF、Örgryte IS、PK-35、TPS、Aldosivi 已按 API-Football `team_id` 与官方队徽核实补录，并写入 Polymarket 队名别名。
 
 美职联（MLS）：补录 API-Football 联赛 253 在 2022–2024 赛季出现的 29 支球队，使用 API-Football 球队 ID、英文原名与队徽。不同拼写的 Polymarket MLS 球队目录名称写入别名，中文采用球天下体育 2024 美职联赛程用名。

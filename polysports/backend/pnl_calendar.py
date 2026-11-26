@@ -238,7 +238,6 @@ def _bucket() -> dict:
     return {
         'invested': Decimal(0),
         'settled_invested': Decimal(0),
-        'unpriced_invested': Decimal(0),
         'returned': Decimal(0),
         'settled_count': 0,
         'unpriced_count': 0,
@@ -248,18 +247,18 @@ def _bucket() -> dict:
 
 
 def _add(bucket: dict, item: dict) -> None:
+    state = item['state']
+    if state == UNPRICED:
+        # 盈亏待核实：投入与盈亏都按 0 计入合计，只保留笔数标注。
+        # 金额无处核实，既不并入 invested，也不并入 settled_invested。
+        bucket['unpriced_count'] += 1
+        return
     bucket['invested'] += item['cost']
     bucket['has_estimate'] = bucket['has_estimate'] or item['estimated']
-    state = item['state']
     if state == SETTLED:
         bucket['settled_invested'] += item['cost']
         bucket['returned'] += item['payout'] or Decimal(0)
         bucket['settled_count'] += 1
-    elif state == UNPRICED:
-        # 已结算但盈亏待核实：单独记投入，绝不并入 settled_invested，
-        # 否则盈亏会被算成全额亏损，等于凭空编造金额。
-        bucket['unpriced_invested'] += item['cost']
-        bucket['unpriced_count'] += 1
     else:
         bucket['pending_count'] += 1
 
@@ -279,7 +278,6 @@ def _public(bucket: dict) -> dict:
     return {
         'invested': _money(bucket['invested']),
         'settled_invested': _money(bucket['settled_invested']),
-        'unpriced_invested': _money(bucket['unpriced_invested']),
         'returned': _money(bucket['returned']),
         'pnl': _money(pnl),
         'tone': _tone(pnl, bucket['settled_count'], bucket['unpriced_count'], bucket['pending_count']),
@@ -309,7 +307,6 @@ def build_month(items: list[dict], first: date, following: date) -> list[dict]:
                     'empty': True,
                     'invested': '0',
                     'settled_invested': '0',
-                    'unpriced_invested': '0',
                     'returned': '0',
                     'pnl': '0',
                     'tone': 'empty',

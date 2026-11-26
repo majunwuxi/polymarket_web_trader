@@ -95,7 +95,7 @@ def test_build_month_covers_every_day_and_merges_same_day():
     # 空日不计盈亏，也不给出 profit/loss 语气。
     assert days[1] == {
         'day': '2026-11-02', 'empty': True, 'invested': '0', 'settled_invested': '0',
-        'unpriced_invested': '0', 'returned': '0', 'pnl': '0', 'tone': 'empty', 'settled_count': 0,
+        'returned': '0', 'pnl': '0', 'tone': 'empty', 'settled_count': 0,
         'unpriced_count': 0, 'pending_count': 0, 'has_estimate': False, 'by_sport': [],
     }
 
@@ -131,15 +131,13 @@ def test_build_month_pending_day_has_no_amount_tone():
     assert entry['has_estimate'] is True
 
 
-def test_build_month_unpriced_day_is_settled_but_excluded_from_pnl():
-    """赛果已确认但盘口口径无法推断：标为已结算、盈亏待核实，不计入返奖与盈亏合计。"""
+def test_build_month_unpriced_day_excludes_amounts_entirely():
+    """盈亏待核实：投入与盈亏都按 0 计入合计，只保留笔数标注。"""
     day = date(2026, 11, 14)
     entry = build_month(
         [item(day, 'football', '6.4974', state=UNPRICED, estimated=True)], day, date(2026, 11, 15)
     )[0]
-    assert entry['invested'] == '6.4974'
-    # 盈亏待核实的投入单独统计，绝不并入已结算投入，否则盈亏会被算成全额亏损。
-    assert entry['unpriced_invested'] == '6.4974'
+    assert entry['invested'] == '0'
     assert entry['settled_invested'] == '0'
     assert entry['returned'] == '0'
     assert entry['pnl'] == '0'
@@ -149,6 +147,8 @@ def test_build_month_unpriced_day_is_settled_but_excluded_from_pnl():
     # 不能因为盈亏待核实就标成待结算，也不能凭空给 profit/loss。
     assert entry['tone'] == 'unpriced'
     rows = {row['sport']: row for row in entry['by_sport']}
+    assert rows['football']['invested'] == '0'
+    assert rows['football']['pnl'] == '0'
     assert rows['football']['tone'] == 'unpriced'
     assert rows['football']['unpriced_count'] == 1
 
@@ -162,6 +162,8 @@ def test_build_month_unpriced_alongside_settled_keeps_amount_tone():
     entry = build_month(items, day, date(2026, 11, 15))[0]
     assert entry['settled_count'] == 1
     assert entry['unpriced_count'] == 1
+    # 待核实那笔的 6 不参与任何合计，投入与盈亏只来自可核实的一笔。
+    assert entry['invested'] == '10'
     assert entry['pnl'] == '5'
     assert entry['tone'] == 'profit'
 

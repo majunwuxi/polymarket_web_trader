@@ -66,6 +66,9 @@ const settledText=(entry:any)=>{
   return parts.join(' · ')
 }
 
+// 只有计入合计的投注才展示金额；盈亏待核实的投注投入与盈亏都按 0 处理，不显示数字。
+const countedAmount=(entry:any)=>entry.settled_count>0||entry.pending_count>0
+
 const selectedDay=()=>days.value.find(x=>x.day===selected.value)||null
 
 const toggle=(entry:any)=>{
@@ -142,9 +145,12 @@ onActivated(()=>{if(!activated){activated=true;return}void load()})
           >
             <b class="calendar-day">{{dayNumber(entry.day)}}</b>
             <template v-if="!entry.empty">
-              <span class="calendar-line">投入 {{entry.invested}}</span>
-              <span class="calendar-line">返奖 {{entry.returned}}</span>
-              <span class="calendar-line calendar-pnl">{{signed(entry.pnl)}}{{entry.pnl}}</span>
+              <!-- 盈亏待核实的投注不计入投入与盈亏，只保留笔数标注，避免用 0 冒充真实金额。 -->
+              <template v-if="countedAmount(entry)">
+                <span class="calendar-line">投入 {{entry.invested}}</span>
+                <span class="calendar-line">返奖 {{entry.returned}}</span>
+                <span class="calendar-line calendar-pnl">{{signed(entry.pnl)}}{{entry.pnl}}</span>
+              </template>
               <span class="calendar-state">{{settledText(entry)}}{{entry.has_estimate?' · 含估算':''}}</span>
             </template>
           </button>
@@ -153,19 +159,25 @@ onActivated(()=>{if(!activated){activated=true;return}void load()})
 
       <section v-if="selectedDay()" class="welcome-card calendar-detail" aria-label="当日明细">
         <h2>{{selectedDay()!.day}} 明细</h2>
-        <p class="muted">总计：投入 {{money(selectedDay()!.invested)}} · 返奖 {{money(selectedDay()!.returned)}} · 已结算盈亏 {{amount(selectedDay()!.pnl)}} pUSD</p>
+        <p v-if="countedAmount(selectedDay()!)" class="muted">总计：投入 {{money(selectedDay()!.invested)}} · 返奖 {{money(selectedDay()!.returned)}} · 已结算盈亏 {{amount(selectedDay()!.pnl)}} pUSD</p>
+        <p v-else class="muted">当日投注盈亏均待核实，投入与盈亏不计入合计。</p>
         <p v-if="selectedDay()!.unpriced_count" class="check-line tone-info">
-          当日有 {{selectedDay()!.unpriced_count}} 笔已结算但盈亏待核实：比赛已结束且赛果已确认，但该盘口口径无法按比分严格推断，金额不计入盈亏合计。
+          当日有 {{selectedDay()!.unpriced_count}} 笔已结算但盈亏待核实：比赛已结束且赛果已确认，但该盘口口径无法按比分严格推断，投入与盈亏均按 0 处理，不计入合计。
         </p>
         <div class="calendar-sport-rows">
           <article v-for="row in selectedDay()!.by_sport" :key="row.sport" class="market-card calendar-sport-row">
             <header>
               <h3>{{row.name}}</h3>
-              <span class="pnl-badge" :class="'pnl-'+row.tone">{{signed(row.pnl)}}{{row.pnl}} pUSD</span>
+              <span v-if="countedAmount(row)" class="pnl-badge" :class="'pnl-'+row.tone">{{signed(row.pnl)}}{{row.pnl}} pUSD</span>
+              <span v-else class="pnl-badge pnl-unpriced">盈亏待核实</span>
             </header>
-            <p>
+            <p v-if="countedAmount(row)">
               投入 {{money(row.invested)}} · 返奖 {{money(row.returned)}} · 已结算 {{row.settled_count}} 笔
               <span v-if="row.unpriced_count"> · 盈亏待核实 {{row.unpriced_count}} 笔</span>
+              <span v-if="row.pending_count"> · 待结算 {{row.pending_count}} 笔</span>
+            </p>
+            <p v-else>
+              盈亏待核实 {{row.unpriced_count}} 笔：投入与盈亏均按 0 处理，不计入合计
               <span v-if="row.pending_count"> · 待结算 {{row.pending_count}} 笔</span>
             </p>
             <p v-if="row.has_estimate" class="check-line tone-info">该运动包含成交明细未齐、按限价估算的成本。</p>

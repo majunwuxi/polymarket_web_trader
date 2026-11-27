@@ -163,6 +163,7 @@ def single_item(intent, related, fills) -> dict | None:
                 'away': getattr(away, 'name_zh', None) or getattr(away, 'source_name', None),
                 'market_question': getattr(market, 'question', None),
                 'outcome_label': getattr(outcome, 'label', None),
+                'result_won': won,
             }],
         } if isinstance(won, bool) and (_dec(intent.matched_size) or Decimal(0)) > 0 else None,
         'state': state,
@@ -201,7 +202,10 @@ def combo_item(row, data, *, expected_legs: int) -> dict | None:
             'id': str(row.id),
             'won': won,
             'legs': [
-                {key: leg.get(key) for key in ('home', 'away', 'market_question', 'outcome_label')}
+                {
+                    key: leg.get(key)
+                    for key in ('home', 'away', 'market_question', 'outcome_label', 'result_won')
+                }
                 for leg in legs
             ],
         } if row.state == 'confirmed' and isinstance(won, bool) else None,

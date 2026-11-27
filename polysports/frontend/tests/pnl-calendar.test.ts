@@ -61,8 +61,12 @@ describe('每日盈亏日历（模拟接口）', () => {
     const response = payload()
     Object.assign(response.data.days[0], {
       bets: {
-        won: [{ id: '1', kind: 'single', legs: [{ home: '主队', away: '客队', outcome_label: '主队胜' }] }],
-        lost: [{ id: '2', kind: 'combo', legs: [{ outcome_label: '小分' }, { outcome_label: '客队胜' }] }],
+        won: [{ id: '1', kind: 'single', legs: [{ home: '主队', away: '客队', outcome_label: '主队胜', result_won: true }] }],
+        lost: [{ id: '2', kind: 'combo', legs: [
+          { outcome_label: '小分', result_won: true },
+          { outcome_label: '客队胜', result_won: false },
+          { outcome_label: '大分', result_won: null },
+        ] }],
       },
     })
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(json(response))))
@@ -77,6 +81,8 @@ describe('每日盈亏日历（模拟接口）', () => {
     expect(groups[1].text()).toContain('投注失败（1 笔）')
     expect(groups[1].text()).toContain('选项 小分')
     expect(groups[1].text()).toContain('选项 客队胜')
+    expect(groups[0].get('.leg-result').text()).toBe('正确')
+    expect(groups[1].findAll('.leg-result').map(label => label.text())).toEqual(['正确', '错误', '待确认'])
     view.unmount()
   })
 

@@ -179,6 +179,9 @@ onActivated(()=>{if(!activated){activated=true;return}void load()})
                   {{[leg.home, leg.away].filter(Boolean).join(' 对 ')}}
                   <span v-if="leg.market_question"> · {{leg.market_question}}</span>
                   <span v-if="leg.outcome_label"> · 选项 {{leg.outcome_label}}</span>
+                  <span class="leg-result" :class="{ 'leg-correct': leg.result_won === true, 'leg-incorrect': leg.result_won === false }">
+                    {{leg.result_won === true ? '正确' : leg.result_won === false ? '错误' : '待确认'}}
+                  </span>
                 </li>
               </ul>
             </li>
@@ -210,3 +213,17 @@ onActivated(()=>{if(!activated){activated=true;return}void load()})
     </main>
   </div>
 </template>
+
+<style scoped>
+.leg-result {
+  display: inline-block;
+  margin-inline-start: .4rem;
+  padding: .05rem .35rem;
+  border-radius: .25rem;
+  background: #edf0f3;
+  color: #374151;
+  font-weight: 600;
+}
+.leg-correct { background: #dcfce7; color: #166534; }
+.leg-incorrect { background: #fee2e2; color: #991b1b; }
+</style>

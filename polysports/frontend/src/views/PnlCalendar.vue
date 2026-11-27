@@ -70,6 +70,10 @@ const settledText=(entry:any)=>{
 const countedAmount=(entry:any)=>entry.settled_count>0||entry.pending_count>0
 
 const selectedDay=()=>days.value.find(x=>x.day===selected.value)||null
+const betGroups = [
+  { key: 'won', label: '投注正确' },
+  { key: 'lost', label: '投注失败' },
+] as const
 
 const toggle=(entry:any)=>{
   if(entry.empty)return
@@ -152,6 +156,7 @@ onActivated(()=>{if(!activated){activated=true;return}void load()})
                 <span class="calendar-line calendar-pnl">{{signed(entry.pnl)}}{{entry.pnl}}</span>
               </template>
               <span class="calendar-state">{{settledText(entry)}}{{entry.has_estimate?' · 含估算':''}}</span>
+              <span v-if="entry.bets" class="calendar-state">中 {{entry.bets.won.length}} · 负 {{entry.bets.lost.length}}</span>
             </template>
           </button>
         </div>
@@ -164,6 +169,22 @@ onActivated(()=>{if(!activated){activated=true;return}void load()})
         <p v-if="selectedDay()!.unpriced_count" class="check-line tone-info">
           当日有 {{selectedDay()!.unpriced_count}} 笔已结算但盈亏待核实：比赛已结束且赛果已确认，但该盘口口径无法按比分严格推断，投入与盈亏均按 0 处理，不计入合计。
         </p>
+        <section v-for="group in betGroups" :key="group.key" class="market-card">
+          <h3>{{group.label}}（{{selectedDay()!.bets?.[group.key]?.length ?? 0}} 笔）</h3>
+          <ul v-if="selectedDay()!.bets?.[group.key]?.length">
+            <li v-for="bet in selectedDay()!.bets[group.key]" :key="bet.kind + bet.id">
+              <strong>{{bet.kind === 'single' ? '单场' : '组合'}}</strong>
+              <ul>
+                <li v-for="(leg, index) in bet.legs" :key="index">
+                  {{[leg.home, leg.away].filter(Boolean).join(' 对 ')}}
+                  <span v-if="leg.market_question"> · {{leg.market_question}}</span>
+                  <span v-if="leg.outcome_label"> · 选项 {{leg.outcome_label}}</span>
+                </li>
+              </ul>
+            </li>
+          </ul>
+          <p v-else class="muted">暂无记录</p>
+        </section>
         <div class="calendar-sport-rows">
           <article v-for="row in selectedDay()!.by_sport" :key="row.sport" class="market-card calendar-sport-row">
             <header>

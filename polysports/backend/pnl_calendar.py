@@ -155,6 +155,16 @@ def single_item(intent, related, fills) -> dict | None:
     return {
         'kind': 'single',
         'sport': game.sport,
+        'bet': {
+            'id': str(intent.id),
+            'won': won,
+            'legs': [{
+                'home': getattr(home, 'name_zh', None) or getattr(home, 'source_name', None),
+                'away': getattr(away, 'name_zh', None) or getattr(away, 'source_name', None),
+                'market_question': getattr(market, 'question', None),
+                'outcome_label': getattr(outcome, 'label', None),
+            }],
+        } if isinstance(won, bool) and (_dec(intent.matched_size) or Decimal(0)) > 0 else None,
         'state': state,
         'cost': cost,
         'payout': _dec(pnl.get('payout')) if settled else None,
@@ -162,7 +172,7 @@ def single_item(intent, related, fills) -> dict | None:
     }
 
 
-def combo_item(row, data) -> dict | None:
+def combo_item(row, data, *, expected_legs: int) -> dict | None:
     """一笔组合（过关票）的日历条目；跨运动组合归入 mixed，不重复计入足球或篮球。"""
     sport = _sport_of_combo(data)
     if sport is None:
@@ -175,6 +185,9 @@ def combo_item(row, data) -> dict | None:
     unpriced = bool(judged and not settled and pnl.get('tone') != 'na')
     state = SETTLED if settled else UNPRICED if unpriced else PENDING
     summary = data.get('buy_summary') or {}
+    won = data.get('by_score')
+    if won is True and len(legs) != expected_legs:
+        won = None
     cost = _dec(summary.get('cost'))
     estimated = bool(summary.get('estimated'))
     if cost is None:
@@ -184,6 +197,14 @@ def combo_item(row, data) -> dict | None:
     return {
         'kind': 'combo',
         'sport': sport,
+        'bet': {
+            'id': str(row.id),
+            'won': won,
+            'legs': [
+                {key: leg.get(key) for key in ('home', 'away', 'market_question', 'outcome_label')}
+                for leg in legs
+            ],
+        } if row.state == 'confirmed' and isinstance(won, bool) else None,
         'state': state,
         'cost': cost,
         'payout': _dec(pnl.get('payout')) if settled else None,
@@ -227,7 +248,10 @@ def collect_items(db: Session, start: datetime, end: datetime) -> list[dict]:
     if combos:
         prefetch = combo_prefetch(db, combos)
         for row in combos:
-            item = combo_item(row, combo_data(db, row, prefetch=prefetch))
+            item = combo_item(
+                row, combo_data(db, row, prefetch=prefetch),
+                expected_legs=len(prefetch['legs'].get(row.id, [])),
+            )
             if item is not None:
                 item['day'] = calendar_day(row.created_at)
                 items.append(item)
@@ -290,12 +314,20 @@ def _public(bucket: dict) -> dict:
 
 def build_month(items: list[dict], first: date, following: date) -> list[dict]:
     """把条目按归日分桶，返回当月每一天（包含无投注的空日）。"""
-    totals, by_sport = {}, {}
+    totals, by_sport, bets_by_day = {}, {}, {}
     for item in items:
         totals.setdefault(item['day'], _bucket())
         _add(totals[item['day']], item)
         sport_bucket = by_sport.setdefault(item['day'], {}).setdefault(item['sport'], _bucket())
         _add(sport_bucket, item)
+        if bet := item.get('bet'):
+            groups = bets_by_day.setdefault(item['day'], {'won': [], 'lost': []})
+            group = 'won' if bet['won'] else 'lost'
+            groups[group].append({
+                'id': bet['id'],
+                'kind': item['kind'],
+                'legs': bet['legs'],
+            })
 
     days, cursor = [], first
     while cursor < following:
@@ -319,6 +351,7 @@ def build_month(items: list[dict], first: date, following: date) -> list[dict]:
             )
         else:
             entry = {'day': cursor.isoformat(), 'empty': False, **_public(bucket)}
+            entry['bets'] = bets_by_day.get(cursor, {'won': [], 'lost': []})
             entry['by_sport'] = [
                 {'sport': sport, 'name': SPORT_NAMES[sport], **_public(by_sport[cursor][sport])}
                 for sport in SPORT_ORDER

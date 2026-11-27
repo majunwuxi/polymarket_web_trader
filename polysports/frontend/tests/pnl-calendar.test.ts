@@ -57,6 +57,29 @@ function payload() {
 }
 
 describe('每日盈亏日历（模拟接口）', () => {
+  it('在日期格显示胜负笔数，展开后按投注结果列出选项', async () => {
+    const response = payload()
+    Object.assign(response.data.days[0], {
+      bets: {
+        won: [{ id: '1', kind: 'single', legs: [{ home: '主队', away: '客队', outcome_label: '主队胜' }] }],
+        lost: [{ id: '2', kind: 'combo', legs: [{ outcome_label: '小分' }, { outcome_label: '客队胜' }] }],
+      },
+    })
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(json(response))))
+    const view = mount(PnlCalendar, { global: { plugins: [router] } })
+    await flushPromises()
+    const cell = view.get('button.calendar-cell')
+    expect(cell.text()).toContain('中 1 · 负 1')
+    await cell.trigger('click')
+    const groups = view.findAll('.calendar-detail > section')
+    expect(groups[0].text()).toContain('投注正确（1 笔）')
+    expect(groups[0].text()).toContain('选项 主队胜')
+    expect(groups[1].text()).toContain('投注失败（1 笔）')
+    expect(groups[1].text()).toContain('选项 小分')
+    expect(groups[1].text()).toContain('选项 客队胜')
+    view.unmount()
+  })
+
   it('渲染月份标题、七天表头与按盈亏着色的日期格', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(json(payload()))))
     const view = mount(PnlCalendar, { global: { plugins: [router] } })

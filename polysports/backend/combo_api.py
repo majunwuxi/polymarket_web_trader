@@ -72,6 +72,8 @@ def check_leg(request: Request, link_id: uuid.UUID, outcome_id: uuid.UUID):
                     'market_link_id': str(link_id),
                     'outcome_id': str(outcome_id),
                     'position_id': positions[outcome_id],
+                    'market_question': market.question,
+                    'outcome_label': outcome.label,
                     'accepting_orders': market.accepting_orders,
                     'builder_access': 'unknown',
                     'trading_available': False,

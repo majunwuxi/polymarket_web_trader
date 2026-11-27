@@ -85,6 +85,8 @@ POLYSPORTS_WALLETS=[{"label":"示例","wallet_address":"0x1111111111111111111111
 
 从 `polysports/` 运行 `uv run --locked --extra agent python -m backend.agent_tools`，以 stdio 接入 MCP 客户端。工具提供公开盘口查询和公开持仓估值。设置 `POLYSPORTS_AGENT_WALLETS`（逗号分隔的钱包地址）可允许查询指定钱包的公开组合资产。Agent 进程只需要公开钱包地址，交易提交继续使用网页界面。
 
+如需读取项目内赛事、组合选项、钱包余额和今日买入剩额，在 VPS 的 PolySports 凭据文件及本地 MCP 进程环境中设置相同的 `POLYSPORTS_AGENT_READ_TOKEN`。使用至少 32 字符的独立随机令牌，VPS 更新凭据后重启 API，客户端重启 MCP 以加载令牌。`project_games`、`project_combo_options` 和 `project_wallets` 用于获取项目 ID。`combo_draft` 会重新读取资金和额度、核验组合选项并返回草稿链接。草稿页面通过网页登录后打开，交易仍由用户在网页提交。
+
 ## 单场订单与凭据
 
 真实资金单场交易需要使用独立的受限 `.env` 或环境变量配置 `POLYSPORTS_WALLET_CREDENTIALS` JSON 对象，其键对应钱包的 `credential_ref`。每项包含 `private_key`；CLOB 的 `clob_api_key`、`clob_api_secret`、`clob_api_passphrase` 必须全部提供或全部省略，省略时由官方 SDK 获取。智能钱包还须配置 `POLYSPORTS_POLYGON_RPC_URL`，且钱包必须已部署在 Polygon 主网。智能钱包执行赎回时还必须提供完整 Builder 凭证，或 `relayer_api_key` + `relayer_api_key_address`；Relayer API Key 可在 Polymarket 账户 Settings → API Keys 创建，address 使用该 key 对应地址。**不要把真实私钥、凭证或带密钥的 RPC 地址提交到 Git，也不要在浏览器页面输入私钥。**

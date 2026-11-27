@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     database_url: SecretStr
     environment: Literal["development", "test", "production"] = "development"
     auth_secret: SecretStr
+    agent_read_token: SecretStr | None = None
     public_origin: str
     api_football_key: SecretStr | None = None
     balldontlie_key: SecretStr | None = None

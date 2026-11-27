@@ -86,6 +86,34 @@ async function initialize(){
   if(revision!==closeRevision)return
   if(typeof closeId!=='string'){
     direction.value='BUY';quantity.value=''
+    if(route.query.draft !== undefined){
+      legs.value=[]
+      const {draft, wallet: draftWallet, stake}=route.query
+      const ids=typeof draft==='string'?draft.split(','):[]
+      const uuid='[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}'
+      const pairPattern=new RegExp('^'+uuid+':'+uuid+'$','i')
+      if(ids.length<2||ids.length>50||new Set(ids).size!==ids.length||ids.some(id=>!pairPattern.test(id))
+        ||!wallets.value.some(item=>item.id===draftWallet)||typeof stake!=='string'||!/^\d{1,24}(?:\.\d{1,6})?$/.test(stake)||Number(stake)<1){
+        message.value='组合草稿参数不完整或无效。'
+        return
+      }
+      try{
+        const verified=await Promise.all(ids.map(async id=>{
+          const [market_link_id,outcome_id]=id.split(':')
+          const option=await api('/combo-legs/'+market_link_id+'/'+outcome_id)
+          if(!option.accepting_orders||!option.market_question||!option.outcome_label)throw new Error('草稿选项无法核实')
+          return {market_link_id,outcome_id,label:option.market_question+' · '+option.outcome_label}
+        }))
+        if(revision!==closeRevision)return
+        wallet.value=draftWallet as string
+        quantity.value=trim(stake)
+        legs.value=verified
+        message.value='已载入组合草稿，请核对钱包、选项和金额。'
+      }catch{
+        if(revision===closeRevision)message.value='组合草稿选项无法核实，请重新生成。'
+      }
+      return
+    }
     try{const saved=JSON.parse(localStorage.getItem(key)||'[]');legs.value=Array.isArray(saved)?saved:[]}catch{legs.value=[]}
     return
   }
@@ -102,11 +130,12 @@ async function initialize(){
 }
 async function initializeAndFocus(){
   await initialize()
+  void loadComboLimits()
   await nextTick()
   if(route.hash.startsWith('#combo-'))document.getElementById(route.hash.slice(1))?.scrollIntoView?.()
 }
 onMounted(()=>{try{pending.value=JSON.parse(localStorage.getItem(pendingKey)||'null')}catch{pending.value=null}void initializeAndFocus()})
-watch(()=>route.query.close,()=>{void initializeAndFocus()})
+watch(()=>[route.query.close,route.query.draft,route.query.wallet,route.query.stake],()=>{void initializeAndFocus()})
 let activated=false
 onActivated(()=>{if(!activated){activated=true;return}try{pending.value=JSON.parse(localStorage.getItem(pendingKey)||'null')}catch{pending.value=null}void initializeAndFocus()})
 onUnmounted(()=>{closeRevision++})

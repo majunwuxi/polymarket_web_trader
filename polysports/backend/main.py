@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 
@@ -27,6 +29,22 @@ from .config import get_settings
 from .database import make_engine
 
 logger = logging.getLogger("polysports")
+
+_ID = r'[0-9a-fA-F-]{36}'
+_AGENT_READ_PATH = re.compile(
+    rf'/api/v1/(?:games(?:/{_ID}/markets)?|wallets(?:/{_ID}/(?:status|trade-limits))?|combo-legs/{_ID}/{_ID})'
+)
+
+
+def agent_read_allowed(request: Request) -> bool:
+    if request.method != 'GET' or not _AGENT_READ_PATH.fullmatch(request.url.path):
+        return False
+    configured = request.app.state.settings.agent_read_token
+    scheme, _, token = request.headers.get('Authorization', '').partition(' ')
+    if not configured or scheme.lower() != 'bearer':
+        return False
+    expected = configured.get_secret_value()
+    return len(expected) >= 32 and secrets.compare_digest(token.encode(), expected.encode())
 
 
 def create_app() -> FastAPI:
@@ -74,9 +92,10 @@ def create_app() -> FastAPI:
         public = {"/api/v1/health/live", "/api/v1/auth/csrf", "/api/v1/auth/login"}
         try:
             if path.startswith("/api/v1/"):
-                session = None if path in public else await run_in_threadpool(auth.get_session, request)
+                agent_read = agent_read_allowed(request)
+                session = None if path in public or agent_read else await run_in_threadpool(auth.get_session, request)
                 request.state.admin_session = session
-                if path not in public and session is None:
+                if path not in public and session is None and not agent_read:
                     response = auth.error(request, 401, "UNAUTHENTICATED", "请先登录")
                 elif request.method in ("POST", "PUT", "PATCH", "DELETE") and not auth.check_csrf(request, session):
                     response = auth.error(request, 403, "CSRF_INVALID", "请求来源或 CSRF 校验失败")
@@ -90,7 +109,7 @@ def create_app() -> FastAPI:
             response = auth.error(
                 request, 503, "SERVICE_UNAVAILABLE", "服务暂不可用，请提供请求编号 " + request_id + " 以便排查"
             )
-        if path.startswith("/api/v1/auth/"):
+        if path.startswith("/api/v1/auth/") or request.headers.get('Authorization'):
             response.headers["Cache-Control"] = "no-store"
         response.headers["X-Request-ID"] = request_id
         return response

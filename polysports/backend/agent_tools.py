@@ -2,14 +2,157 @@
 
 import os
 import re
+import asyncio
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
+from urllib.parse import urlencode
+from uuid import UUID
+from typing import Literal
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
+from pydantic import BaseModel, Field
 
 server = FastMCP('PolySports market data')
 read_only = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 address_pattern = re.compile(r'0x[0-9a-fA-F]{40}')
+PROJECT_URL = 'https://example.invalid'
+
+
+async def project_read(path: str, params: dict | None = None) -> dict:
+    token = os.getenv('POLYSPORTS_AGENT_READ_TOKEN')
+    if not token:
+        raise ValueError('尚未配置 PolySports 只读令牌')
+    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
+        response = await client.get(
+            PROJECT_URL + '/api/v1' + path, params=params,
+            headers={'Authorization': 'Bearer ' + token},
+        )
+    if not response.is_success:
+        raise ValueError(f'PolySports 读取失败（HTTP {response.status_code}）')
+    return response.json()['data']
+
+
+@server.tool(annotations=read_only)
+async def project_games(sport: Literal['football', 'nba'], start: str, end: str, cursor: str | None = None) -> dict:
+    """List project games and their IDs for an ISO 8601 interval with explicit time zones."""
+    params = {'sport': sport, 'from': start, 'to': end, 'limit': 100}
+    if cursor:
+        params['cursor'] = cursor
+    return await project_read('/games', params)
+
+
+@server.tool(annotations=read_only)
+async def project_combo_options(game_id: UUID) -> dict:
+    """Find confirmed, open combo options and their project IDs for a game."""
+    data = await project_read(f'/games/{game_id}/markets')
+    return {'items': [
+        {
+            'market_link_id': item['link']['id'],
+            'question': market['question'],
+            'outcomes': [
+                {'outcome_id': outcome['id'], 'label': outcome['label']}
+                for outcome in market['outcomes']
+            ],
+        }
+        for item in data['items']
+        if item['link']['state'] == 'confirmed'
+        and (market := item['market'])['accepting_orders'] is True
+        and market['combo_enabled'] is not False
+    ]}
+
+
+@server.tool(annotations=read_only)
+async def project_wallets() -> dict:
+    """List project wallet IDs and labels for creating a combo draft."""
+    return await project_read('/wallets')
+
+
+@server.tool(annotations=read_only)
+async def project_wallet_budget(wallet_id: UUID) -> dict:
+    """Read current collateral balance and shared daily buy allowance for this wallet."""
+    wallet, limits = await asyncio.gather(
+        project_read(f'/wallets/{wallet_id}/status'),
+        project_read(f'/wallets/{wallet_id}/trade-limits'),
+    )
+    balance = wallet.get('collateral_balance')
+    if balance is None or wallet.get('availability') != 'allowed':
+        raise ValueError('无法核实钱包可用余额')
+    return {
+        'wallet': wallet['wallet'],
+        'wallet_available': str(balance),
+        'daily_remaining': limits['remaining_daily_usd'],
+        'resets_at': limits['resets_at'],
+    }
+
+
+class ConfirmationCheck(BaseModel):
+    confirmed: bool = Field(description='确认完成这次无资金操作的界面测试')
+
+
+@server.tool(annotations=read_only)
+async def test_combo_confirmation(ctx: Context) -> dict:
+    """Test the Codex confirmation interface without connecting to a wallet or submitting an order."""
+    result = await ctx.elicit('测试逐单确认。此操作不会连接钱包或发送订单。', ConfirmationCheck)
+    return {'action': result.action, 'confirmed': result.action == 'accept' and bool(result.data and result.data.confirmed)}
+
+
+approval_test_runs = 0
+
+
+@server.tool(annotations=ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False,
+))
+def test_combo_tool_approval() -> dict:
+    """Increment a temporary in-memory counter to test Codex write-tool approval. No wallet or order is used."""
+    global approval_test_runs
+    approval_test_runs += 1
+    return {'executed': True, 'test_runs': approval_test_runs, 'submitted_order': False}
+
+
+@server.tool(annotations=read_only)
+def combo_stake(wallet_available: str, daily_remaining: str | None = None) -> dict:
+    """Calculate a proposed combo stake in pUSD from current wallet funds and today's remaining limit."""
+    try:
+        available = Decimal(wallet_available)
+        remaining = Decimal(daily_remaining) if daily_remaining is not None else available
+    except InvalidOperation as exc:
+        raise ValueError('金额必须是十进制数字') from exc
+    if any(not amount.is_finite() or amount < 0 for amount in (available, remaining)):
+        raise ValueError('金额必须是有限的非负数')
+    cap = min(available, remaining)
+    if cap < 1:
+        return {'status': 'skip', 'stake_pusd': None, 'reason': '可用资金或今日剩余额度不足 1 pUSD'}
+    stake = min(cap, max(Decimal(1), available * Decimal('0.05')))
+    return {'status': 'proposed', 'stake_pusd': format(stake.quantize(Decimal('0.000001'), rounding=ROUND_DOWN), 'f')}
+
+
+class DraftLeg(BaseModel):
+    market_link_id: UUID
+    outcome_id: UUID
+
+
+@server.tool(annotations=read_only)
+async def combo_draft(wallet_id: UUID, legs: list[DraftLeg]) -> dict:
+    """Prepare a PolySports draft using confirmed project IDs and live wallet limits. Does not send an order."""
+    pairs = [f'{leg.market_link_id}:{leg.outcome_id}' for leg in legs]
+    if not 2 <= len(pairs) <= 50 or len(set(pairs)) != len(pairs):
+        raise ValueError('组合需要 2 至 50 个不同的选项')
+    budget = await project_wallet_budget(wallet_id)
+    result = combo_stake(budget['wallet_available'], budget['daily_remaining'])
+    if result['status'] == 'proposed':
+        options = await asyncio.gather(*(
+            project_read(f'/combo-legs/{leg.market_link_id}/{leg.outcome_id}') for leg in legs
+        ))
+        if any(not option.get('accepting_orders') for option in options):
+            raise ValueError('草稿包含已经停单的选项')
+        query = urlencode({'wallet': str(wallet_id), 'stake': result['stake_pusd'], 'draft': ','.join(pairs)})
+        result.update(
+            url=PROJECT_URL + '/combos?' + query,
+            wallet=budget['wallet'],
+            legs=[{key: option[key] for key in ('market_question', 'outcome_label')} for option in options],
+        )
+    return result
 
 
 async def read_public(url, params):

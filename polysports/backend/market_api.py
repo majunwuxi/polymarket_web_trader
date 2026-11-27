@@ -426,6 +426,19 @@ def wallet_status(request: Request, wallet_id_value: uuid.UUID, fresh: bool = Fa
         result['diagnostic'] = {'code': 'credentials_missing', 'message': WALLET_DIAGNOSTICS['credentials_missing']}
         if fresh:
             result['steps'].append({'name': 'credentials', 'state': 'failed', 'elapsed_ms': 0, 'attempts': 1})
+    if (
+        result['collateral_balance'] is None
+        and result['availability'] == 'allowed'
+        and wallet.wallet_type == 'DEPOSIT_WALLET'
+        and request.app.state.settings.polygon_rpc_url
+    ):
+        from .combo_gateway import combo_wallet_balance
+
+        try:
+            result['collateral_balance'] = combo_wallet_balance(request.app.state.settings, wallet)
+            result['checked_at'] = datetime.now(UTC).isoformat()
+        except Exception:
+            pass  # Preserve the SDK diagnostic when neither source returns a balance.
     return ok(request, result)
 
 

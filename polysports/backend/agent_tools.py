@@ -19,8 +19,23 @@ address_pattern = re.compile(r'0x[0-9a-fA-F]{40}')
 PROJECT_URL = 'https://example.invalid'
 
 
+def project_read_token() -> str | None:
+    name = 'POLYSPORTS_AGENT_READ_TOKEN'
+    token = os.getenv(name)
+    if token or os.name != 'nt':
+        return token
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as key:
+            value, _ = winreg.QueryValueEx(key, name)
+    except OSError:
+        return None
+    return value if isinstance(value, str) else None
+
+
 async def project_read(path: str, params: dict | None = None) -> dict:
-    token = os.getenv('POLYSPORTS_AGENT_READ_TOKEN')
+    token = project_read_token()
     if not token:
         raise ValueError('尚未配置 PolySports 只读令牌')
     async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
@@ -77,7 +92,8 @@ async def project_wallet_budget(wallet_id: UUID) -> dict:
     )
     balance = wallet.get('collateral_balance')
     if balance is None or wallet.get('availability') != 'allowed':
-        raise ValueError('无法核实钱包可用余额')
+        diagnostic = wallet.get('diagnostic') or {}
+        raise ValueError(diagnostic.get('message') or '无法核实钱包可用余额')
     return {
         'wallet': wallet['wallet'],
         'wallet_available': str(balance),

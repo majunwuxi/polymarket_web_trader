@@ -2,6 +2,7 @@
 
 import threading
 import time
+from decimal import Decimal, localcontext
 
 from polymarket import BuilderApiKey
 
@@ -28,6 +29,33 @@ def _polygon_web3(url):
     with _WEB3_LOCK:
         _WEB3_CACHE[url] = (w3, time.monotonic() + WEB3_TTL_SECONDS)
     return w3
+
+
+def _combo_collateral(w3):
+    from web3 import Web3
+
+    return w3.eth.contract(
+        address=Web3.to_checksum_address('0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'),
+        abi=[
+            {
+                'type': 'function', 'name': 'balanceOf', 'stateMutability': 'view',
+                'inputs': [{'name': 'owner', 'type': 'address'}], 'outputs': [{'type': 'uint256'}],
+            },
+            {
+                'type': 'function', 'name': 'allowance', 'stateMutability': 'view',
+                'inputs': [{'name': 'owner', 'type': 'address'}, {'name': 'spender', 'type': 'address'}],
+                'outputs': [{'type': 'uint256'}],
+            },
+        ],
+    )
+
+
+def combo_wallet_balance(settings, wallet):
+    from web3 import Web3
+
+    w3 = _polygon_web3(settings.polygon_rpc_url.get_secret_value())
+    raw = _combo_collateral(w3).functions.balanceOf(Web3.to_checksum_address(wallet.wallet_address)).call()
+    return format(Decimal(raw).scaleb(-6), 'f')
 
 
 class ComboGateway(Gateway):
@@ -61,8 +89,6 @@ class ComboGateway(Gateway):
 
     def ensure_funding(self, quote, direction):
         """只读验证实际转移所需余额及 Exchange V3 授权。"""
-        from decimal import Decimal, localcontext
-
         from web3 import Web3
 
         from .trading_gateway import TradingError
@@ -78,25 +104,7 @@ class ComboGateway(Gateway):
             if raw <= 0 or raw != raw.to_integral_value():
                 raise ValueError('invalid amount')
             if direction == 'BUY':
-                abi = [
-                    {
-                        'type': 'function',
-                        'name': 'balanceOf',
-                        'stateMutability': 'view',
-                        'inputs': [{'name': 'owner', 'type': 'address'}],
-                        'outputs': [{'type': 'uint256'}],
-                    },
-                    {
-                        'type': 'function',
-                        'name': 'allowance',
-                        'stateMutability': 'view',
-                        'inputs': [{'name': 'owner', 'type': 'address'}, {'name': 'spender', 'type': 'address'}],
-                        'outputs': [{'type': 'uint256'}],
-                    },
-                ]
-                contract = w3.eth.contract(
-                    address=Web3.to_checksum_address('0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'), abi=abi
-                )
+                contract = _combo_collateral(w3)
                 balance = contract.functions.balanceOf(wallet).call()
                 approved = contract.functions.allowance(wallet, exchange).call() >= int(raw)
             else:

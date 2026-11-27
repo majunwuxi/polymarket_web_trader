@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from datetime import UTC, datetime
@@ -29,6 +30,7 @@ from .models import (
 from .scheduler import db_now
 
 router = APIRouter(prefix='/api/v1')
+logger = logging.getLogger('polysports')
 
 
 def ok(request, data):
@@ -61,6 +63,10 @@ def live_markets(request: Request, game_id: uuid.UUID):
         )
         return ok(request, data)
     except SourceError as exc:
+        logger.warning(
+            'live_markets_failed request_id=%s game_id=%s source_id=%s reason=%s',
+            request.state.request_id, game_id, source_id, exc.code,
+        )
         if exc.code == 'ambiguous_game':
             return auth.error(request, 409, 'MARKET_MATCH_AMBIGUOUS', '找到多个可能的比赛，无法确定市场归属')
         return auth.error(request, 503, 'MARKETS_UNAVAILABLE', 'Polymarket 市场查询失败，请稍后重试')

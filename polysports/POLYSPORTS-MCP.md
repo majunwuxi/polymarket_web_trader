@@ -4,66 +4,38 @@
 
 ## 在新 Windows 电脑安装
 
-已有 VPS 正常运行时，新电脑只需配置本地 MCP 和同一条只读令牌。
+从本仓库下载 [PolySports MCP Windows 独立安装包](./PolySports-MCP-Windows.zip)。新电脑无需克隆仓库，现有 VPS 无需重新部署。首次安装需要联网下载 Python 和锁定的依赖。
 
-### 1. 安装依赖并下载项目
+### 1. 检查 Codex 和 uv
 
-安装 Codex 桌面端，并确认 PowerShell 可以运行 `codex --version`。Git 或 uv 已安装时，跳过对应命令。
-
-```powershell
-winget install --id Git.Git -e
-winget install --id astral-sh.uv -e
-```
-
-重新打开 PowerShell，执行：
+如果电脑已经安装 Codex 桌面版，继续使用即可。打开 PowerShell 检查：
 
 ```powershell
-$repo = Join-Path $env:USERPROFILE 'polymarket_web_trader'
-git clone https://github.com/majunwuxi/polymarket_web_trader.git "$repo"
-$project = Join-Path $repo 'polysports'
-
-uv python install 3.12
-uv --directory "$project" sync --locked --extra agent --python 3.12
+codex --version
+uv --version
 ```
 
-已有仓库时，跳过克隆，将 `$repo` 改为实际目录。若 GitHub 要求登录，请使用有仓库访问权限的账号。
+- 能运行 `codex --version`，就可以用安装脚本注册 MCP。
+- 能打开桌面版但 PowerShell 找不到 `codex` 时，可以按文末官方文档安装 Codex CLI，再运行脚本。日常使用仍在桌面聊天里。
+- 找不到 `uv` 时，执行 `winget install --id astral-sh.uv -e`，然后重新打开 PowerShell。
 
-### 2. 注册 MCP
+### 2. 解压并安装
 
-在同一个 PowerShell 窗口执行：
+将 ZIP 解压到计划长期保留的目录，例如 `C:\Tools\PolySports-MCP`。Codex 每次启动 MCP 时都会使用该目录。
+
+在解压目录打开 PowerShell，执行：
 
 ```powershell
-$uvExe = (Get-Command uv -CommandType Application).Source
-codex mcp add polysports -- "$uvExe" --directory "$project" run --locked --extra agent --python 3.12 python -m backend.agent_tools
-codex mcp get polysports
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1 -SetToken
 ```
 
-看到 `enabled: true` 和 `transport: stdio` 表示注册成功。
+等隐藏输入提示出现后，粘贴与 VPS 相同的完整 `POLYSPORTS_AGENT_READ_TOKEN` 并回车。Windows MCP 可以读取用户级环境变量。已保存有效令牌时可省略 `-SetToken`。如需用独立安装包替换已有 `polysports` 注册，再加上 `-Replace`。
 
-### 3. 保存只读令牌
+安装成功后，脚本会显示 `enabled: true` 和 `transport: stdio`。
 
-使用 VPS 上配置的同一条 `POLYSPORTS_AGENT_READ_TOKEN`。等提示出现后粘贴完整令牌并回车，输入会隐藏。
+### 3. 验证
 
-```powershell
-$agentToken = Read-Host '输入与 VPS 相同的 PolySports 只读令牌' -AsSecureString
-if ($agentToken.Length -ge 32) {
-    [Environment]::SetEnvironmentVariable(
-        'POLYSPORTS_AGENT_READ_TOKEN',
-        [System.Net.NetworkCredential]::new('', $agentToken).Password,
-        'User'
-    )
-    Write-Output '令牌已保存'
-} else {
-    Write-Output '未保存，请输入完整令牌'
-}
-Remove-Variable agentToken
-```
-
-令牌无需发到聊天里。Windows MCP 可以直接读取用户级环境变量。
-
-### 4. 验证
-
-完全退出并重启 Codex，开新对话输入：
+完全退出并重启 Codex 桌面版，开新对话输入：
 
 > 调用 `polysports.project_wallets`，然后用 `polysports.project_wallet_budget` 读取「我的钱包」的可用余额和今日买入剩额。
 

@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from .sports_sources import SourceError, timestamp
+from .sports_sources import SourceError, network_error_code, timestamp
 
 
 @dataclass(frozen=True)
@@ -270,8 +270,10 @@ def discover(
             body = response.json()
         except httpx.TimeoutException as exc:
             raise SourceError('timeout') from exc
-        except (httpx.RequestError, ValueError) as exc:
-            raise SourceError('network_or_invalid_json') from exc
+        except httpx.RequestError as exc:
+            raise SourceError(network_error_code(exc)) from exc
+        except ValueError as exc:
+            raise SourceError('invalid_json') from exc
         if not isinstance(body, dict):
             raise SourceError('invalid_pagination')
         rows = body.get('events')

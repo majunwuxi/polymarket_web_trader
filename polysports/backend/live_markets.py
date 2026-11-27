@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 import httpx
 
 from .gamma import fetch_supplemental_event, normal
-from .sports_sources import SourceError, retry_delay, timestamp
+from .sports_sources import SourceError, network_error_code, retry_delay, timestamp
 
 SUPPORTED_MARKET_TYPES = frozenset({'moneyline', 'spreads', 'totals'})
 _EVENT_SLUG = re.compile(r'[A-Za-z0-9-]{1,250}')
@@ -189,8 +189,10 @@ def fetch_live_markets(
             body = response.json()
         except httpx.TimeoutException as exc:
             raise SourceError('timeout') from exc
-        except (httpx.RequestError, ValueError) as exc:
-            raise SourceError('network_or_invalid_json') from exc
+        except httpx.RequestError as exc:
+            raise SourceError(network_error_code(exc)) from exc
+        except ValueError as exc:
+            raise SourceError('invalid_json') from exc
         if not isinstance(body, dict):
             raise SourceError('invalid_pagination')
         rows, cursor = body.get('events'), body.get('next_cursor')

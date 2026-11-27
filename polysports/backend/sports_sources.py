@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ssl
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -14,6 +15,17 @@ class SourceError(Exception):
         self.code = code
         self.retry_after_seconds = retry_after_seconds
         super().__init__(code)
+
+
+def network_error_code(exc: httpx.RequestError) -> str:
+    cause: BaseException | None = exc
+    while cause is not None:
+        if isinstance(cause, ConnectionResetError):
+            return 'connection_reset'
+        if isinstance(cause, ssl.SSLError):
+            return 'tls_error'
+        cause = cause.__cause__
+    return 'network_error'
 
 
 def retry_delay(response: httpx.Response) -> int:

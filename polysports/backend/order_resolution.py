@@ -4,7 +4,7 @@
 以及 Polymarket data-api 终态二元赔付给出的胜负（市场结算结果）。理论上两者一致；
 只有一致时才确认应结算金额，冲突时并列展示两个结果并要求人工核实，不掩盖差异。
 
-赛果判断覆盖系统实际接受的三类全场市场：胜负（moneyline）、大小分/总进球
+赛果判断覆盖系统实际接受的三类全场市场：胜平负（moneyline）、大小分/总进球
 （totals）、以及选项明确写出让分数的让分盘（spreads）。半场、局节、单队、
 球员和盘口口径不明确的市场一律不推断，返回 None 与具体原因。
 
@@ -217,6 +217,17 @@ def judge_score_detail(*, sport, question, outcome_label, home, away, home_score
                     f'{outcome_label.strip()} {"获胜" if won else "未获胜"}',
                 )
         if sport == 'football':
+            draw = re.fullmatch(r'will (.+) (?:vs|v|versus) (.+) end in a draw(?: on \d{4} \d{2} \d{2})?', qnames)
+            if draw and label in ('yes', 'no') and (
+                (_team_in(draw.group(1), h, a), _team_in(draw.group(2), h, a))
+                in (('home', 'away'), ('away', 'home'))
+            ):
+                won = (home_score == away_score) == (label == 'yes')
+                return (
+                    won,
+                    f'全场平局命题：{home} {home_score}:{away_score} {away}，'
+                    f'{outcome_label.strip()} {"获胜" if won else "未获胜"}',
+                )
             matched = re.fullmatch(r'will (.+) win on \d{4} \d{2} \d{2}', qnames)
             picked = _team_in(matched.group(1), h, a) if matched else None
             if picked and label in ('yes', 'no'):

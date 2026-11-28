@@ -10,6 +10,22 @@ from backend.sports_sources import SourceError
 CONDITION='0x'+'a'*64
 
 
+@pytest.mark.parametrize(('scores', 'label', 'status', 'expected'), [
+    ((0, 0), 'Yes', 'FT', True),
+    ((2, 2), 'No', 'FT', False),
+    ((2, 1), 'Yes', 'FT', False),
+    ((0, 1), 'No', 'FT', True),
+    ((1, 1), 'Yes', 'PEN', None),
+])
+def test_football_full_time_draw_market(scores, label, status, expected):
+    result, _ = judge_score_detail(
+        sport='football', question='Will Stade Brestois 29 vs. Paris FC end in a draw?',
+        outcome_label=label, home='Stade Brestois 29', away='Paris FC',
+        home_score=scores[0], away_score=scores[1], provider_status=status,
+    )
+    assert result is expected
+
+
 def read(body,index=0):
     with httpx.Client(transport=httpx.MockTransport(lambda _:httpx.Response(200,json=body))) as client:
         return read_resolution(client,CONDITION,index)

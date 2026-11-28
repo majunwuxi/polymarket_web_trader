@@ -224,6 +224,8 @@ sudo systemctl reload nginx
 
 如果 `nginx -t` 报 `cannot load certificate "/etc/letsencrypt/live/sports.example.com/fullchain.pem"`，说明忘记了把占位域名替换成实际域名：此时磁盘上的配置无效，但正在运行的 Nginx 仍使用旧配置；修正域名或从 `polysports.bak` 恢复后再重载，不要重启 Nginx。
 
+Nginx 模板 CSP 的 `img-src` 已放行队徽实际使用的 `media.api-sports.io`、`cdn.nba.com`、`polymarket-upload.s3.*.amazonaws.com`、`upload.wikimedia.org` 与 `thumb.wikimedia.org`。新增其他图片来源时必须同步扩充该列表，否则图片会被浏览器拦截并显示为“队徽待补充”。
+
 生产环境中，直接访问 API 的 `/docs`、`/redoc` 与 `/openapi.json` 会返回 404，这是预期行为；开发/测试环境仍可访问。注意经 Nginx 的 `https://域名/docs` 属于前端 SPA 路由（Nginx 只把 `/api/` 代理给 FastAPI），会返回 `index.html` 的 200，不能据此判断 API 文档是否暴露；应直接检查 `curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/docs`。MCP 分发方式也有变化：仓库不再提供 `PolySports-MCP-Windows.zip`，客户端需从源码运行并设置 `POLYSPORTS_BASE_URL`（HTTPS 站点地址），详见 [polysports/POLYSPORTS-MCP.md](polysports/POLYSPORTS-MCP.md)。该域名曾出现在公开仓库历史中，建议在 Nginx 前叠加来源 IP 白名单或 Zero Trust，并轮换 `POLYSPORTS_AGENT_READ_TOKEN`。
 
 **远程历史被重写时**：若上游执行过 `git push --force`（例如清除已泄露信息），VPS 上的 `git pull --ff-only` 会因本地与远程历史分叉而失败。确认 `/opt/polysports-src` 没有本地改动后，改用下面的命令对齐到新历史，不要再 merge/rebase 把旧提交带回：

@@ -220,6 +220,16 @@ sudo systemctl reload nginx
 
 生产环境会拒绝 `/docs`、`/redoc` 与 `/openapi.json`（返回 404），这是预期行为；开发/测试环境仍可访问。MCP 分发方式也有变化：仓库不再提供 `PolySports-MCP-Windows.zip`，客户端需从源码运行并设置 `POLYSPORTS_BASE_URL`（HTTPS 站点地址），详见 [polysports/POLYSPORTS-MCP.md](polysports/POLYSPORTS-MCP.md)。该域名曾出现在公开仓库历史中，建议在 Nginx 前叠加来源 IP 白名单或 Zero Trust，并轮换 `POLYSPORTS_AGENT_READ_TOKEN`。
 
+**远程历史被重写时**：若上游执行过 `git push --force`（例如清除已泄露信息），VPS 上的 `git pull --ff-only` 会因本地与远程历史分叉而失败。确认 `/opt/polysports-src` 没有本地改动后，改用下面的命令对齐到新历史，不要再 merge/rebase 把旧提交带回：
+
+```bash
+cd /opt/polysports-src
+sudo git fetch origin
+sudo git reset --hard origin/main
+```
+
+对齐后仍须按上方流程重新构建前端、重新安装 systemd/Nginx 配置并重启服务。
+
 后端 `.py` 改动必须重启 `polysports-api.service` 与 `polysports-worker.service` 才会生效；仅 `git pull` 不会重载已加载的模块。若该版本包含新增表（例如 `combo_fills`），迁移未成功就启动 API，列表接口会直接报 `relation "combo_fills" does not exist`；此时先修复迁移，不要靠重启 API 重试。Nginx 的 `index.html` 应设为不缓存（见 `deploy/nginx/polysports.conf` 的 `location = /index.html`）；更新该配置后需重新安装并执行 `sudo nginx -t && sudo systemctl reload nginx`。浏览器仍显示旧界面时，先用无痕窗口或强制刷新（Ctrl+Shift+R）确认；带 hash 的 JS 可长期缓存，入口 `index.html` 不可缓存。
 
 **升级时 `systemctl start` 不会重跑迁移**：`polysports-migrate.service` 为 `Type=oneshot` + `RemainAfterExit=yes`，首次成功后长期保持 `active (exited)`；此时 `systemctl start` 被 systemd 视为已启动而直接返回，`ExecStart` 不会再次执行。典型症状是 `systemctl status` 的 Active 时间仍是几小时前、日志停在上一版 `Running upgrade ...`、`SELECT version_num FROM alembic_version` 不前进，随后 `SELECT count(*) FROM combo_fills` 报 `relation "combo_fills" does not exist`，API 的列表接口 500。含新迁移的升级必须用 `systemctl restart polysports-migrate.service`（或先 `stop` 再 `start`），并逐项核对：status 的 Active 时间是本次、日志出现 `Running upgrade ... -> <目标 revision>`、数据库 `version_num` 等于仓库 `alembic heads`、新表存在。首次安装时服务处于 inactive，`start` 才有效（见第 3 节）。未确认迁移成功前不要启动 API，也不要靠反复重启 API 来绕过缺表错误。

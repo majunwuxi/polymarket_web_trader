@@ -212,11 +212,17 @@ cd /opt/polysports-src
 # systemd 单元新增了 AGENT_READ_TOKEN 与交易限额变量的 UnsetEnvironment，必须重新安装并重载
 sudo install -m 0644 polysports/deploy/systemd/polysports-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-# Nginx 模板新增 Content-Security-Policy，必须重新安装并校验后重载
+# Nginx 模板新增 Content-Security-Policy，但模板里的 sports.example.com 只是占位符。
+# 已有站点不要直接覆盖：先备份，装入后必须替换为实际域名，再校验和重载。
+sudo cp -a /etc/nginx/sites-available/polysports /etc/nginx/sites-available/polysports.bak
 sudo install -m 0644 polysports/deploy/nginx/polysports.conf /etc/nginx/sites-available/polysports
+sudo ls -1 /etc/letsencrypt/live/          # 确认真实证书目录名
+sudo sed -i 's/sports.example.com/<实际域名>/g' /etc/nginx/sites-available/polysports
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+
+如果 `nginx -t` 报 `cannot load certificate "/etc/letsencrypt/live/sports.example.com/fullchain.pem"`，说明忘记了把占位域名替换成实际域名：此时磁盘上的配置无效，但正在运行的 Nginx 仍使用旧配置；修正域名或从 `polysports.bak` 恢复后再重载，不要重启 Nginx。
 
 生产环境会拒绝 `/docs`、`/redoc` 与 `/openapi.json`（返回 404），这是预期行为；开发/测试环境仍可访问。MCP 分发方式也有变化：仓库不再提供 `PolySports-MCP-Windows.zip`，客户端需从源码运行并设置 `POLYSPORTS_BASE_URL`（HTTPS 站点地址），详见 [polysports/POLYSPORTS-MCP.md](polysports/POLYSPORTS-MCP.md)。该域名曾出现在公开仓库历史中，建议在 Nginx 前叠加来源 IP 白名单或 Zero Trust，并轮换 `POLYSPORTS_AGENT_READ_TOKEN`。
 

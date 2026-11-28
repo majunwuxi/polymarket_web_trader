@@ -6,9 +6,9 @@ import {formatDateTimeSeconds} from '../utils/format'
 import {onActivated,onDeactivated,onMounted,ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {session,logout,clearSession,ApiError} from '../auth'
+import {api} from '../api'
 type Wallet={id:string;label:string;wallet_address:string;signer_address:string;wallet_type:string}
 const router=useRouter(),menuOpen=ref(false),wallets=ref<Wallet[]>([]),selected=ref<any>(null),message=ref('')
-async function api(path:string){const r=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store'});const data=await r.json();if(!r.ok)throw new Error();return data.data}
 async function load(){try{wallets.value=(await api('/wallets')).items}catch{message.value='钱包列表加载失败。'}}
 const checking=ref(false)
 async function status(wallet:Wallet){
@@ -39,15 +39,13 @@ async function loadDeposit(id:string){
   depositQr.value=''
   depositMessage.value=''
   try{
-    const response=await fetch('/api/v1/wallets/'+encodeURIComponent(id)+'/deposit-address',{
-      method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':session.csrf},
+    const data=await api('/wallets/'+encodeURIComponent(id)+'/deposit-address',{
+      method:'POST',headers:{'X-CSRF-Token':session.csrf},
     })
-    const body=await response.json()
-    if(!response.ok)throw new Error(body?.error?.message || '充值地址暂不可用')
-    deposit.value={...body.data,walletId:id}
+    deposit.value={...data,walletId:id}
     try{
       const {toDataURL}=await import('qrcode')
-      depositQr.value=await toDataURL(body.data.address,{width:240,margin:4,errorCorrectionLevel:'M'})
+      depositQr.value=await toDataURL(data.address,{width:240,margin:4,errorCorrectionLevel:'M'})
     }catch{
       depositMessage.value='二维码暂不可用，可复制下方充值地址。'
     }

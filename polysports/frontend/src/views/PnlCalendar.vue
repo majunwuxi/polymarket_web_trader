@@ -2,6 +2,7 @@
 import {onActivated,onMounted,ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {session,logout,clearSession,ApiError} from '../auth'
+import {api} from '../api'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppTopbar from '../components/AppTopbar.vue'
 
@@ -18,7 +19,6 @@ const loaded=ref(false)
 
 function currentMonth(){const now=new Date(Date.now()+8*3600*1000);return now.getUTCFullYear()+'-'+String(now.getUTCMonth()+1).padStart(2,'0')}
 
-async function api(path:string){const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store'});const body=await response.json();if(!response.ok)throw new Error(body?.error?.message||'请求失败');return body.data}
 
 function shift(delta:number){
   const [year,mon]=month.value.split('-').map(Number)

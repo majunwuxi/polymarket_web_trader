@@ -4,11 +4,12 @@ import json
 import logging
 import re
 import secrets
+import time
 import uuid
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
@@ -34,6 +35,10 @@ _ID = r'[0-9a-fA-F-]{36}'
 _AGENT_READ_PATH = re.compile(
     rf'/api/v1/(?:games(?:/{_ID}/markets)?|wallets(?:/{_ID}/(?:status|trade-limits))?|combo-legs/{_ID}/{_ID})'
 )
+_DOCS_PATHS = {'/docs', '/docs/', '/docs/oauth2-redirect', '/redoc', '/openapi.json'}
+_AGENT_FAILURE_LIMIT = 20
+_AGENT_FAILURE_WINDOW = 60
+_agent_token_failures: dict[str, list[float]] = {}
 
 
 def agent_read_allowed(request: Request) -> bool:
@@ -45,6 +50,27 @@ def agent_read_allowed(request: Request) -> bool:
         return False
     expected = configured.get_secret_value()
     return len(expected) >= 32 and secrets.compare_digest(token.encode(), expected.encode())
+
+
+def agent_token_failure(request: Request) -> bool:
+    """记录脱敏的只读令牌失败并按来源 IP 限流；返回是否已超过阈值。"""
+    now = time.monotonic()
+    source = request.client.host if request.client else 'unknown'
+    history = [item for item in _agent_token_failures.get(source, []) if item > now - _AGENT_FAILURE_WINDOW]
+    history.append(now)
+    _agent_token_failures[source] = history
+    logger.warning(json.dumps({
+        'event': 'agent_token_rejected',
+        'source': source,
+        'method': request.method,
+        'path': request.url.path,
+        'attempts': len(history),
+    }))
+    if len(_agent_token_failures) > 1024:
+        cutoff = now - _AGENT_FAILURE_WINDOW
+        for stale in [key for key, value in _agent_token_failures.items() if not value or value[-1] <= cutoff]:
+            _agent_token_failures.pop(stale, None)
+    return len(history) > _AGENT_FAILURE_LIMIT
 
 
 def create_app() -> FastAPI:
@@ -91,16 +117,29 @@ def create_app() -> FastAPI:
         path = request.url.path
         public = {"/api/v1/health/live", "/api/v1/auth/csrf", "/api/v1/auth/login"}
         try:
-            if path.startswith("/api/v1/"):
+            settings = getattr(request.app.state, 'settings', None)
+            if path in _DOCS_PATHS and settings is not None and settings.environment == 'production':
+                # 生产环境不暴露交互式文档与 OpenAPI 描述。
+                response = Response(status_code=404)
+            elif path.startswith("/api/v1/"):
                 agent_read = agent_read_allowed(request)
-                session = None if path in public or agent_read else await run_in_threadpool(auth.get_session, request)
-                request.state.admin_session = session
-                if path not in public and session is None and not agent_read:
-                    response = auth.error(request, 401, "UNAUTHENTICATED", "请先登录")
-                elif request.method in ("POST", "PUT", "PATCH", "DELETE") and not auth.check_csrf(request, session):
-                    response = auth.error(request, 403, "CSRF_INVALID", "请求来源或 CSRF 校验失败")
+                unauthorized_agent = (
+                    not agent_read
+                    and request.method == 'GET'
+                    and bool(request.headers.get('Authorization'))
+                    and bool(_AGENT_READ_PATH.fullmatch(path))
+                )
+                if unauthorized_agent and agent_token_failure(request):
+                    response = auth.error(request, 429, "RATE_LIMITED", "只读令牌验证失败过于频繁，请稍后重试", 60)
                 else:
-                    response = await call_next(request)
+                    session = None if path in public or agent_read else await run_in_threadpool(auth.get_session, request)
+                    request.state.admin_session = session
+                    if path not in public and session is None and not agent_read:
+                        response = auth.error(request, 401, "UNAUTHENTICATED", "请先登录")
+                    elif request.method in ("POST", "PUT", "PATCH", "DELETE") and not auth.check_csrf(request, session):
+                        response = auth.error(request, 403, "CSRF_INVALID", "请求来源或 CSRF 校验失败")
+                    else:
+                        response = await call_next(request)
             else:
                 response = await call_next(request)
         except Exception:

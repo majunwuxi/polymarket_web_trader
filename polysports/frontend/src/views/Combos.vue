@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref,onActivated,onMounted,onUnmounted,watch,nextTick} from 'vue'
 import {session,logout} from '../auth'
+import {api} from '../api'
 import {useRoute,useRouter} from 'vue-router'
 import {formatDateTimeSeconds} from '../utils/format'
 const router=useRouter(),route=useRoute(),legs=ref<any[]>([]),wallets=ref<any[]>([]),wallet=ref(''),direction=ref('BUY'),quantity=ref(''),items=ref<any[]>([]),message=ref(''),busy=ref(false),menuOpen=ref(false),closeOriginal=ref<any>(null),closeInfo=ref<any>(null)
@@ -9,7 +10,6 @@ const trim=(value:any)=>value==null?'':String(value).replace(/(\.\d*?)0+$/,'$1')
 const nextCursor=ref<string|null>(null)
 const recordsMessage=ref('')
 const key='polysports_combo_legs',pendingKey='polysports_combo_pending';const pending=ref<any>(null),ack=ref(false)
-async function api(path:string,options:RequestInit={}){const r=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options});const body=await r.json();if(!r.ok){const e=new Error(body.error?.message||'请求失败');(e as any).code=body.error?.code;throw e}return body.data}
 const comboLimits=ref<{order_limit_percent?:string;order_limit_floor_usd?:string;remaining_daily_usd?:string|null}|null>(null)
 let comboLimitsRevision=0
 async function loadComboLimits(){

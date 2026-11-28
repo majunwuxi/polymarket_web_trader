@@ -2,6 +2,7 @@
 import {onMounted,ref,watch,computed} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {session,logout,clearSession,ApiError} from '../auth'
+import {api} from '../api'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppTopbar from '../components/AppTopbar.vue'
 import OrderPendingPanel from '../components/OrderPendingPanel.vue'
@@ -98,19 +99,6 @@ const orderNotional=computed(()=>{
 })
 const marketCloseReady=computed(()=>!!closeContext.value&&!closeContext.value.market_close_reason&&!!closeContext.value.market_price&&Number(closeContext.value.candidate_shares)>0)
 const closeWalletLabel=computed(()=>wallets.value.find((w:any)=>w.id===closeContext.value?.wallet_id)?.label)
-
-async function api(path:string,options:RequestInit={}){
-  const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options})
-  let body:any=null
-  try{body=await response.json()}catch{body=null}
-  if(!response.ok){
-    const error=new Error(body?.error?.message||'请求失败（HTTP '+response.status+'）') as Error & {code?:string,status?:number}
-    error.code=body?.error?.code
-    error.status=response.status
-    throw error
-  }
-  return body?.data
-}
 
 // 平仓只依赖真实持仓上下文：不再请求开仓用的赛事映射与公开盘口接口。
 async function load(){

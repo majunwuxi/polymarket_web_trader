@@ -195,16 +195,17 @@ def prepare(engine, settings, body, gateway_cls=Gateway):
     data, price, size = normalize(body)
     wallet = wallet_for(settings, body.wallet_id)
     closing = getattr(body, 'order_type', None) == 'FOK'
+    # 先结束只读事务，再执行外部 HTTP/RPC 调用，避免长期占用连接池连接。
     with Session(engine) as db:
         verify_close_origin(db, body, size)
         link, market, outcome = resolve(db, body, closing)
         game_id = link.game_id
         event = inspection_event(db, link, market, closing)
-        with gateway_cls(settings, wallet) as gateway:
-            context = gateway.inspect(market, outcome, body.side, price, size, event)
-        if not context.get('hash'):
-            raise TradingError('book_unavailable', '订单簿缺少有效版本标识')
         now = db_now(db)
+    with gateway_cls(settings, wallet) as gateway:
+        context = gateway.inspect(market, outcome, body.side, price, size, event)
+    if not context.get('hash'):
+        raise TradingError('book_unavailable', '订单簿缺少有效版本标识')
     token = encode_token(
         settings,
         {
@@ -551,6 +552,8 @@ def execute(engine, settings, body, request_id: uuid.UUID, gateway_cls=Gateway):
     # 一步式提交不带令牌时，服务端在本次请求内直接核对实时盘口；带令牌时仍按旧流程校验，
     # 保持与「预览 → 提交」旧客户端及既有测试的兼容。
     token = decode_token(settings, body.preview_token) if getattr(body, 'preview_token', None) else None
+    # 读库、外部盘口核验、写单意图分属不同短事务：任何时刻最多占用一条数据库连接，
+    # 避免并发下单时外层连接未释放、内层 Session 申请第二条连接导致连接池自死锁。
     with Session(engine) as db:
         now = db_now(db)
         if token and (
@@ -562,16 +565,16 @@ def execute(engine, settings, body, request_id: uuid.UUID, gateway_cls=Gateway):
         verify_close_origin(db, body, size)
         link, market, outcome = resolve(db, body, closing)
         event = inspection_event(db, link, market, closing)
-        with gateway_cls(settings, wallet) as gateway:
-            context = gateway.inspect(market, outcome, body.side, price, size, event)
-            if not context.get('hash'):
-                raise TradingError('book_unavailable', '订单簿缺少有效版本标识')
-            if token and context['hash'] != token.get('book_hash'):
-                raise TradingError('preview_stale', '盘口变化，请重新预览')
-            intent_id, created = _record_intent(
-                engine, settings, body, wallet, request_id, fp, link, token, price, size, closing, context.get('balance')
-            )
-            if not created:
-                return intent_id, False
-            _sign_and_submit(engine, gateway, intent_id, outcome, body, price, size)
-            return intent_id, True
+    with gateway_cls(settings, wallet) as gateway:
+        context = gateway.inspect(market, outcome, body.side, price, size, event)
+        if not context.get('hash'):
+            raise TradingError('book_unavailable', '订单簿缺少有效版本标识')
+        if token and context['hash'] != token.get('book_hash'):
+            raise TradingError('preview_stale', '盘口变化，请重新预览')
+        intent_id, created = _record_intent(
+            engine, settings, body, wallet, request_id, fp, link, token, price, size, closing, context.get('balance')
+        )
+        if not created:
+            return intent_id, False
+        _sign_and_submit(engine, gateway, intent_id, outcome, body, price, size)
+        return intent_id, True

@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ApiError, clearSession, logout, session } from '../auth'
+import { api } from '../api'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppTopbar from '../components/AppTopbar.vue'
 import { formatDateTime } from '../utils/format'
@@ -24,9 +25,7 @@ const emptyMessages = ['暂无即将开赛的关注赛事。','暂无待确认�
 const teamName = (team:any) => team?.name_zh || team?.source_name || '未知球队'
 
 async function read(path:string) {
-  const response = await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store'})
-  if(!response.ok)throw new Error('读取失败')
-  const data=(await response.json()).data
+  const data=await api<any>(path)
   if(!Array.isArray(data?.items))throw new Error('数据格式无效')
   return data
 }

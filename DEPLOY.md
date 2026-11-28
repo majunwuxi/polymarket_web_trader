@@ -66,6 +66,8 @@ sudoedit /etc/polysports/polysports.env
 - `POLYSPORTS_AUTH_SECRET` 为独立生成、至少 32 字节的随机值；例如可通过 `python3 -c 'import secrets; print(secrets.token_urlsafe(48))'` 生成后安全填写。
 - 赛程同步不依赖第三方赛事密钥；仅在需要订单成交后的赛果绑定与比分核验时设置 `POLYSPORTS_API_FOOTBALL_KEY` 和 `POLYSPORTS_BALLDONTLIE_KEY`。另按需设置钱包凭据 `POLYSPORTS_WALLETS` 与 `POLYSPORTS_WALLET_CREDENTIALS`。JSON 示例请见 [polysports/README.md](polysports/README.md)；包含 JSON 的 `.env` 值可用单引号包裹，文件必须为 UTF-8。Combo 使用官方 Requester Gateway，不需要 Builder 凭据，且默认关闭；真实启用条件见 README。
 - 已结算仓位赎回默认关闭。确认钱包已具备 Router/Adapter 的 ERC-1155 operator 授权、Polygon RPC 可访问，且智能钱包已配置完整 Builder 凭据或 `relayer_api_key` + `relayer_api_key_address` 后，才设置 `POLYSPORTS_REDEEM_EXECUTION_ENABLED=true`。系统不会自动授权、部署钱包或重发结果未知的赎回请求。
+- 可选买入限额：`POLYSPORTS_ORDER_LIMIT_PERCENT`（单笔按可用余额百分比封顶，>0 且 ≤100）、`POLYSPORTS_ORDER_LIMIT_FLOOR_USD`（最低上限，默认 1）、`POLYSPORTS_MAX_DAILY_USD`（每个钱包每日买入总额）。单场与组合共用日额度，按 UTC+8 午夜重置；留空表示不启用对应限制。
+- 可选只读 Agent：`POLYSPORTS_AGENT_READ_TOKEN`（至少 32 字符）。仅当需要 MCP/Codex 读取项目赛事、钱包余额和限额时设置；令牌校验失败会按来源 IP 限流并记录结构化日志。修改后重启 API 生效。
 
 确认该文件为 `root:root`、权限 `0600`。生产服务通过 systemd `LoadCredential` 读取副本，密钥不通过 systemd `EnvironmentFile` 注入；设置了 systemd 凭据目录时，应用只读取凭据文件，不从环境变量或项目目录的 `.env` 回退。请单独安全备份该配置与密钥；数据库备份不包含它们。
 
@@ -202,6 +204,21 @@ sudo systemctl restart polysports-api.service polysports-worker.service
 curl --retry 15 --retry-delay 1 --retry-connrefused --retry-all-errors --connect-timeout 2 --fail http://127.0.0.1:8000/api/v1/health/live
 sudo journalctl -u polysports-api.service -u polysports-worker.service --since '10 min ago' --no-pager
 ```
+
+本次安全与事务修复版本还需额外执行以下步骤（无新增数据库迁移）：
+
+```bash
+cd /opt/polysports-src
+# systemd 单元新增了 AGENT_READ_TOKEN 与交易限额变量的 UnsetEnvironment，必须重新安装并重载
+sudo install -m 0644 polysports/deploy/systemd/polysports-*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+# Nginx 模板新增 Content-Security-Policy，必须重新安装并校验后重载
+sudo install -m 0644 polysports/deploy/nginx/polysports.conf /etc/nginx/sites-available/polysports
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+生产环境会拒绝 `/docs`、`/redoc` 与 `/openapi.json`（返回 404），这是预期行为；开发/测试环境仍可访问。MCP 分发方式也有变化：仓库不再提供 `PolySports-MCP-Windows.zip`，客户端需从源码运行并设置 `POLYSPORTS_BASE_URL`（HTTPS 站点地址），详见 [polysports/POLYSPORTS-MCP.md](polysports/POLYSPORTS-MCP.md)。该域名曾出现在公开仓库历史中，建议在 Nginx 前叠加来源 IP 白名单或 Zero Trust，并轮换 `POLYSPORTS_AGENT_READ_TOKEN`。
 
 后端 `.py` 改动必须重启 `polysports-api.service` 与 `polysports-worker.service` 才会生效；仅 `git pull` 不会重载已加载的模块。若该版本包含新增表（例如 `combo_fills`），迁移未成功就启动 API，列表接口会直接报 `relation "combo_fills" does not exist`；此时先修复迁移，不要靠重启 API 重试。Nginx 的 `index.html` 应设为不缓存（见 `deploy/nginx/polysports.conf` 的 `location = /index.html`）；更新该配置后需重新安装并执行 `sudo nginx -t && sudo systemctl reload nginx`。浏览器仍显示旧界面时，先用无痕窗口或强制刷新（Ctrl+Shift+R）确认；带 hash 的 JS 可长期缓存，入口 `index.html` 不可缓存。
 

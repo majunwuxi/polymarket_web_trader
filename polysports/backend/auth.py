@@ -107,30 +107,48 @@ def check_csrf(request: Request, session) -> bool:
     return bool(session) and safe_equal(supplied, session["csrf_token"])
 
 
-def use_rate_limit(conn, secret: str, ip: str, username: str) -> int:
+def rate_limit_keys(secret: str, ip: str, username: str) -> list[str]:
     # Ordered keys avoid deadlocks when simultaneous attempts use different IPs/usernames.
-    keys = sorted([mac(secret, "rate-ip", ip), mac(secret, "rate-user", username)])
+    return sorted([mac(secret, "rate-ip", ip), mac(secret, "rate-user", username)])
+
+
+def rate_limit_wait(conn, keys: list[str]) -> int:
+    """只读检查，不累加计数；供验密前的短事务使用。"""
     max_wait = 0
     for key in keys:
-        row = (
-            conn.execute(
-                text("""INSERT INTO auth_rate_limits (bucket_key,window_start,attempt_count,blocked_until,updated_at)
+        wait = conn.execute(
+            text("""SELECT CASE
+                WHEN window_start > now() - make_interval(secs => :window)
+                 AND (blocked_until > now() OR attempt_count >= :limit)
+                THEN GREATEST(0, CEIL(EXTRACT(EPOCH FROM (window_start + make_interval(secs => :window) - now()))))
+                ELSE 0 END
+            FROM auth_rate_limits WHERE bucket_key = :key"""),
+            {"key": key, "window": RATE_SECONDS, "limit": RATE_LIMIT},
+        ).scalar_one_or_none()
+        max_wait = max(max_wait, int(wait or 0))
+    return max_wait
+
+
+def record_rate_limit_failure(conn, keys: list[str]) -> None:
+    """仅记录失败尝试；成功登录不再累加计数。"""
+    for key in keys:
+        conn.execute(
+            text("""INSERT INTO auth_rate_limits (bucket_key,window_start,attempt_count,blocked_until,updated_at)
             VALUES (:key,now(),1,NULL,now())
             ON CONFLICT (bucket_key) DO UPDATE SET
               window_start=CASE WHEN auth_rate_limits.window_start <= now() - make_interval(secs => :window) THEN now() ELSE auth_rate_limits.window_start END,
               attempt_count=CASE WHEN auth_rate_limits.window_start <= now() - make_interval(secs => :window) THEN 1 ELSE auth_rate_limits.attempt_count + 1 END,
               blocked_until=CASE WHEN auth_rate_limits.window_start <= now() - make_interval(secs => :window) THEN NULL
-                WHEN auth_rate_limits.attempt_count + 1 > :limit THEN GREATEST(COALESCE(auth_rate_limits.blocked_until, now()), auth_rate_limits.window_start + make_interval(secs => :window))
+                WHEN auth_rate_limits.attempt_count + 1 >= :limit THEN GREATEST(COALESCE(auth_rate_limits.blocked_until, now()), auth_rate_limits.window_start + make_interval(secs => :window))
                 ELSE auth_rate_limits.blocked_until END,
-              updated_at=now()
-            RETURNING GREATEST(0, CEIL(EXTRACT(EPOCH FROM (blocked_until - now())))) AS wait"""),
-                {"key": key, "window": RATE_SECONDS, "limit": RATE_LIMIT},
-            )
-            .mappings()
-            .one()
+              updated_at=now()"""),
+            {"key": key, "window": RATE_SECONDS, "limit": RATE_LIMIT},
         )
-        max_wait = max(max_wait, int(row["wait"] or 0))
-    return max_wait
+
+
+def clear_rate_limit(conn, keys: list[str]) -> None:
+    for key in keys:
+        conn.execute(text("DELETE FROM auth_rate_limits WHERE bucket_key = :key"), {"key": key})
 
 
 class LoginBody(BaseModel):
@@ -157,8 +175,10 @@ def login(body: LoginBody, request: Request):
     username = body.username.strip().casefold()
     password = body.password.get_secret_value()
     secret = request.app.state.settings.auth_secret.get_secret_value()
-    with request.app.state.engine.begin() as conn:
-        wait = use_rate_limit(conn, secret, request.client.host if request.client else "unknown", username)
+    keys = rate_limit_keys(secret, request.client.host if request.client else "unknown", username)
+    # 验密是 CPU 密集操作，必须先结束只读短事务，避免长时间持有连接与行锁。
+    with request.app.state.engine.connect() as conn:
+        wait = rate_limit_wait(conn, keys)
         if wait:
             return error(request, 429, "RATE_LIMITED", "登录尝试过于频繁，请稍后重试", wait)
         user = (
@@ -169,26 +189,29 @@ def login(body: LoginBody, request: Request):
             .mappings()
             .first()
         )
-        try:
-            valid = len(password.encode("utf-8")) <= 1024 and hasher.verify(
-                user["password_hash"] if user else DUMMY_HASH, password
-            )
-        except (VerifyMismatchError, VerificationError, InvalidHashError):
-            valid = False
-        if not user or user["disabled"] or not valid:
+    try:
+        valid = len(password.encode("utf-8")) <= 1024 and hasher.verify(
+            user["password_hash"] if user else DUMMY_HASH, password
+        )
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        valid = False
+    if not user or user["disabled"] or not valid:
+        with request.app.state.engine.begin() as conn:
+            record_rate_limit_failure(conn, keys)
             conn.execute(
                 text("INSERT INTO audit_events (id, action, details) VALUES (:id,'login_failed','{}'::jsonb)"),
                 {"id": uuid.uuid4()},
             )
-            return error(request, 401, "UNAUTHENTICATED", "用户名或密码无效")
+        return error(request, 401, "UNAUTHENTICATED", "用户名或密码无效")
+    token = secrets.token_urlsafe(32)
+    session_csrf = csrf(secret, token, "session")
+    with request.app.state.engine.begin() as conn:
         old = request.cookies.get(SESSION_COOKIE)
         if old:
             conn.execute(
                 text("UPDATE admin_sessions SET revoked_at=now() WHERE token_hash=:hash AND revoked_at IS NULL"),
                 {"hash": digest(old)},
             )
-        token = secrets.token_urlsafe(32)
-        session_csrf = csrf(secret, token, "session")
         conn.execute(
             text("""INSERT INTO admin_sessions (id,admin_id,token_hash,csrf_secret_hash,expires_at,last_seen_at)
             VALUES (:id,:admin,:token,:csrf,now()+make_interval(secs => :seconds),now())"""),
@@ -206,6 +229,7 @@ def login(body: LoginBody, request: Request):
             ),
             {"id": uuid.uuid4(), "actor": user["id"]},
         )
+        clear_rate_limit(conn, keys)
     response = JSONResponse(
         {"data": {"authenticated": True, "csrf_token": session_csrf}, "request_id": request.state.request_id}
     )

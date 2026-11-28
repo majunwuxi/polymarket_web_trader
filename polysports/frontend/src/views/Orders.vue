@@ -4,6 +4,7 @@ import {onActivated,onMounted,ref} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {formatDateTimeSeconds} from '../utils/format'
 import {session,logout,clearSession,ApiError} from '../auth'
+import {api} from '../api'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppTopbar from '../components/AppTopbar.vue'
 import SingleResolution from '../components/SingleResolution.vue'
@@ -16,7 +17,6 @@ const combos=ref<any[]>([]),comboCursor=ref<string|null>(null),comboLoaded=ref(f
 const fullId=ref<string|null>(null)
 const redeemMap=ref<Record<string,any>>({}),redeemEnabled=ref(false),redeemBusy=ref<string|null>(null),redeemErrors=ref<Record<string,string>>({})
 
-async function api(path:string,options:RequestInit={}){const r=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options});const b=await r.json();if(!r.ok)throw new Error(b?.error?.message||'请求失败');return b.data}
 
 // 列表摘要只保留结论；题目里重复的对阵前缀、完整订单编号等证据放入明细。
 const shortQuestion=(q:any)=>{const s=String(q??'');return /^[^:]*\bvs\.?\b[^:]*:\s*/i.test(s)?s.replace(/^[^:]*\bvs\.?\b[^:]*:\s*/i,''):s}

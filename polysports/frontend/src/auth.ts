@@ -1,19 +1,12 @@
 import { reactive } from 'vue'
+import { ApiError, responseData } from './api'
+
+export { ApiError } from './api'
 
 export const session = reactive({ authenticated: false, username: '', csrf: '', expiresAt: '' })
 const SESSION_RESTORE_TTL = 15_000
 let restoreInFlight: Promise<boolean> | null = null
 let restoredAt = 0
-export class ApiError extends Error {
-  constructor(public status: number, message: string, public retryAfter: number | null = null) { super(message) }
-}
-
-async function responseData(response: Response) {
-  if (response.status === 204) return null
-  const body = await response.json()
-  if (!response.ok) throw new ApiError(response.status, body?.error?.message || '服务暂不可用', body?.error?.retry_after_seconds ?? null)
-  return body.data
-}
 
 async function loadSession(): Promise<boolean> {
   try {

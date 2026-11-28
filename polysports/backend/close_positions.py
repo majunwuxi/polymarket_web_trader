@@ -203,59 +203,68 @@ def inspect_single_position(engine, settings, ident, gateway_cls=Gateway):
         if outcome.asset_kind not in ('position', 'ctf_token'):
             raise TradingError('position_mismatch', '持仓资产类型无法确认')
         assert_close_allowed(db, db.get(Game, intent.game_id), market)
+        intent_id = intent.id
+        wallet_id = intent.wallet_id
+        wallet_address = intent.wallet_address
+        market_link_id = intent.market_link_id
+        outcome_id = intent.outcome_id
+        matched_size = intent.matched_size
         asset_id = outcome.asset_id
-        with gateway_cls(settings, wallet) as gateway:
-            try:
-                book = gateway.client.get_order_book(asset_id=asset_id)
-                if str(book.asset_id) != asset_id or str(book.condition_id).lower() != market.condition_id.lower():
-                    raise TradingError('position_mismatch', '持仓盘口身份不一致')
-                account = gateway.client.get_balance_allowance(
-                    asset_type='CONDITIONAL-V2' if outcome.asset_kind == 'position' else 'CONDITIONAL',
-                    asset_id=asset_id,
-                )
-                if type(account.balance) is not int or account.balance < 0:
-                    raise ValueError('invalid balance')
-                with localcontext() as context:
-                    context.prec = 90
-                    balance = Decimal(account.balance) / Decimal(10**6)
-                bids = []
-                for bid in book.bids:
-                    price, size = Decimal(str(bid.price)), Decimal(str(bid.size))
-                    if not price.is_finite() or not size.is_finite() or not 0 < price < 1 or size <= 0:
-                        raise ValueError('invalid book')
-                    bids.append({'price': str(price), 'size': str(size)})
-                bids.sort(key=lambda item: Decimal(item['price']), reverse=True)
-                with localcontext() as context:
-                    context.prec = 90
-                    candidate = min(balance, remaining).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
-                market_price, proceeds, reason = market_close_quote(
-                    bids, candidate, book.tick_size, book.min_order_size
-                )
-                return {
-                    'intent_id': str(intent.id),
-                    'wallet_id': str(intent.wallet_id),
-                    'wallet_address': intent.wallet_address,
-                    'market_link_id': str(intent.market_link_id),
-                    'outcome_id': str(intent.outcome_id),
-                    'asset_id': asset_id,
-                    'matched_shares': str(intent.matched_size),
-                    'closed_shares': str(sold),
-                    'wallet_shares': str(balance),
-                    'candidate_shares': str(candidate),
-                    'market_price': market_price,
-                    'estimated_proceeds': proceeds,
-                    'market_close_reason': reason,
-                    'bids': bids,
-                    'tick_size': str(book.tick_size),
-                    'min_order_size': str(book.min_order_size),
-                    'notice': '同一资产由钱包共享；候选份额按两位小数向下取整，不代表该笔订单独立持仓的证明。',
-                }
-            except TradingError:
-                raise
-            except (InvalidOperation, ValueError, TypeError, AttributeError) as exc:
-                raise TradingError('position_unavailable', '无法核实持仓或盘口') from exc
-            except Exception as exc:
-                raise TradingError('position_unavailable', '无法读取持仓或盘口') from exc
+        asset_kind = outcome.asset_kind
+        condition_id = market.condition_id
+    # 外部盘口/链上读取在事务外执行，避免长时间占用数据库连接。
+    with gateway_cls(settings, wallet) as gateway:
+        try:
+            book = gateway.client.get_order_book(asset_id=asset_id)
+            if str(book.asset_id) != asset_id or str(book.condition_id).lower() != condition_id.lower():
+                raise TradingError('position_mismatch', '持仓盘口身份不一致')
+            account = gateway.client.get_balance_allowance(
+                asset_type='CONDITIONAL-V2' if asset_kind == 'position' else 'CONDITIONAL',
+                asset_id=asset_id,
+            )
+            if type(account.balance) is not int or account.balance < 0:
+                raise ValueError('invalid balance')
+            with localcontext() as context:
+                context.prec = 90
+                balance = Decimal(account.balance) / Decimal(10**6)
+            bids = []
+            for bid in book.bids:
+                price, size = Decimal(str(bid.price)), Decimal(str(bid.size))
+                if not price.is_finite() or not size.is_finite() or not 0 < price < 1 or size <= 0:
+                    raise ValueError('invalid book')
+                bids.append({'price': str(price), 'size': str(size)})
+            bids.sort(key=lambda item: Decimal(item['price']), reverse=True)
+            with localcontext() as context:
+                context.prec = 90
+                candidate = min(balance, remaining).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
+            market_price, proceeds, reason = market_close_quote(
+                bids, candidate, book.tick_size, book.min_order_size
+            )
+            return {
+                'intent_id': str(intent_id),
+                'wallet_id': str(wallet_id),
+                'wallet_address': wallet_address,
+                'market_link_id': str(market_link_id),
+                'outcome_id': str(outcome_id),
+                'asset_id': asset_id,
+                'matched_shares': str(matched_size),
+                'closed_shares': str(sold),
+                'wallet_shares': str(balance),
+                'candidate_shares': str(candidate),
+                'market_price': market_price,
+                'estimated_proceeds': proceeds,
+                'market_close_reason': reason,
+                'bids': bids,
+                'tick_size': str(book.tick_size),
+                'min_order_size': str(book.min_order_size),
+                'notice': '同一资产由钱包共享；候选份额按两位小数向下取整，不代表该笔订单独立持仓的证明。',
+            }
+        except TradingError:
+            raise
+        except (InvalidOperation, ValueError, TypeError, AttributeError) as exc:
+            raise TradingError('position_unavailable', '无法核实持仓或盘口') from exc
+        except Exception as exc:
+            raise TradingError('position_unavailable', '无法读取持仓或盘口') from exc
 
 
 def inspect_combo_position(engine, settings, ident, web3_cls=None):

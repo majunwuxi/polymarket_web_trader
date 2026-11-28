@@ -11,7 +11,7 @@ def mock_wallet_request():
     wallet = SimpleNamespace(label='模拟钱包', wallet_address='0x' + '1' * 40,
                              signer_address='0x' + '2' * 40, wallet_type='DEPOSIT_WALLET',
                              credential_ref='primary')
-    settings = SimpleNamespace(wallets=[wallet], wallet_credentials={'primary': object()})
+    settings = SimpleNamespace(wallets=[wallet], wallet_credentials={'primary': object()}, polygon_rpc_url=None)
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
                               state=SimpleNamespace(request_id='mock-request'))
     return request, wallet, market_api.wallet_id(wallet.wallet_address)

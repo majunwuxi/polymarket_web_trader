@@ -4,7 +4,7 @@
 
 ## 在新 Windows 电脑安装
 
-从本仓库下载 [PolySports MCP Windows 独立安装包](./PolySports-MCP-Windows.zip)。新电脑无需克隆仓库，现有 VPS 无需重新部署。首次安装需要联网下载 Python 和锁定的依赖。
+本仓库不再提交预打包的 ZIP（避免二进制包与源码漂移）。请克隆仓库后从源码运行；首次安装需要联网下载 Python 和锁定的依赖。
 
 ### 1. 检查 Codex 和 uv
 
@@ -19,19 +19,31 @@ uv --version
 - 能打开桌面版但 PowerShell 找不到 `codex` 时，可以按文末官方文档安装 Codex CLI，再运行脚本。日常使用仍在桌面聊天里。
 - 找不到 `uv` 时，执行 `winget install --id astral-sh.uv -e`，然后重新打开 PowerShell。
 
-### 2. 解压并安装
+### 2. 从源码安装并注册
 
-将 ZIP 解压到计划长期保留的目录，例如 `C:\Tools\PolySports-MCP`。Codex 每次启动 MCP 时都会使用该目录。
-
-在解压目录打开 PowerShell，执行：
+将仓库克隆到计划长期保留的目录，例如 `C:\Tools\polymarket_web_trader`，然后安装带 MCP 依赖的锁定环境：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1 -SetToken
+git clone https://github.com/majunwuxi/polymarket_web_trader.git C:\Tools\polymarket_web_trader
+cd C:\Tools\polymarket_web_trader\polysports
+uv sync --locked --extra agent
 ```
 
-等隐藏输入提示出现后，粘贴与 VPS 相同的完整 `POLYSPORTS_AGENT_READ_TOKEN` 并回车。Windows MCP 可以读取用户级环境变量。已保存有效令牌时可省略 `-SetToken`。如需用独立安装包替换已有 `polysports` 注册，再加上 `-Replace`。
+把服务地址和只读令牌写入当前 Windows 用户环境变量（令牌须与 VPS 相同，至少 32 个字符）：
 
-安装成功后，脚本会显示 `enabled: true` 和 `transport: stdio`。
+```powershell
+[Environment]::SetEnvironmentVariable('POLYSPORTS_BASE_URL','https://你的实际域名','User')
+[Environment]::SetEnvironmentVariable('POLYSPORTS_AGENT_READ_TOKEN','与 VPS 相同的只读令牌','User')
+```
+
+注册 MCP（把路径替换为你的克隆位置）：
+
+```powershell
+codex mcp add polysports -- uv --directory C:\Tools\polymarket_web_trader\polysports run --locked --extra agent python -m backend.agent_tools
+codex mcp get polysports
+```
+
+安装成功后，`codex mcp get polysports` 会显示 `enabled: true` 和 `transport: stdio`。修改环境变量后需要完全退出并重开 Codex。
 
 ### 3. 验证
 
@@ -39,7 +51,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1 -SetToken
 
 > 调用 `polysports.project_wallets`，然后用 `polysports.project_wallet_budget` 读取「我的钱包」的可用余额和今日买入剩额。
 
-看到余额和剩额即验证通过。打开草稿前先在同一浏览器登录 [PolySports](https://example.invalid/)。
+看到余额和剩额即验证通过。打开草稿前先在同一浏览器登录你的 PolySports 站点（即 `POLYSPORTS_BASE_URL` 指向的地址）。
 
 ## 日常使用
 

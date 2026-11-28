@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
@@ -14,7 +14,17 @@ from sqlalchemy.orm import Session
 
 from . import auth
 from .close_policy import score_verified_clause, settled_visibility_cutoff
-from .models import AuditEvent, Game, Job, MarketLink, PolyMarket, TradeFill, TradeIntent, TradeStateEvent, TradeSubmission
+from .models import (
+    AuditEvent,
+    Game,
+    Job,
+    MarketLink,
+    PolyMarket,
+    TradeFill,
+    TradeIntent,
+    TradeStateEvent,
+    TradeSubmission,
+)
 from .scheduler import db_now
 from .sports_api import cursor_decode, cursor_encode
 from .trading import as_data, execute, prefetch_intents, prepare, wallet_for
@@ -459,7 +469,7 @@ def update_cancel(engine, intent_id, state, code=None, delay=None):
 def cancel(request: Request, intent_id: uuid.UUID):
     engine = request.app.state.engine
     with Session(engine) as db, db.begin():
-        job = db.scalar(select(Job).where(Job.trade_intent_id == intent_id).with_for_update())
+        db.scalar(select(Job).where(Job.trade_intent_id == intent_id).with_for_update())
         intent = db.scalar(select(TradeIntent).where(TradeIntent.id == intent_id).with_for_update())
         if not intent:
             return auth.error(request, 404, 'NOT_FOUND', '订单不存在')
@@ -573,64 +583,67 @@ def public_book(request: Request, outcome_id: uuid.UUID):
         if not outcome:
             return auth.error(request, 404, 'NOT_FOUND', '市场选项不存在')
         market = db.get(PolyMarket, outcome.market_id)
-        try:
-            response = httpx.get(
-                'https://clob.polymarket.com/book',
-                params={'token_id': outcome.asset_id},
-                timeout=10,
-                follow_redirects=False,
-            )
-            if response.status_code == 425:
-                from .sports_sources import retry_delay
+        asset_id = outcome.asset_id
+        condition_id = market.condition_id
+    # 外部盘口请求必须在数据库事务之外执行，避免慢请求长时间占用连接池。
+    try:
+        response = httpx.get(
+            'https://clob.polymarket.com/book',
+            params={'token_id': asset_id},
+            timeout=10,
+            follow_redirects=False,
+        )
+        if response.status_code == 425:
+            from .sports_sources import retry_delay
 
-                delay = retry_delay(response) if response.headers.get('Retry-After') else None
-                return auth.error(request, 503, 'ENGINE_RESTARTING', '撮合引擎正在重启', delay=delay)
-            response.raise_for_status()
-            body = response.json()
-            if (
-                not isinstance(body, dict)
-                or str(body.get('asset_id')) != outcome.asset_id
-                or str(body.get('market', '')).lower() != market.condition_id
-            ):
-                raise ValueError('book mismatch')
-            if isinstance(body['tick_size'], float) or isinstance(body['min_order_size'], float):
-                raise ValueError('imprecise rules')
-            tick = Decimal(str(body['tick_size']))
-            minimum = Decimal(str(body['min_order_size']))
-            if not tick.is_finite() or not minimum.is_finite() or not 0 < tick < Decimal('0.5') or minimum <= 0:
-                raise ValueError('rules invalid')
+            delay = retry_delay(response) if response.headers.get('Retry-After') else None
+            return auth.error(request, 503, 'ENGINE_RESTARTING', '撮合引擎正在重启', delay=delay)
+        response.raise_for_status()
+        body = response.json()
+        if (
+            not isinstance(body, dict)
+            or str(body.get('asset_id')) != asset_id
+            or str(body.get('market', '')).lower() != condition_id
+        ):
+            raise ValueError('book mismatch')
+        if isinstance(body['tick_size'], float) or isinstance(body['min_order_size'], float):
+            raise ValueError('imprecise rules')
+        tick = Decimal(str(body['tick_size']))
+        minimum = Decimal(str(body['min_order_size']))
+        if not tick.is_finite() or not minimum.is_finite() or not 0 < tick < Decimal('0.5') or minimum <= 0:
+            raise ValueError('rules invalid')
 
-            def levels(name):
-                rows = body.get(name)
-                if not isinstance(rows, list):
-                    raise ValueError('invalid levels')
-                result = []
-                for item in rows:
-                    if not isinstance(item, dict):
-                        raise ValueError('invalid level')
-                    if isinstance(item['price'], float) or isinstance(item['size'], float):
-                        raise ValueError('imprecise level')
-                    p = Decimal(str(item['price']))
-                    s = Decimal(str(item['size']))
-                    if not p.is_finite() or not s.is_finite() or not 0 < p < 1 or s < 0:
-                        raise ValueError('invalid level')
-                    result.append({'price': str(p), 'size': str(s)})
-                return result
+        def levels(name):
+            rows = body.get(name)
+            if not isinstance(rows, list):
+                raise ValueError('invalid levels')
+            result = []
+            for item in rows:
+                if not isinstance(item, dict):
+                    raise ValueError('invalid level')
+                if isinstance(item['price'], float) or isinstance(item['size'], float):
+                    raise ValueError('imprecise level')
+                p = Decimal(str(item['price']))
+                s = Decimal(str(item['size']))
+                if not p.is_finite() or not s.is_finite() or not 0 < p < 1 or s < 0:
+                    raise ValueError('invalid level')
+                result.append({'price': str(p), 'size': str(s)})
+            return result
 
-            return ok(
-                request,
-                {
-                    'outcome_id': str(outcome_id),
-                    'bids': levels('bids'),
-                    'asks': levels('asks'),
-                    'tick_size': str(tick),
-                    'min_order_size': str(minimum),
-                    'observed_at': db_now(db).isoformat(),
-                },
-            )
-        except Exception:
-            log.exception('book_unavailable outcome_id=%s', outcome_id)
-            return auth.error(request, 503, 'BOOK_UNAVAILABLE', '订单簿暂不可用')
+        return ok(
+            request,
+            {
+                'outcome_id': str(outcome_id),
+                'bids': levels('bids'),
+                'asks': levels('asks'),
+                'tick_size': str(tick),
+                'min_order_size': str(minimum),
+                'observed_at': datetime.now(UTC).isoformat(),
+            },
+        )
+    except Exception:
+        log.exception('book_unavailable outcome_id=%s', outcome_id)
+        return auth.error(request, 503, 'BOOK_UNAVAILABLE', '订单簿暂不可用')
 
 
 class AttachOrder(BaseModel):

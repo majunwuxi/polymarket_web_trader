@@ -3,6 +3,7 @@ import { ref, watch, nextTick, computed, onActivated } from 'vue'
 import OrderEntry from './OrderEntry.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { session, logout, clearSession, ApiError } from '../auth'
+import { api } from '../api'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppTopbar from '../components/AppTopbar.vue'
 import ResultBindingSummary from '../components/ResultBindingSummary.vue'
@@ -92,12 +93,6 @@ const dayGroups=computed(()=>{
   }
   return groups
 })
-async function api(path:string, options:RequestInit={}) {
-  const response=await fetch('/api/v1'+path,{credentials:'same-origin',cache:'no-store',...options})
-  const payload=await response.json()
-  if(!response.ok) throw new Error(payload?.error?.message || '服务暂不可用')
-  return payload.data
-}
 async function load(append=false) {
   loading.value=true; message.value=''
   try {

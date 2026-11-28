@@ -1,12 +1,12 @@
 """Local stdio MCP with public market and portfolio reads only."""
 
+import asyncio
 import os
 import re
-import asyncio
-from decimal import Decimal, InvalidOperation, ROUND_DOWN
-from urllib.parse import urlencode
-from uuid import UUID
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from typing import Literal
+from urllib.parse import urlencode, urlsplit
+from uuid import UUID
 
 import httpx
 from mcp.server.fastmcp import Context, FastMCP
@@ -16,14 +16,12 @@ from pydantic import BaseModel, Field
 server = FastMCP('PolySports market data')
 read_only = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 address_pattern = re.compile(r'0x[0-9a-fA-F]{40}')
-PROJECT_URL = 'https://example.invalid'
 
 
-def project_read_token() -> str | None:
-    name = 'POLYSPORTS_AGENT_READ_TOKEN'
-    token = os.getenv(name)
-    if token or os.name != 'nt':
-        return token
+def agent_setting(name: str) -> str | None:
+    value = os.getenv(name)
+    if value or os.name != 'nt':
+        return value
     import winreg
 
     try:
@@ -34,13 +32,25 @@ def project_read_token() -> str | None:
     return value if isinstance(value, str) else None
 
 
+def project_read_token() -> str | None:
+    return agent_setting('POLYSPORTS_AGENT_READ_TOKEN')
+
+
+def project_base_url() -> str:
+    value = (agent_setting('POLYSPORTS_BASE_URL') or '').rstrip('/')
+    parsed = urlsplit(value)
+    if parsed.scheme != 'https' or not parsed.netloc:
+        raise ValueError('尚未配置 PolySports 服务地址（POLYSPORTS_BASE_URL，必须为 HTTPS）')
+    return value
+
+
 async def project_read(path: str, params: dict | None = None) -> dict:
     token = project_read_token()
     if not token:
         raise ValueError('尚未配置 PolySports 只读令牌')
     async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
         response = await client.get(
-            PROJECT_URL + '/api/v1' + path, params=params,
+            project_base_url() + '/api/v1' + path, params=params,
             headers={'Authorization': 'Bearer ' + token},
         )
     if not response.is_success:
@@ -164,7 +174,7 @@ async def combo_draft(wallet_id: UUID, legs: list[DraftLeg]) -> dict:
             raise ValueError('草稿包含已经停单的选项')
         query = urlencode({'wallet': str(wallet_id), 'stake': result['stake_pusd'], 'draft': ','.join(pairs)})
         result.update(
-            url=PROJECT_URL + '/combos?' + query,
+            url=project_base_url() + '/combos?' + query,
             wallet=budget['wallet'],
             legs=[{key: option[key] for key in ('market_question', 'outcome_label')} for option in options],
         )
